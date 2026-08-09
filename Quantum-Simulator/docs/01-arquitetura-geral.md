@@ -4,7 +4,7 @@
 
 Um registrador de `qubits` qubits é representado por um vetor de
 `2^qubits` números complexos (`float complex *state`, alocado em
-`DGM::allocateMemory()`, [dgm.cu:101](../Quantum-Simulator/dgm.cu#L101)):
+`DGM::allocateMemory()`, [dgm.cu:101](../src/dgm.cu#L101)):
 
 ```c
 state = (float complex*) calloc(pow(2, qubits), sizeof(float complex));
@@ -28,7 +28,7 @@ long shift = (qubits - 1 - q_pos);   // dgm.cu:122
 
 e na hora de transformar a posição de uma porta no circuito (`pos_ops`, contado
 da esquerda) em um "bit de deslocamento" (`end`) usado durante a execução
-(`DGM::genPTs`, [dgm.cu:314](../Quantum-Simulator/dgm.cu#L314)):
+(`DGM::genPTs`, [dgm.cu:314](../src/dgm.cu#L314)):
 
 ```c
 pt->start = qubits - gp.pos_ops[p];
@@ -41,14 +41,14 @@ Se `state[0b100] = 1` isso é o estado `|q0=1, q1=0, q2=0>`.
 
 ## 2. A classe `DGM`
 
-`DGM` ([dgm.h](../Quantum-Simulator/dgm.h)) é o objeto central. Ela guarda:
+`DGM` ([dgm.h](../include/dgm.h)) é o objeto central. Ela guarda:
 
 - `state` — o vetor de amplitudes (o "hardware" quântico simulado).
 - `qubits` — quantos qubits o registrador tem.
 - `pts` / `vec_pts` — a lista de operações **já compiladas** (ver
   [02-linguagem-de-circuitos.md](02-linguagem-de-circuitos.md)), terminada por `NULL`.
 - `exec_type` — qual dos 4 backends usar (`t_CPU`, `t_PAR_CPU`, `t_GPU`, `t_HYBRID`,
-  enum em [dgm.h:44](../Quantum-Simulator/dgm.h#L44)).
+  enum em [dgm.h:44](../include/dgm.h#L44)).
 - parâmetros de tuning de performance: `n_threads`, `cpu_region`/`cpu_coales`,
   `gpu_region`/`gpu_coales`/`tam_block`/`rept`, `multi_gpu` (explicados em
   [03](03-motor-de-execucao-cpu.md) e [04](04-gpu-cuda.md)).
@@ -74,7 +74,7 @@ dgm.freeMemory();
 
 ## 3. Os quatro backends de execução
 
-`DGM::execute()` ([dgm.cu:361](../Quantum-Simulator/dgm.cu#L361)) despacha para um
+`DGM::execute()` ([dgm.cu:361](../src/dgm.cu#L361)) despacha para um
 dos quatro caminhos, todos calculando a mesma coisa:
 
 | `exec_type`   | Função                                    | Onde                          | Ideia                                                                 |

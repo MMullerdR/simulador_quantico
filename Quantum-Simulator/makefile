@@ -11,6 +11,8 @@ GCC = gcc
 #D = -D QBS_REGION=$(QBS_REGION)
 OPS_BLOCK=300
 
+INCLUDES = -Iinclude
+
 # here are all the objects
 GPUOBJS = kernel.o
 OBJS = dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o
@@ -28,38 +30,38 @@ grover: grover.o $(OBJS) $(GPUOBJS)
 
 general: general.o $(OBJS) $(GPUOBJS)
 	$(NVCC) -o general.out general.o $(OBJS) $(GPUOBJS) -Xcompiler "-fopenmp"
- 
+
 # objects
 
-dgm.o: dgm.cu
-	$(NVCC) -c dgm.cu -Xcompiler "-fopenmp -O3 -fcx-limited-range"
+dgm.o: src/dgm.cu
+	$(NVCC) -c src/dgm.cu $(INCLUDES) -Xcompiler "-fopenmp -O3 -fcx-limited-range"
 
-kernel.o: kernel.cu
-	$(NVCC) -c -D OPS_BLOCK=$(OPS_BLOCK) kernel.cu
+kernel.o: src/kernel.cu
+	$(NVCC) -c -D OPS_BLOCK=$(OPS_BLOCK) src/kernel.cu $(INCLUDES)
 
-gates.o: gates.cpp
-	$(CXX) -c gates.cpp
+gates.o: src/gates.cpp
+	$(CXX) -c src/gates.cpp $(INCLUDES)
 
-common.o: common.cpp
-	$(CXX) -c common.cpp
+common.o: src/common.cpp
+	$(CXX) -c src/common.cpp $(INCLUDES)
 
-lib_general.o: lib_general.cpp
-	$(CXX) -c lib_general.cpp
+lib_general.o: src/lib_general.cpp
+	$(CXX) -c src/lib_general.cpp $(INCLUDES)
 
-lib_shor.o: lib_shor.cpp
-	$(CXX) -c lib_shor.cpp
+lib_shor.o: src/lib_shor.cpp
+	$(CXX) -c src/lib_shor.cpp $(INCLUDES)
 
-lib_grover.o: lib_grover.cpp
-	$(CXX) -c lib_grover.cpp
- 
-grover.o: grover.cpp
-	$(CXX) -c grover.cpp -fopenmp
+lib_grover.o: src/lib_grover.cpp
+	$(CXX) -c src/lib_grover.cpp $(INCLUDES)
 
-shor.o: shor.cpp
-	$(CXX) -c shor.cpp -fopenmp
- 
-general.o: general.cpp
-	$(CXX) -c general.cpp -fopenmp 
+grover.o: src/grover.cpp
+	$(CXX) -c src/grover.cpp $(INCLUDES) -fopenmp
+
+shor.o: src/shor.cpp
+	$(CXX) -c src/shor.cpp $(INCLUDES) -fopenmp
+
+general.o: src/general.cpp
+	$(CXX) -c src/general.cpp $(INCLUDES) -fopenmp
 
 clean:
 	rm *.o *.out

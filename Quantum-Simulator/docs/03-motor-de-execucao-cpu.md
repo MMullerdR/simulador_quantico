@@ -24,7 +24,7 @@ fórmula.
 
 ## 2. `CpuExecution1_1` — caso denso, sem controle
 
-[dgm.cu:443](../Quantum-Simulator/dgm.cu#L443):
+[dgm.cu:443](../src/dgm.cu#L443):
 
 ```c
 shift = 1 << pt->end;          // máscara com o bit do qubit alvo
@@ -80,7 +80,7 @@ está desconectada da execução, mantida só como referência/histórico).
 
 ## 4. Os três "tipos de matriz" — a otimização mais importante
 
-`PT::matrixType()` ([common.cpp:24](../Quantum-Simulator/common.cpp#L24)) olha
+`PT::matrixType()` ([common.cpp:24](../src/common.cpp#L24)) olha
 para a matriz 2x2 da porta e classifica em três formatos, **sem olhar para o
 vetor de estado**:
 
@@ -94,7 +94,7 @@ Essa classificação existe porque **portas diagonais não misturam
 amplitudes** — elas só multiplicam cada amplitude por um número, dependendo
 do valor do bit do qubit alvo. Não precisa nem separar em pares `(pos0,
 pos1)`: dá pra percorrer o vetor inteiro, uma posição de cada vez
-(`CpuExecution1_2`, [dgm.cu:476](../Quantum-Simulator/dgm.cu#L476)):
+(`CpuExecution1_2`, [dgm.cu:476](../src/dgm.cu#L476)):
 
 ```c
 state[pos] = pt->matrix[((pos >> shift) & 1) * 3] * state[pos];
@@ -107,10 +107,10 @@ amplitude**, contra as 4 multiplicações + 2 somas do caso denso.
 O tipo `DIAG_SEC` (anti-diagonal, como o `X`) também economiza: como
 `m00=m11=0`, a fórmula geral simplifica para
 `novo[pos0] = m01*state[pos1]` e `novo[pos1] = m10*state[pos0]`
-(`CpuExecution1_3`, [dgm.cu:494](../Quantum-Simulator/dgm.cu#L494)) — metade
+(`CpuExecution1_3`, [dgm.cu:494](../src/dgm.cu#L494)) — metade
 das multiplicações do caso denso.
 
-`DGM::CpuExecution1(it)` ([dgm.cu:417](../Quantum-Simulator/dgm.cu#L417)) só
+`DGM::CpuExecution1(it)` ([dgm.cu:417](../src/dgm.cu#L417)) só
 faz um `switch` em `pt->matrixType()` e chama a função certa para cada `PT`
 da lista. Esse "roteamento por formato de matriz" é reaproveitado também no
 kernel CUDA de forma conceitualmente igual (ver [04](04-gpu-cuda.md)) e no
@@ -118,7 +118,7 @@ código paralelo de CPU abaixo.
 
 ## 5. Execução paralela em CPU: `PCpuExecution1` — o conceito de "região"
 
-[dgm.cu:789](../Quantum-Simulator/dgm.cu#L789). Ideia: em vez de rodar um `PT`
+[dgm.cu:789](../src/dgm.cu#L789). Ideia: em vez de rodar um `PT`
 de cada vez sobre o vetor inteiro, o vetor de `2^qubits` posições é dividido
 em **regiões** — blocos definidos por fixar um conjunto de bits do índice
 (`reg_mask`) em um valor (`reg_id`), variando o resto. Cada região pode ser
@@ -128,7 +128,7 @@ da região (por isso o código primeiro agrupa quantos `PT`s consecutivos
 "cabem" em uma região de tamanho `cpu_region`, olhando os qubits que cada um
 afeta, antes de disparar as threads OpenMP).
 
-Dentro da região, `PCpuExecution1_0` ([dgm.cu:877](../Quantum-Simulator/dgm.cu#L877))
+Dentro da região, `PCpuExecution1_0` ([dgm.cu:877](../src/dgm.cu#L877))
 faz basicamente o mesmo que `CpuExecution1_1/2/3`, mas usando `reg_id`/
 `reg_mask` no lugar de todo o índice — ou seja, a mesma lógica de pares
 `(pos0, pos1)` e tipos de matriz, só que restrita à fatia de memória daquela

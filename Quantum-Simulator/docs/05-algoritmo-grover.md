@@ -1,6 +1,6 @@
 # Algoritmo de Grover — mapeado ao código
 
-Arquivo: [lib_grover.cpp](../Quantum-Simulator/lib_grover.cpp). Busca, em uma
+Arquivo: [lib_grover.cpp](../src/lib_grover.cpp). Busca, em uma
 lista não estruturada de `2^(qubits-1)` itens, o item marcado por `value`,
 usando `O(sqrt(N))` consultas ao oráculo em vez de `O(N)`.
 
@@ -32,7 +32,7 @@ superposição uniforme.
 
 ## 3. O oráculo — `Oracle1`
 
-[lib_grover.cpp:75](../Quantum-Simulator/lib_grover.cpp#L75). Monta um step
+[lib_grover.cpp:75](../src/lib_grover.cpp#L75). Monta um step
 onde cada qubit do registrador de busca é um **controle** (com valor = o bit
 correspondente de `value`) do mesmo grupo, e o qubit 0 é o **alvo** com
 porta `X`. Ou seja: "se o registrador de busca == `value`, aplique X no
@@ -51,7 +51,7 @@ for (i = qubits-1; i >= 1; i--){ X(i); H(i); }
 Isso é a forma padrão de implementar o difusor `2|s><s| - I`: mudar de base
 para que o estado `|00...0>` vire `|11...1>` (via `H` seguido de `X` em cada
 qubit), aplicar um `Z` multi-controlado (`ControledZ`,
-[lib_grover.cpp:91](../Quantum-Simulator/lib_grover.cpp#L91), que inverte a
+[lib_grover.cpp:91](../src/lib_grover.cpp#L91), que inverte a
 fase *apenas* de `|11...1>`), e desfazer a mudança de base. O efeito líquido
 é inverter a fase de todo estado exceto o `|00...0>` original, o que
 equivale a refletir as amplitudes em torno da média.
