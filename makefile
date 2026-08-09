@@ -1,67 +1,51 @@
 # Build tools
-#NVCC = nvcc $(ARCH) -ccbin clang++
-#CXX = clang++
 ARCH = -arch=sm_52
-
 NVCC = nvcc $(ARCH)
-CXX = g++
-GCC = gcc
+CXX  = g++
 
-#QBS_REGION = 4
-#D = -D QBS_REGION=$(QBS_REGION)
-OPS_BLOCK=300
+# Build parameters
+OPS_BLOCK = 300
+INCLUDES  = -Iinclude
 
-INCLUDES = -Iinclude
+CXXFLAGS  = $(INCLUDES)
+NVCCFLAGS = $(INCLUDES)
+LDFLAGS   = -Xcompiler "-fopenmp"
 
-# here are all the objects
-GPUOBJS = kernel.o
-OBJS = dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o
+SRC = src
 
+# Object groups
+CORE_OBJS = dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o
+GPU_OBJS  = kernel.o
 
-# make and compile
+.PHONY: all clean
+
+all: shor grover general
 
 # executables
 
-shor: shor.o $(OBJS) $(GPUOBJS)
-	$(NVCC) -o shor.out shor.o $(OBJS) $(GPUOBJS) -Xcompiler "-fopenmp"
+shor: shor.o $(CORE_OBJS) $(GPU_OBJS)
+	$(NVCC) -o shor.out $^ $(LDFLAGS)
 
-grover: grover.o $(OBJS) $(GPUOBJS)
-	$(NVCC) -o grover.out grover.o $(OBJS) $(GPUOBJS) -Xcompiler "-fopenmp"
+grover: grover.o $(CORE_OBJS) $(GPU_OBJS)
+	$(NVCC) -o grover.out $^ $(LDFLAGS)
 
-general: general.o $(OBJS) $(GPUOBJS)
-	$(NVCC) -o general.out general.o $(OBJS) $(GPUOBJS) -Xcompiler "-fopenmp"
+general: general.o $(CORE_OBJS) $(GPU_OBJS)
+	$(NVCC) -o general.out $^ $(LDFLAGS)
 
-# objects
+# entry points also need OpenMP at compile time
+shor.o general.o grover.o: CXXFLAGS += -fopenmp
 
-dgm.o: src/dgm.cu
-	$(NVCC) -c src/dgm.cu $(INCLUDES) -Xcompiler "-fopenmp -O3 -fcx-limited-range"
+# per-file extra flags
+dgm.o: NVCCFLAGS += -Xcompiler "-fopenmp -O3 -fcx-limited-range"
+kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK)
 
-kernel.o: src/kernel.cu
-	$(NVCC) -c -D OPS_BLOCK=$(OPS_BLOCK) src/kernel.cu $(INCLUDES)
+# pattern rules
 
-gates.o: src/gates.cpp
-	$(CXX) -c src/gates.cpp $(INCLUDES)
+%.o: $(SRC)/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-common.o: src/common.cpp
-	$(CXX) -c src/common.cpp $(INCLUDES)
-
-lib_general.o: src/lib_general.cpp
-	$(CXX) -c src/lib_general.cpp $(INCLUDES)
-
-lib_shor.o: src/lib_shor.cpp
-	$(CXX) -c src/lib_shor.cpp $(INCLUDES)
-
-lib_grover.o: src/lib_grover.cpp
-	$(CXX) -c src/lib_grover.cpp $(INCLUDES)
-
-grover.o: src/grover.cpp
-	$(CXX) -c src/grover.cpp $(INCLUDES) -fopenmp
-
-shor.o: src/shor.cpp
-	$(CXX) -c src/shor.cpp $(INCLUDES) -fopenmp
-
-general.o: src/general.cpp
-	$(CXX) -c src/general.cpp $(INCLUDES) -fopenmp
+%.o: $(SRC)/%.cu
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
-	rm *.o *.out
+	rm -f *.o *.out

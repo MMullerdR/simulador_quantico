@@ -1,0 +1,27 @@
+# Build artifacts (see makefile)
+*.o
+*.out
+*.obj
+*.exe
+*.a
+*.so
+
+# CUDA
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
