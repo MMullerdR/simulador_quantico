@@ -12,40 +12,50 @@ NVCCFLAGS = $(INCLUDES)
 LDFLAGS   = -Xcompiler "-fopenmp"
 
 SRC = src
+OUT = outputs
 
 # Object groups
-CORE_OBJS = dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o
-GPU_OBJS  = kernel.o
+CORE_OBJS = $(addprefix $(OUT)/, dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o)
+GPU_OBJS  = $(OUT)/kernel.o
 
-.PHONY: all clean
+.PHONY: all clean shor grover general
 
 all: shor grover general
 
-# executables
+# executables (phony aliases for the real files under $(OUT))
 
-shor: shor.o $(CORE_OBJS) $(GPU_OBJS)
-	$(NVCC) -o shor.out $^ $(LDFLAGS)
+shor: $(OUT)/shor.out
+grover: $(OUT)/grover.out
+general: $(OUT)/general.out
 
-grover: grover.o $(CORE_OBJS) $(GPU_OBJS)
-	$(NVCC) -o grover.out $^ $(LDFLAGS)
+$(OUT)/shor.out: $(OUT)/shor.o $(CORE_OBJS) $(GPU_OBJS)
+	$(NVCC) -o $@ $^ $(LDFLAGS)
 
-general: general.o $(CORE_OBJS) $(GPU_OBJS)
-	$(NVCC) -o general.out $^ $(LDFLAGS)
+$(OUT)/grover.out: $(OUT)/grover.o $(CORE_OBJS) $(GPU_OBJS)
+	$(NVCC) -o $@ $^ $(LDFLAGS)
+
+$(OUT)/general.out: $(OUT)/general.o $(CORE_OBJS) $(GPU_OBJS)
+	$(NVCC) -o $@ $^ $(LDFLAGS)
 
 # entry points also need OpenMP at compile time
-shor.o general.o grover.o: CXXFLAGS += -fopenmp
+$(OUT)/shor.o $(OUT)/general.o $(OUT)/grover.o: CXXFLAGS += -fopenmp
 
 # per-file extra flags
-dgm.o: NVCCFLAGS += -Xcompiler "-fopenmp -O3 -fcx-limited-range"
-kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK)
+$(OUT)/dgm.o: NVCCFLAGS += -Xcompiler "-fopenmp -O3 -fcx-limited-range"
+$(OUT)/kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK)
 
-# pattern rules
+# pattern rules (the "| $(OUT)" order-only prerequisite makes sure the
+# output folder exists before compiling, without forcing a rebuild every
+# time the folder's own timestamp changes)
 
-%.o: $(SRC)/%.cpp
+$(OUT)/%.o: $(SRC)/%.cpp | $(OUT)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-%.o: $(SRC)/%.cu
+$(OUT)/%.o: $(SRC)/%.cu | $(OUT)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
+$(OUT):
+	mkdir -p $(OUT)
+
 clean:
-	rm -f *.o *.out
+	rm -rf $(OUT)

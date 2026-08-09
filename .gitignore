@@ -1,6 +1,5 @@
 # Build artifacts (see makefile)
-*.o
-*.out
+/outputs/
 *.obj
 *.exe
 *.a
