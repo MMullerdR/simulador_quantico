@@ -1,7 +1,7 @@
-#include "lib_grover.h"
-#include "dgm.h"
-#include "common.h"
-#include "gates.h"
+#include "../include/lib_grover.h"
+#include "../include/dgm.h"
+#include "../include/common.h"
+#include "../include/gates.h"
 #include <cmath>
 #include <iostream>
 #include <algorithm>
