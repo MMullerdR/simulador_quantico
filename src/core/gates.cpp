@@ -1,4 +1,4 @@
-#include "../include/gates.h"
+#include "../../include/gates.h"
 #include <iostream>
 #include <cmath>
 

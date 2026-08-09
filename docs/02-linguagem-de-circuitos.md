@@ -4,8 +4,8 @@ O simulador não tem uma API tipo `circuit.h(0); circuit.cnot(0,1);`. Em vez
 disso, um "passo" (*step*) do circuito — ou seja, uma camada de portas que
 atuam simultaneamente em qubits diferentes — é escrito como uma **string com
 um token por qubit, separados por vírgula**. Isso é gerado pelas funções de
-[gates.cpp](../src/gates.cpp) e depois interpretado por
-`DGM::genGroups` + `DGM::genPTs` em [dgm.cu](../src/dgm.cu).
+[gates.cpp](../src/core/gates.cpp) e depois interpretado por
+`DGM::genGroups` + `DGM::genPTs` em [dgm.cu](../src/core/dgm.cu).
 
 ## 1. Os tokens
 
@@ -27,7 +27,7 @@ grupo diferentes.
 
 ### Exemplo: CNOT
 
-`gates.cpp::CNot(qubits, ctrl, target, cv)` ([gates.cpp:66](../src/gates.cpp#L66))
+`gates.cpp::CNot(qubits, ctrl, target, cv)` ([gates.cpp:66](../src/core/gates.cpp#L66))
 gera, para `qubits=3, ctrl=0, target=2, cv=1`:
 
 ```
@@ -61,7 +61,7 @@ independentemente por `genGroups`.
 
 ## 2. `DGM::genGroups` — de string para grupos
 
-[dgm.cu:238](../src/dgm.cu#L238). Recebe um step (string), separa
+[dgm.cu:238](../src/core/dgm.cu#L238). Recebe um step (string), separa
 por vírgula (`Tokenize`) e percorre token a token, acumulando um
 `map<long, Group>` (grupo → controles e alvos):
 
@@ -75,7 +75,7 @@ por vírgula (`Tokenize`) e percorre token a token, acumulando um
 
 ## 3. `DGM::genPTs` — de grupos para `PT`
 
-[dgm.cu:285](../src/dgm.cu#L285). Para cada grupo:
+[dgm.cu:285](../src/core/dgm.cu#L285). Para cada grupo:
 
 1. Calcula `ctrl_mask` e `ctrl_value` (inteiros de `qubits` bits) a partir das
    posições e valores dos controles daquele grupo — convertendo a posição no
@@ -95,7 +95,7 @@ condicionada a um padrão de bits de controle**.
 
 Um circuito completo pode ter vários steps separados por `;`
 (`DGM::setFunction(string function, ...)` faz `Tokenize(function, steps, ";")`,
-[dgm.cu:204](../src/dgm.cu#L204)), ou já vir como
+[dgm.cu:204](../src/core/dgm.cu#L204)), ou já vir como
 `vector<string>` (um item = um step). `setFunction` monta, para cada step, os
 `PT`s daquele step, ordena (`increasing`/`decreasing`, alternando a cada step
 — uma heurística de ordenação para melhorar localidade/coalescimento) e
@@ -108,7 +108,7 @@ motor (`while (pts[i] != NULL)`) depende disso.
 
 ## 5. Catálogo de portas (`Gates`)
 
-[gates.h](../include/gates.h) / [gates.cpp](../src/gates.cpp).
+[gates.h](../include/gates.h) / [gates.cpp](../src/core/gates.cpp).
 `Gates::list` é um `map<string, float complex*>` **estático** (compartilhado
 por todas as instâncias) com as portas base: `H`, `X`, `Y`, `Z`, `R1`, `R2`,
 `R3`. Cada matriz é um array de 4 complexos em ordem *row-major*:

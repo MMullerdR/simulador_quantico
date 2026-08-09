@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "../include/common.h"
+#include "../../include/common.h"
 
 #define M_RANGE 512
 #define M_PREC 10000

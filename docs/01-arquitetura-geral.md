@@ -4,7 +4,7 @@
 
 Um registrador de `qubits` qubits é representado por um vetor de
 `2^qubits` números complexos (`float complex *state`, alocado em
-`DGM::allocateMemory()`, [dgm.cu:101](../src/dgm.cu#L101)):
+`DGM::allocateMemory()`, [dgm.cu:101](../src/core/dgm.cu#L101)):
 
 ```c
 state = (float complex*) calloc(pow(2, qubits), sizeof(float complex));
@@ -28,7 +28,7 @@ long shift = (qubits - 1 - q_pos);   // dgm.cu:122
 
 e na hora de transformar a posição de uma porta no circuito (`pos_ops`, contado
 da esquerda) em um "bit de deslocamento" (`end`) usado durante a execução
-(`DGM::genPTs`, [dgm.cu:314](../src/dgm.cu#L314)):
+(`DGM::genPTs`, [dgm.cu:314](../src/core/dgm.cu#L314)):
 
 ```c
 pt->start = qubits - gp.pos_ops[p];
@@ -74,7 +74,7 @@ dgm.freeMemory();
 
 ## 3. Os quatro backends de execução
 
-`DGM::execute()` ([dgm.cu:361](../src/dgm.cu#L361)) despacha para um
+`DGM::execute()` ([dgm.cu:361](../src/core/dgm.cu#L361)) despacha para um
 dos quatro caminhos, todos calculando a mesma coisa:
 
 | `exec_type`   | Função                                    | Onde                          | Ideia                                                                 |

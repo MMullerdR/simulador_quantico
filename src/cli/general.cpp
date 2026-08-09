@@ -1,5 +1,5 @@
-#include "../include/lib_general.h"
-#include "../include/dgm.h"
+#include "../../include/lib_general.h"
+#include "../../include/dgm.h"
 #include <vector>
 #include <iostream>
 #include <sys/time.h>

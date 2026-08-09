@@ -1,4 +1,4 @@
-#include "../include/common.h"
+#include "../../include/common.h"
 #include <math.h>
 
 float round_precision = 0.000000001;

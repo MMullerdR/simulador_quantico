@@ -6,6 +6,18 @@ CPU+GPU simultâneo. Ele não usa nenhuma biblioteca de "circuito quântico" pro
 tudo, desde o parser de portas até a aplicação da matriz na memória, é escrito à mão
 em C/C++/CUDA, com muita manipulação de bits para performance.
 
+## Estrutura de pastas
+
+```
+include/            headers (.h) — comuns a todo o projeto
+src/
+ ├─ core/           motor de simulação: common.cpp, dgm.cu, gates.cpp, kernel.cu
+ ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
+ └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
+outputs/            gerado pelo `make` (.o e .out) — não versionado
+docs/                esta documentação
+```
+
 Esta documentação foi escrita para dar entendimento *profundo* de como o simulador
 funciona por dentro, não apenas listar o que cada arquivo faz. Ordem sugerida de leitura:
 

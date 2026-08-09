@@ -14,6 +14,11 @@ LDFLAGS   = -Xcompiler "-fopenmp"
 SRC = src
 OUT = outputs
 
+# src/ is split by role (core engine, algorithm libraries, CLI entry
+# points); VPATH lets the pattern rules below find a %.cpp/%.cu by name
+# without caring which of the three subfolders it actually lives in.
+VPATH = $(SRC)/core:$(SRC)/algorithms:$(SRC)/cli
+
 # Object groups
 CORE_OBJS = $(addprefix $(OUT)/, dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o)
 GPU_OBJS  = $(OUT)/kernel.o
@@ -48,10 +53,10 @@ $(OUT)/kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK)
 # output folder exists before compiling, without forcing a rebuild every
 # time the folder's own timestamp changes)
 
-$(OUT)/%.o: $(SRC)/%.cpp | $(OUT)
+$(OUT)/%.o: %.cpp | $(OUT)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(OUT)/%.o: $(SRC)/%.cu | $(OUT)
+$(OUT)/%.o: %.cu | $(OUT)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 $(OUT):

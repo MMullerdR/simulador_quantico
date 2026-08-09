@@ -1,7 +1,7 @@
-#include "../include/lib_general.h"
-#include "../include/dgm.h"
-#include "../include/common.h"
-#include "../include/gates.h"
+#include "../../include/lib_general.h"
+#include "../../include/dgm.h"
+#include "../../include/common.h"
+#include "../../include/gates.h"
 #include <cmath>
 #include <iostream>
 #include <algorithm>

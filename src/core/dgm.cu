@@ -1,5 +1,5 @@
 #include <iostream>
-#include "../include/dgm.h"
+#include "../../include/dgm.h"
 #include <omp.h>
 #include <unistd.h>
 #include <cstdio>

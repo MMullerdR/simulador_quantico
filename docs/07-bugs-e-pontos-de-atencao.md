@@ -6,7 +6,7 @@ bug de corretude escondido. Atualizar esta lista conforme formos mexendo.
 
 ## 1. [BUG PROVÁVEL] `genRot` sempre gera/reusa a porta `"Rot_0"` — afeta o Shor
 
-**Onde:** [lib_shor.cpp:103-128](../src/lib_shor.cpp#L103)
+**Onde:** [lib_shor.cpp:103-128](../src/algorithms/lib_shor.cpp#L103)
 
 ```c
 string genRot(int qubits, int reg, long value){
@@ -34,7 +34,7 @@ do laço ele sempre vale `0`, independente do valor original. Ou seja, o nome
 gerado é sempre `"Rot_0"`, não importa qual `res` foi passado.
 
 Isso interage mal com `Gates::addGate`
-([gates.cpp:33](../src/gates.cpp#L33)):
+([gates.cpp:33](../src/core/gates.cpp#L33)):
 
 ```c
 bool Gates::addGate(string name, float complex* matrix){
@@ -68,12 +68,12 @@ nomes realmente únicos por chamada.
 ## 2. Código morto: `CpuExecution2_*` e `CpuExecution3_*`
 
 **Onde:** [dgm.h:137-143](../include/dgm.h#L137),
-[dgm.cu:529-783](../src/dgm.cu#L529)
+[dgm.cu:529-783](../src/core/dgm.cu#L529)
 
 Três famílias de funções (`_1_*`, `_2_*`, `_3_*`) implementam o mesmo
 cálculo (denso / diagonal principal / diagonal secundária) de formas
 diferentes. `DGM::execute()` só despacha para `CpuExecution1(it)`
-([dgm.cu:361](../src/dgm.cu#L361)) — as famílias `2` e `3`
+([dgm.cu:361](../src/core/dgm.cu#L361)) — as famílias `2` e `3`
 não são chamadas de lugar nenhum no projeto atual. Parecem experimentos de
 otimização anteriores (a família `3`, com os vetores `gap`/`max`, é uma
 tentativa de pular blocos contíguos de bits livres de forma mais eficiente
@@ -83,7 +83,7 @@ ou remove.
 
 ## 3. `PT::destructor()` provavelmente nunca libera memória
 
-**Onde:** [common.cpp:11-15](../src/common.cpp#L11)
+**Onde:** [common.cpp:11-15](../src/core/common.cpp#L11)
 
 ```c
 void PT::destructor(){
@@ -104,7 +104,7 @@ importar se o objetivo for rodar circuitos muito grandes/repetidos.
 
 ## 4. `DGM::freeMemory()` chamado sobre estado que não foi alocado por `DGM`
 
-**Onde:** `GenericExecute` ([dgm.cu:28](../src/dgm.cu#L28)) usa
+**Onde:** `GenericExecute` ([dgm.cu:28](../src/core/dgm.cu#L28)) usa
 `dgm.setMemory(state)` (que não copia, só aponta `state` para o ponteiro
 recebido). Se o chamador espera manter posse desse ponteiro depois, é
 preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
@@ -114,7 +114,7 @@ preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
 ## 5. `Gates::list` é `static` (compartilhado entre todas as instâncias)
 
 **Onde:** [gates.h:29](../include/gates.h#L29),
-[gates.cpp:7](../src/gates.cpp#L7)
+[gates.cpp:7](../src/core/gates.cpp#L7)
 
 Não é um bug isoladamente, mas é a causa raiz de por que o problema do item
 1 se manifesta como está: como `Gates::list` é global/estático, portas

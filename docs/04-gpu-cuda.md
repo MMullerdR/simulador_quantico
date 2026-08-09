@@ -24,7 +24,7 @@ shared memory.
 
 ## 2. `ApplyValuesC01` — o kernel principal
 
-[kernel.cu:60](../src/kernel.cu#L60), um kernel *template* em
+[kernel.cu:60](../src/core/kernel.cu#L60), um kernel *template* em
 `t_TAM_BLOCK` (threads por bloco CUDA), `t_REPT` (quantas posições cada
 thread processa) e `t_COALESC` (bits coalescidos). Passos:
 
@@ -46,16 +46,16 @@ thread processa) e `t_COALESC` (bits coalescidos). Passos:
 3. **Copiar de volta**: mesmo padrão de índice do passo 1, mas escrevendo
    `s[...]` de volta em `gpu_pointer[...]`.
 
-`DEV_OP` ([kernel.cu:18](../src/kernel.cu#L18)) é o equivalente,
+`DEV_OP` ([kernel.cu:18](../src/core/kernel.cu#L18)) é o equivalente,
 do lado da GPU, da struct `PT` do lado da CPU: matriz 2x2 + os argumentos de
 controle/deslocamento pré-calculados por `PT::setArgsGPU`
-([common.cpp:86](../src/common.cpp#L86)), que ajusta as máscaras
+([common.cpp:86](../src/core/common.cpp#L86)), que ajusta as máscaras
 de controle considerando que parte dos qubits está "dentro" da região
 coalescida e parte "fora".
 
 ## 3. Como as portas são agrupadas em blocos (`GpuExecution01`)
 
-[kernel.cu:124](../src/kernel.cu#L124). Antes de chamar o
+[kernel.cu:124](../src/core/kernel.cu#L124). Antes de chamar o
 kernel, o código CPU percorre a lista de `PT`s tentando juntar o máximo de
 portas consecutivas que **cabem na mesma região de qubits** (região de
 `qbs_region` bits, respeitando `t_COALESC`), monta o array `operators[]`
@@ -69,8 +69,8 @@ CUDA templates precisam que os parâmetros (`t_TAM_BLOCK`, `t_REPT`,
 `t_COALESC`) sejam conhecidos em **tempo de compilação**. Como os valores
 reais (`tam_block`, `rept`, `coalesc`) só são conhecidos em tempo de
 execução (vêm de linha de comando/tuning), o código faz uma cascata de
-`switch` ([kernel.cu:270](../src/kernel.cu#L270) e
-[kernel.cu:394](../src/kernel.cu#L394)) que, para cada
+`switch` ([kernel.cu:270](../src/core/kernel.cu#L270) e
+[kernel.cu:394](../src/core/kernel.cu#L394)) que, para cada
 combinação suportada de valores, chama a instanciação certa do template.
 É verboso, mas é a forma padrão de "despachar" para templates CUDA a partir
 de parâmetros dinâmicos.
@@ -88,12 +88,12 @@ kernel para evitar condição de corrida entre elas.
 
 ## 6. `ProjectState` / `GetState` — a ponte para o modo híbrido
 
-[kernel.cu:434](../src/kernel.cu#L434) e
-[kernel.cu:475](../src/kernel.cu#L475). Copiam **apenas uma
+[kernel.cu:434](../src/core/kernel.cu#L434) e
+[kernel.cu:475](../src/core/kernel.cu#L475). Copiam **apenas uma
 região** (um subconjunto de índices que compartilham os bits fora de
 `reg_mask` iguais a `reg_id`) entre a memória do host e a GPU, em vez do
 vetor inteiro. É isso que permite ao `HybridExecution` (ver
 [03-motor-de-execucao-cpu.md](03-motor-de-execucao-cpu.md), seção 5, e o
-código em [dgm.cu:1002](../src/dgm.cu#L1002)) mandar só a fatia
+código em [dgm.cu:1002](../src/core/dgm.cu#L1002)) mandar só a fatia
 do estado que a GPU vai processar naquele momento, enquanto o resto do
 estado continua sendo processado pelas threads de CPU em paralelo.

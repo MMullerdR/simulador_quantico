@@ -1,5 +1,5 @@
-#include "../include/lib_grover.h"
-#include "../include/dgm.h"
+#include "../../include/lib_grover.h"
+#include "../../include/dgm.h"
 #include <vector>
 #include <iostream>
 #include <sys/time.h>
