@@ -9,9 +9,11 @@ PT::PT(){
 }
 
 void PT::destructor(){
-	if ((matrix_size != 1) && !matrix) free(matrix);
-	if (!control_bit_positions) free(control_bit_positions);
-	if (!control_rest) free(control_rest);
+	// matrix é emprestado de Gates::list (cache estático de matrizes de
+	// porta, compartilhado entre PTs e entre execuções) — nunca é dono
+	// desse ponteiro, então nunca deve liberá-lo (ver docs/07, item 3).
+	if (control_bit_positions) free(control_bit_positions);
+	if (control_rest) free(control_rest);
 }
 
 // Retorna quantos controles têm posição de bit menor que "qubit" — parte

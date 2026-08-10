@@ -49,27 +49,33 @@ nunca era chamada) depois de confirmado por grep que não havia nenhuma
 chamada a nenhuma delas. `CpuExecution1_*` (a família realmente usada)
 não foi tocada.
 
-## 3. `PT::destructor()` provavelmente nunca libera memória
+## 3. [CORRIGIDO] `PT::destructor()` nunca liberava `control_bit_positions`/`control_rest`
 
-**Onde:** [common.cpp:11-15](../src/core/common.cpp#L11)
+**Onde:** [common.cpp:11-16](../src/core/common.cpp#L11)
 
-```c
-void PT::destructor(){
-    if ((matrix_size != 1) && !matrix) free(matrix);
-    if (!control_bit_positions) free(control_bit_positions);
-    if (!control_rest) free(control_rest);
-}
-```
+**O bug:** as três condições estavam invertidas (`!matrix`/`!control_bit_positions`/
+`!control_rest` em vez de sem a negação) — ou seja, cada `free()` só rodava
+quando o ponteiro já era `NULL`, o que não libera nada de útil.
 
-As condições estão invertidas: `!matrix` só é verdadeiro quando `matrix ==
-NULL` — ou seja, `free(matrix)` só roda quando `matrix` já é `NULL` (o que
-não libera nada de útil e depender de `free(NULL)` ser um no-op). O mesmo
-vale para `control_bit_positions`/`control_rest`. O provável objetivo
-original era `if (matrix) free(matrix);` (liberar quando o ponteiro
-**existe**). Na prática
-isso é um vazamento de memória lento (cada `PT` alocado nunca libera sua
-matriz/arrays de controle), pouco crítico para execuções curtas, mas pode
-importar se o objetivo for rodar circuitos muito grandes/repetidos.
+**Não é tão simples quanto inverter as três condições de volta.** Investigando
+antes de corrigir: `matrix` **não pertence** ao `PT` — é sempre um ponteiro
+emprestado de `Gates::list` (`gates.getMatrix(...)`, o cache estático de
+matrizes de porta, ver item 5). Se essa condição também fosse invertida para
+`if (matrix) free(matrix);`, o resultado seria bem pior que o leak original:
+`free()` numa matriz **compartilhada**, causando double-free/use-after-free
+na próxima vez que qualquer outro `PT` (ou execução futura) referenciasse a
+mesma porta pelo nome.
+
+**Correção aplicada (2026-08-10):** `control_bit_positions` (alocado com
+`malloc` por `PT` em `DGM::genPTs`, portanto de posse exclusiva daquele
+`PT` — esse sim um vazamento real) e `control_rest` (hoje sempre `NULL` na
+prática, corrigido por consistência) passaram a ser liberados corretamente.
+`matrix` foi deixado como estava, com um comentário explicando por que
+nunca deve ser liberado ali.
+
+**Verificado:** compila limpo; `shor.out`/`grover.out`/`general.out`
+rodados no WSL sem crash (bom teste de estresse, já que cada
+`setFunction(reset=true)` aloca e libera um lote de `PT`s).
 
 ## 4. `DGM::freeMemory()` chamado sobre estado que não foi alocado por `DGM`
 
