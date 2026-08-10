@@ -98,7 +98,7 @@ diferentes do mesmo `Shor()`) colidem. Vale ter isso em mente ao criar
 qualquer porta nova dinamicamente (sempre garantir nomes realmente únicos,
 ou aceitar que o cache seja intencional quando o valor for de fato o mesmo).
 
-## 6. [CORRIGIDO] Segfault em `t_PAR_CPU` quando `cpu_region_bits > qubits`
+## 6. [CORRIGIDO] Segfault em `t_PAR_CPU`/`t_HYBRID` quando `region_bits > qubits` disponíveis
 
 **Onde:** `src/cli/general.cpp` (defaults do `main()`) +
 `PCpuExecution1` em [dgm_par_exec.cpp:8](../src/core/dgm_par_exec.cpp#L8).
@@ -130,9 +130,46 @@ if (region_bits > qubits) region_bits = qubits;
 normalmente e imprime a amplitude uniforme correta (`0.03125 = 1/√2¹⁰`),
 sem precisar mais do workaround de pedir mais qubits.
 
-**Pendente:** `HybridExecution` (modo `t_HYBRID`, que precisa de GPU real
-pra testar) tem uma lógica de região parecida e pode ter o mesmo problema
-latente — não corrigido ainda, só sinalizado aqui.
+**[CORRIGIDO] `HybridExecution` tinha o mesmo bug, em dois lugares:**
+`global_region_bits` (inicializado com o valor fixo `qubits_limit = 20`) e
+`cpu_region_bits` (mesmo default de 14 do `t_PAR_CPU`) — ambos usados como
+expoente de `1 << (... - region_bits)` do mesmo jeito que `PCpuExecution1`,
+em [dgm_par_exec.cpp:229](../src/core/dgm_par_exec.cpp#L229). Diferente do
+bug do `t_PAR_CPU` (que só aparecia com uma combinação específica de
+argumentos de linha de comando), este dispara **sempre** que `qubits <
+qubits_limit` (ou seja, em praticamente qualquer circuito de teste, já que
+20 qubits é um registrador bem grande pra simulação em CPU).
+
+Corrigido com o mesmo clamp em ambos os pontos (`global_region_bits` contra
+`qubits`, e uma cópia local de `cpu_region_bits` contra `global_region_bits`,
+já que a região de CPU é recortada de dentro da região global — não pode
+usar o member `cpu_region_bits` diretamente porque ele é compartilhado
+entre as threads OpenMP).
+
+Ao contrário do que este item dizia antes, **não é necessário ter uma GPU
+real pra exercitar esse caminho**: o branch de CPU dentro de
+`HybridExecution` (`omp_get_thread_num()!=0`) roda `PCpuExecution1_0` puro
+em C++, sem depender de `kernel.cu`/`nvcc` — só o branch da thread 0 (GPU)
+depende do backend real. Então `t_HYBRID` com `thread_count > 1` já
+exercita o código corrigido mesmo num build `GPU=stub`.
+
+**Verificado no WSL:** `general.out 10 3 4` (10 qubits — abaixo de
+`qubits_limit`/`global_coalesced_bits`, o cenário que dispara o bug) dava
+`free(): invalid pointer` antes da correção; com ela, roda sem crash. Com
+`general.out 16 3 4` (qubits suficiente pra não colidir com o
+`global_coalesced_bits` fixo em 15) também roda limpo.
+
+**Nota sobre corretude (não é bug, é limitação de teste sem GPU):** com
+`GPU=stub`, o resultado do circuito pode aparecer como se nada tivesse
+sido aplicado (estado permanece em `|0>`). Isso acontece porque, com
+`global_coalesced_bits` fixo em 15 e um circuito pequeno, o circuito
+inteiro acaba cabendo numa única "região" — e o desempate entre threads
+por essa única região frequentemente entrega o lote inteiro pra thread 0
+(o branch de GPU), que no `kernel_stub.cpp` é *no-op* por definição.
+Validar a execução híbrida de fato (CPU **e** GPU processando partes
+diferentes do estado ao mesmo tempo) só é possível com `make GPU=real` e
+hardware NVIDIA — segue como limitação conhecida do ambiente de
+desenvolvimento atual, não deste fix.
 
 ## 7. Build de `kernel.cu` anormalmente lento (`nvcc`/`cicc`) numa máquina sem GPU
 
