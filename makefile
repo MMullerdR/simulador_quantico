@@ -47,7 +47,10 @@ LDFLAGS  = -Xcompiler "-fopenmp"
 endif
 
 # Object groups
-CORE_OBJS = $(addprefix $(OUT)/, dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o)
+# dgm.cpp foi dividido por responsabilidade (ver docs/) e lib_shor.cpp
+# separou a matemática pura e a construção de circuito da orquestração
+# do algoritmo em si.
+CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o)
 
 .PHONY: all clean shor grover general
 
@@ -72,7 +75,7 @@ $(OUT)/general.out: $(OUT)/general.o $(CORE_OBJS) $(GPU_OBJS)
 $(OUT)/shor.o $(OUT)/general.o $(OUT)/grover.o: CXXFLAGS += -fopenmp
 
 # per-file extra flags
-$(OUT)/dgm.o: CXXFLAGS += -fopenmp -O3 -fcx-limited-range
+$(OUT)/dgm_core.o $(OUT)/dgm_parser.o $(OUT)/dgm_cpu_exec.o $(OUT)/dgm_par_exec.o: CXXFLAGS += -fopenmp -O3 -fcx-limited-range
 $(OUT)/kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK) $(KERNEL_OPT)
 
 # pattern rules (the "| $(OUT)" order-only prerequisite makes sure the
