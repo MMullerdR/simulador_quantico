@@ -78,7 +78,7 @@ preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
 
 ## 5. `Gates::list` é `static` (compartilhado entre todas as instâncias)
 
-**Onde:** [gates.h:29](../include/gates.h#L29),
+**Onde:** [gates.h:29](../include/core/gates.h#L29),
 [gates.cpp:7](../src/core/gates.cpp#L7)
 
 Não é um bug isoladamente, mas é a causa raiz de por que o problema do item

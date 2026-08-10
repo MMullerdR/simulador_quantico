@@ -81,7 +81,7 @@ por vírgula (`Tokenize`) e percorre token a token, acumulando um
    posições e valores dos controles daquele grupo — convertendo a posição no
    circuito para o bit de deslocamento (`qubits - pos - 1`, a mesma convenção
    do estado, ver [01](01-arquitetura-geral.md)).
-2. Para cada alvo do grupo, cria um `struct PT` ([common.h:39](../include/common.h#L39)):
+2. Para cada alvo do grupo, cria um `struct PT` ([common.h:39](../include/core/common.h#L39)):
    - `matrix` = a matriz 2x2 da porta (`Gates::getMatrix(nome)`);
    - `start`/`end` = bit de deslocamento do qubit alvo no vetor de estado;
    - `ctrl_mask`/`ctrl_value`/`ctrl_count` = o controle calculado acima;
@@ -108,7 +108,7 @@ motor (`while (pts[i] != NULL)`) depende disso.
 
 ## 5. Catálogo de portas (`Gates`)
 
-[gates.h](../include/gates.h) / [gates.cpp](../src/core/gates.cpp).
+[gates.h](../include/core/gates.h) / [gates.cpp](../src/core/gates.cpp).
 `Gates::list` é um `map<string, float complex*>` **estático** (compartilhado
 por todas as instâncias) com as portas base: `H`, `X`, `Y`, `Z`, `R1`, `R2`,
 `R3`. Cada matriz é um array de 4 complexos em ordem *row-major*:

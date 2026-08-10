@@ -1,7 +1,7 @@
-#include "../../include/lib_shor.h"
-#include "../../include/dgm.h"
-#include "../../include/common.h"
-#include "../../include/gates.h"
+#include "../../include/algorithms/lib_shor.h"
+#include "../../include/core/dgm.h"
+#include "../../include/core/common.h"
+#include "../../include/core/gates.h"
 #include <cmath>
 #include <iostream>
 #include <algorithm>

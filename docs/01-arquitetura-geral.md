@@ -41,14 +41,14 @@ Se `state[0b100] = 1` isso é o estado `|q0=1, q1=0, q2=0>`.
 
 ## 2. A classe `DGM`
 
-`DGM` ([dgm.h](../include/dgm.h)) é o objeto central. Ela guarda:
+`DGM` ([dgm.h](../include/core/dgm.h)) é o objeto central. Ela guarda:
 
 - `state` — o vetor de amplitudes (o "hardware" quântico simulado).
 - `qubits` — quantos qubits o registrador tem.
 - `pts` / `vec_pts` — a lista de operações **já compiladas** (ver
   [02-linguagem-de-circuitos.md](02-linguagem-de-circuitos.md)), terminada por `NULL`.
 - `exec_type` — qual dos 4 backends usar (`t_CPU`, `t_PAR_CPU`, `t_GPU`, `t_HYBRID`,
-  enum em [dgm.h:44](../include/dgm.h#L44)).
+  enum em [dgm.h:44](../include/core/dgm.h#L44)).
 - parâmetros de tuning de performance: `n_threads`, `cpu_region`/`cpu_coales`,
   `gpu_region`/`gpu_coales`/`tam_block`/`rept`, `multi_gpu` (explicados em
   [03](03-motor-de-execucao-cpu.md) e [04](04-gpu-cuda.md)).

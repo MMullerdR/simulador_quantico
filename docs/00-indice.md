@@ -9,7 +9,10 @@ em C/C++/CUDA, com muita manipulação de bits para performance.
 ## Estrutura de pastas
 
 ```
-include/            headers (.h) — comuns a todo o projeto
+include/
+ ├─ core/           common.h, dgm.h, gates.h
+ ├─ algorithms/     lib_general.h, lib_grover.h, lib_shor.h
+ └─ cli/            cli_common.h
 src/
  ├─ core/           motor de simulação: common.cpp, dgm.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
@@ -17,6 +20,9 @@ src/
 outputs/            gerado pelo `make` (.o e .out) — não versionado
 docs/                esta documentação
 ```
+
+`include/` espelha a divisão de `src/` — cada header vive na mesma
+subpasta (`core`/`algorithms`/`cli`) do(s) `.cpp` que ele declara.
 
 Esta documentação foi escrita para dar entendimento *profundo* de como o simulador
 funciona por dentro, não apenas listar o que cada arquivo faz. Ordem sugerida de leitura:

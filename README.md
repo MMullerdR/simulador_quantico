@@ -31,7 +31,10 @@ estão listados em
 ## Estrutura do projeto
 
 ```
-include/            headers (.h) — comuns a todo o projeto
+include/
+ ├─ core/           common.h, dgm.h, gates.h
+ ├─ algorithms/     lib_general.h, lib_grover.h, lib_shor.h
+ └─ cli/            cli_common.h
 src/
  ├─ core/           motor de simulação: common.cpp, dgm.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
@@ -66,7 +69,7 @@ Dois parâmetros de tuning no topo do `makefile`:
 
 ## Uso
 
-Tipos de execução (`enum` em `include/dgm.h`): `0=t_CPU, 1=t_PAR_CPU,
+Tipos de execução (`enum` em `include/core/dgm.h`): `0=t_CPU, 1=t_PAR_CPU,
 2=t_GPU, 3=t_HYBRID`.
 
 ```bash

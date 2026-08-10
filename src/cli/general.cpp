@@ -1,6 +1,6 @@
-#include "../../include/lib_general.h"
-#include "../../include/dgm.h"
-#include "cli_common.h"
+#include "../../include/algorithms/lib_general.h"
+#include "../../include/core/dgm.h"
+#include "../../include/cli/cli_common.h"
 #include <vector>
 #include <iostream>
 #include <sys/time.h>

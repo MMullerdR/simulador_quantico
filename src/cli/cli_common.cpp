@@ -1,5 +1,5 @@
-#include "cli_common.h"
-#include "../../include/dgm.h"
+#include "../../include/cli/cli_common.h"
+#include "../../include/core/dgm.h"
 #include <cstdlib>
 
 void parse_backend_arg(int argc, char **argv, int exec_type, int &thread_count, int &gpu_count){

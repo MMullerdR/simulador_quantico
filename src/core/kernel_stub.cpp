@@ -1,4 +1,4 @@
-#include "../../include/common.h"
+#include "../../include/core/common.h"
 #include <cstdio>
 
 // Stub temporário no lugar de kernel.cu: implementa as mesmas funções
