@@ -50,7 +50,7 @@ endif
 # dgm.cpp foi dividido por responsabilidade (ver docs/) e lib_shor.cpp
 # separou a matemática pura e a construção de circuito da orquestração
 # do algoritmo em si.
-CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o)
+CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o cli_common.o)
 
 .PHONY: all clean shor grover general
 

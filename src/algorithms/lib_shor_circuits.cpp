@@ -197,36 +197,38 @@ string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to
 	return concatena(step_ops, qubits);
 }
 
-string AddF(int qubits, int reg, int over, long value_to_add, int width){
-	return concatena(AddF(qubits, reg, over, value_to_add, width, false), qubits);
-}
-
-vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled){
+// AddF e SubF são espelhos exatos (mesma lógica de decompor 'value' em
+// rotações de fase), diferindo só no sinal da fase e no prefixo do nome
+// da porta ("ADD_" vs "SUB_" — precisa ser diferente pelo mesmo motivo
+// do QFT/RQFT acima: nomes são chaves no Gates::list estático).
+vector <string> AddSubF_impl(int qubits, int reg, int over, long value, int width, bool controlled, bool subtract){
 	int digit_count = width+1;
 	vector <float complex> rot (digit_count, 1);
 	float complex  identity;
 
 	Gates g;
 
-	long remaining_value = value_to_add;
+	long remaining_value = value;
 
 	float complex euler_e = M_E;
+	float phase_sign = subtract ? -1.0 : 1.0;
 
 	for (int digit_index = 0; digit_index < digit_count; digit_index++){
 		if (remaining_value&1)
 			for (int higher_digit_index = digit_index; higher_digit_index < digit_count; higher_digit_index++)
-				rot[higher_digit_index] *= cpowf(euler_e, 2*M_PI*I/pow(2.0, higher_digit_index-digit_index+1));
+				rot[higher_digit_index] *= cpowf(euler_e, phase_sign*2*M_PI*I/pow(2.0, higher_digit_index-digit_index+1));
 		remaining_value = remaining_value >> 1;
 	}
 
 	vector<string> step_ops(qubits, "ID");
 	string name;
+	string prefix = subtract ? "SUB_" : "ADD_";
 
 	int msb_pos = reg+width-1;
 	identity = 1;
 	for (int digit_index = 0; digit_index < digit_count; digit_index++){
 		if (rot[digit_index] != identity){
-			name = "ADD_" + int2str(value_to_add) + "_" + int2str(digit_index);
+			name = prefix + int2str(value) + "_" + int2str(digit_index);
 			g.addGate(name, 1.0, 0.0, 0.0, rot[digit_index]);
 			if (controlled) name = "Target1(" + name + ")";
 			step_ops[msb_pos-digit_index] = name;
@@ -238,6 +240,14 @@ vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width
 	step_ops[over] = name;
 
 	return step_ops;
+}
+
+string AddF(int qubits, int reg, int over, long value_to_add, int width){
+	return concatena(AddF(qubits, reg, over, value_to_add, width, false), qubits);
+}
+
+vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled){
+	return AddSubF_impl(qubits, reg, over, value_to_add, width, controlled, false);
 }
 
 string CSubF(int qubits, int ctrl1, int reg, int over, long value_to_sub, int width){
@@ -262,100 +272,65 @@ string SubF(int qubits, int reg, int over, long value_to_sub, int width){
 }
 
 vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width, bool controlled){
-	long digit_count = width+1;
-	vector <float complex> rot (digit_count, 1);
-	float complex  identity;
-
-	Gates g;
-
-	long remaining_value = value_to_sub;
-
-	float complex euler_e = M_E;
-	for (int digit_index = 0; digit_index < digit_count; digit_index++){
-		if (remaining_value&1)
-			for (int higher_digit_index = digit_index; higher_digit_index < digit_count; higher_digit_index++)
-				rot[higher_digit_index] *= cpowf(euler_e, -2*M_PI*I/pow(2.0, higher_digit_index-digit_index+1));
-		remaining_value = remaining_value >> 1;
-	}
-
-	vector<string> step_ops(qubits, "ID");
-	string name;
-
-	int msb_pos = reg+width-1;
-	identity = 1;
-	for (int digit_index = 0; digit_index < digit_count; digit_index++){
-		if (rot[digit_index] != identity){
-			name = "SUB_" + int2str(value_to_sub) + "_" + int2str(digit_index);
-			g.addGate(name, 1.0, 0.0, 0.0, rot[digit_index]);
-			if (controlled) name = "Target1(" + name + ")";
-			step_ops[msb_pos-digit_index] = name;
-		}
-	}
-
-	name = step_ops[reg-1];
-	step_ops[reg-1] = "ID";
-	step_ops[over] = name;
-
-	return step_ops;
+	return AddSubF_impl(qubits, reg, over, value_to_sub, width, controlled, true);
 }
 
 
-vector <string> QFT(int qubits, int reg, int over, int width){
-
-//        cout << "QFT" << endl;
-
+// QFT e RQFT são espelhos exatos um do outro (mesma estrutura de dois
+// laços de rotações controladas), diferindo só no sinal da fase, no
+// prefixo do nome da porta ("R" vs "R'" — precisa ser diferente porque
+// os nomes viram chaves no Gates::list estático, e addGate não
+// sobrescreve, ver docs/07 item 1) e no reverse() final do inverso.
+vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse){
 	string joined_step, name;
-	vector <string> qft;
+	vector <string> steps;
+	string prefix = inverse ? "R'" : "R";
+	float phase_sign = inverse ? -1.0 : 1.0;
 
 	Gates g;
+	float complex euler_e = M_E;
 	float complex rotation_value;
 	for (int level = 1; level <= width+1; level++){
-                name = "R" + int2str(level);
-
-//		cout << "QFT " << level << endl;
-		rotation_value = M_E;
-		rotation_value = cpowf(rotation_value, 2*M_PI*I/pow(2.0, level));
-
-//                cout << "QFT " << level << endl;
+		name = prefix + int2str(level);
+		rotation_value = cpowf(euler_e, phase_sign*2*M_PI*I/pow(2.0, level));
 		g.addGate(name, 1.0, 0.0, 0.0, rotation_value);
-//                cout << "QFT " << level << endl;
 	}
-
-//        cout << "QFT" << endl;
-
 
 	vector <string> step_ops (qubits, "ID");
 
-	qft.push_back(Hadamard(qubits, over, 1));
+	steps.push_back(Hadamard(qubits, over, 1));
 	for (int control_qubit_index = 0; control_qubit_index < width; control_qubit_index++){
 		step_ops[control_qubit_index+reg] = "Control1(1)";
-		step_ops[over] = "Target1(R" + int2str(control_qubit_index+2) + ")";
+		step_ops[over] = "Target1(" + prefix + int2str(control_qubit_index+2) + ")";
 
 		joined_step = concatena(step_ops, qubits);
-		qft.push_back(joined_step);
+		steps.push_back(joined_step);
 		step_ops[control_qubit_index+reg] = "ID";
 	}
 	step_ops[over] = "ID";
 
 	for (int target_qubit_index = 0; target_qubit_index < width; target_qubit_index++){
-		qft.push_back(Hadamard(qubits, target_qubit_index+reg, 1));
+		steps.push_back(Hadamard(qubits, target_qubit_index+reg, 1));
 
 		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
 			step_ops[control_qubit_index+reg] = "Control1(1)";
-			step_ops[target_qubit_index+reg] = "Target1(R" + int2str(control_qubit_index-target_qubit_index+1) + ")";
+			step_ops[target_qubit_index+reg] = "Target1(" + prefix + int2str(control_qubit_index-target_qubit_index+1) + ")";
 
 			joined_step = concatena(step_ops, qubits);
-			qft.push_back(joined_step);
+			steps.push_back(joined_step);
 
 			step_ops[control_qubit_index+reg] = "ID";
 		}
 		step_ops[target_qubit_index+reg] = "ID";
 	}
 
-//        cout << "QFT" << endl;
+	if (inverse) reverse(steps.begin(), steps.end());
 
+	return steps;
+}
 
-	return qft;
+vector <string> QFT(int qubits, int reg, int over, int width){
+	return QFT_impl(qubits, reg, over, width, false);
 }
 
 vector <string> QFT2(int qubits, int reg, int width){
@@ -393,50 +368,7 @@ vector <string> QFT2(int qubits, int reg, int width){
 }
 
 vector <string> RQFT(int qubits, int reg, int over, int width){
-	string joined_step;
-	vector <string> rqft;
-
-	Gates g;
-	float complex rotation_value;
-	for (int level = 1; level <= width+1; level++){
-		rotation_value = M_E;
-		rotation_value = cpowf(rotation_value, -2*M_PI*I/pow(2.0, level));
-		g.addGate("R'" + int2str(level), 1.0, 0.0, 0.0, rotation_value);
-	}
-
-	vector <string> step_ops (qubits, "ID");
-
-
-	rqft.push_back(Hadamard(qubits, over, 1));
-	for (int control_qubit_index = 0; control_qubit_index < width; control_qubit_index++){
-		step_ops[control_qubit_index+reg] = "Control1(1)";
-		step_ops[over] = "Target1(R'" + int2str(control_qubit_index+2) + ")";
-
-		joined_step = concatena(step_ops, qubits);
-		rqft.push_back(joined_step);
-		step_ops[control_qubit_index+reg] = "ID";
-	}
-	step_ops[over] = "ID";
-
-	for (int target_qubit_index = 0; target_qubit_index < width; target_qubit_index++){
-		step_ops[target_qubit_index+reg] = "H";
-		joined_step = concatena(step_ops, qubits);
-		rqft.push_back(joined_step);
-
-		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
-			step_ops[control_qubit_index+reg] = "Control1(1)";
-			step_ops[target_qubit_index+reg] = "Target1(R'" + int2str(control_qubit_index-target_qubit_index+1) + ")";
-
-			joined_step = concatena(step_ops, qubits);
-			rqft.push_back(joined_step);
-
-			step_ops[control_qubit_index+reg] = "ID";
-		}
-		step_ops[target_qubit_index+reg] = "ID";
-	}
-	reverse(rqft.begin(), rqft.end());
-
-	return rqft;
+	return QFT_impl(qubits, reg, over, width, true);
 }
 
 vector <string> CSwapR(int qubits, int ctrl, int reg1, int reg2, int width){

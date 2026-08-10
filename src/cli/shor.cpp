@@ -1,5 +1,6 @@
 #include "../../include/lib_shor.h"
 #include "../../include/dgm.h"
+#include "cli_common.h"
 #include <vector>
 #include <iostream>
 #include <sys/time.h>
@@ -46,12 +47,7 @@ int main(int argc, char** argv){
 		return 0;
 	}
 
-	if (exec_type == t_PAR_CPU || exec_type == t_HYBRID) {
-		if (argc > 3) thread_count = atoi(argv[3]);
-	}
-	else if (exec_type == t_GPU) {
-		if (argc > 3) gpu_count = atoi(argv[3]);
-	}
+	parse_backend_arg(argc, argv, exec_type, thread_count, gpu_count);
 
 	vector<int> factors;
 
