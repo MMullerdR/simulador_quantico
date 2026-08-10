@@ -149,18 +149,6 @@ public:
 	void CpuExecution1_2(PT *term, long mem_size);
 	void CpuExecution1_3(PT *term, long mem_size);
 
-	// Variações alternativas de CpuExecution1_*, não usadas por
-	// DGM::execute() atualmente — mantidas sem remoção (ver
-	// docs/07-bugs-e-pontos-de-atencao.md, item 2).
-	void CpuExecution2_1(PT *term, long mem_size);
-	void CpuExecution2_2(PT *term, long mem_size);
-	void CpuExecution2_3(PT *term, long mem_size);
-
-	void CpuExecution3_1(PT *term, long mem_size);
-	void CpuExecution3_2(PT *term, long mem_size);
-	void CpuExecution3_3(PT *term, long mem_size);
-
-
 };
 
 #endif

@@ -28,8 +28,6 @@ vector <string> CSwapR(int qubits, int ctrl, int reg1, int reg2, int width);
 vector <string> SwapOver(int qubits, int reg, int width);
 string genRot(int qubits, int reg, long phase_bits);
 
-vector <string> CU(int qubits, int ctrl, int reg1, int reg2, int width, long base_value, long number_to_factor);
-
 vector <string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor);
 vector <string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor);
 vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor);

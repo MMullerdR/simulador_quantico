@@ -145,8 +145,8 @@ void PT::printMatrix(){
 }
 
 void printMem(float complex* mem, int qubits){
-	long size = pow(2, qubits);
-	float range = 1.0/pow(2,21);
+	long size = 1L << qubits;
+	float range = 1.0/(1L << 21);
 
 	float real, imag, magnitude;
 	for (long state_index = 0; state_index < size; state_index++){
@@ -164,10 +164,10 @@ void printMem(float complex* mem, int qubits){
 }
 
 void printMemExp(float complex* mem, int qubits, int reg1, int reg2, long width){
-	long size = pow(2, qubits);
-	float range = 1.0/pow(2,21);
+	long size = 1L << qubits;
+	float range = 1.0/(1L << 21);
 
-	long mask = pow(2, width) - 1;
+	long mask = (1L << width) - 1;
 
 	float real, imag, magnitude;
 	long previous_exponent_value = 0;
@@ -192,10 +192,10 @@ void printMemExp(float complex* mem, int qubits, int reg1, int reg2, long width)
 }
 
 void printMemCheckExp(float complex* mem, int qubits, long width, long base_value, long modulus){
-	long size = pow(2, qubits);
-	float range = 1.0/pow(2,21);
+	long size = 1L << qubits;
+	float range = 1.0/(1L << 21);
 
-	long mask = pow(2, width) - 1;
+	long mask = (1L << width) - 1;
 
 	float real, imag, magnitude;
 	long previous_exponent_value = 0;

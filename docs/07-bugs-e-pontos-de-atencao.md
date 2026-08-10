@@ -34,21 +34,17 @@ Cada correção de fase distinta agora gera um nome único, então
 **Verificado:** rodando `shor.out 15 0` no WSL depois da correção, achou
 os fatores de `57` (`3 × 19`) já na primeira tentativa.
 
-## 2. Código morto: `CpuExecution2_*` e `CpuExecution3_*`
+## 2. [REMOVIDO] Código morto: `CpuExecution2_*`, `CpuExecution3_*` e `CU()`
 
-**Onde:** [dgm.h:137-143](../include/dgm.h#L137),
-[dgm.cpp:529-783](../src/core/dgm.cpp#L529)
-
-Três famílias de funções (`_1_*`, `_2_*`, `_3_*`) implementam o mesmo
-cálculo (denso / diagonal principal / diagonal secundária) de formas
-diferentes. `DGM::execute()` só despacha para `CpuExecution1(it)`
-([dgm.cpp:361](../src/core/dgm.cpp#L361)) — as famílias `2` e `3`
-não são chamadas de lugar nenhum no projeto atual. Parecem experimentos de
-otimização anteriores (a família `3`, com os vetores `gap`/`max`, é uma
-tentativa de pular blocos contíguos de bits livres de forma mais eficiente
-que a família `1`). Não são um bug, mas são peso morto — vale decidir se
-mantém como referência histórica, documenta como "não usado" (feito aqui),
-ou remove.
+Três famílias de funções em `dgm.cpp`/`dgm.h` (`_1_*`, `_2_*`, `_3_*`)
+implementavam o mesmo cálculo (denso / diagonal principal / diagonal
+secundária) de formas diferentes. `DGM::execute()` só despachava pra
+`CpuExecution1` — as famílias `2` e `3` nunca eram chamadas em lugar
+nenhum do projeto. Removidas em 2026-08-10 (junto com `CU()` em
+`lib_shor.cpp`/`lib_shor.h`, que tinha o corpo inteiro comentado e também
+nunca era chamada) depois de confirmado por grep que não havia nenhuma
+chamada a nenhuma delas. `CpuExecution1_*` (a família realmente usada)
+não foi tocada.
 
 ## 3. `PT::destructor()` provavelmente nunca libera memória
 

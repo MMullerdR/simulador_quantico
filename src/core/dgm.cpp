@@ -99,7 +99,7 @@ void DGM::erase(){
 }
 
 void DGM::allocateMemory(){
-	state = (float complex*) calloc(pow(2, qubits), sizeof(float complex));
+	state = (float complex*) calloc(1L << qubits, sizeof(float complex));
 }
 
 void DGM::setMemory(float complex* mem){
@@ -117,7 +117,7 @@ void DGM::setMemoryValue(int pos){
 }
 
 int DGM::measure(int qubit_pos){
-	long size = pow(2.0, qubits);
+	long size = 1L << qubits;
 
 	long qubit_bit_shift = (qubits - 1 - qubit_pos);
 
@@ -157,7 +157,7 @@ int DGM::measure(int qubit_pos){
 	}
 
 	long low_bits_mask;
-	low_bits_mask = pow(2, qubit_bit_shift) - 1;
+	low_bits_mask = (1L << qubit_bit_shift) - 1;
 	#pragma omp for
 	for (long state_index = 0; state_index < size/2; state_index++){
 		long pos = (state_index << 1) - (state_index&low_bits_mask);
@@ -169,7 +169,7 @@ int DGM::measure(int qubit_pos){
 }
 
 void DGM::colapse(int qubit_pos, int value){
-	long size = pow(2.0, qubits);
+	long size = 1L << qubits;
 	long qubit_bit_shift = (qubits - 1 - qubit_pos);
 
 	float probability_sum;
@@ -194,7 +194,7 @@ map <long, float> DGM::measure(vector<int> qubit_positions){
 
 	map <long, float> probabilities;
 
-	long size = pow(2.0, qubits);
+	long size = 1L << qubits;
 
 	for (long state_index = 0; state_index < size; state_index++) probabilities[state_index&qubit_positions_mask] += pow(crealf(state[state_index]), 2.0) + pow(cimagf(state[state_index]), 2.0);
 
@@ -415,7 +415,7 @@ void DGM::CountOps(int iterations){
 }
 
 void DGM::CpuExecution1(int iterations){
-	long mem_size = pow(2.0, qubits);
+	long mem_size = 1L << qubits;
 
 	for (int iteration_index = 0; iteration_index < iterations; iteration_index++){
 		long pt_index = 0;
@@ -523,266 +523,6 @@ void DGM::CpuExecution1_3(PT *term, long mem_size){ //Diagonal Secundária
 		}
 	}
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void DGM::CpuExecution2_1(PT *term, long mem_size){ //Denso
-	long pos0, pos1, target_bit_mask;
-
-	target_bit_mask = 1 << term->target_bit;
-	mem_size /= 2;
-
-	float complex tmp;
-
-	if (!term->control_count) 			//operador não controlado
-		for (long pos = 0; pos < mem_size; pos++){
-			pos0 = (pos * 2) - (pos & (target_bit_mask-1));
-			pos1 = pos0 | target_bit_mask;
-
-			tmp = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
-			state[pos1] = term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
-			state[pos0] = tmp;
-		}
-	else{					//operador controlado
-		for (long pos = 0; pos < mem_size; pos++){
-			pos0 = (pos * 2) - (pos & (target_bit_mask-1));
-			pos1 = pos0 | target_bit_mask;
-			if ((pos0 & term->control_mask) == term->control_value){
-				tmp = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
-				state[pos1] = term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
-				state[pos0] = tmp;
-			}
-		}
-		cout << endl;
-	}
-}
-
-void DGM::CpuExecution2_2(PT *term, long mem_size){ //Diagonal Principal
-	long target_bit_index = term->target_bit;
-
-	if (!term->control_count)	//operador não controlado
-		for (long pos = 0; pos < mem_size; pos++)
-			state[pos] = term->matrix[((pos >> target_bit_index) & 1) * 3] * state[pos];
-	else					//operador controlado
-		for (long pos = 0; pos < mem_size; pos++)
-			if ((pos & term->control_mask) == term->control_value)
-				state[pos] = term->matrix[((pos >> target_bit_index) & 1) * 3] * state[pos];
-
-}
-
-
-
-void DGM::CpuExecution2_3(PT *term, long mem_size){ //Diagonal Secundária
-	long pos0, pos1, target_bit_mask;
-
-	target_bit_mask = 1 << term->target_bit;
-	mem_size /= 2;
-
-	float complex tmp;
-
-	if (!term->control_count) 	//operador não controlado
-		for (long pos = 0; pos < mem_size; pos++){
-			pos0 = (pos * 2) - (pos & (target_bit_mask-1));
-			pos1 = pos0 | target_bit_mask;
-
-			tmp = term->matrix[1] * state[pos1];
-			state[pos1] = term->matrix[2] * state[pos0];
-			state[pos0] = tmp;
-		}
-	else					//operador controlado
-		for (long pos = 0; pos < mem_size; pos++){
-			pos0 = (pos * 2) - (pos & (target_bit_mask-1));
-			pos1 = pos0 | target_bit_mask;
-			if ((pos0 & term->control_mask) == term->control_value){
-				tmp = term->matrix[1] * state[pos1];
-				state[pos1] = term->matrix[2] * state[pos0];
-				state[pos0] = tmp;
-			}
-		}
-
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void DGM::CpuExecution3_1(PT *term, long mem_size){ //Denso
-	long pos0, pos1, target_bit_mask;
-
-	target_bit_mask = 1 << term->target_bit;
-
-	float complex tmp;
-
-	if (!term->control_count){ 			//operador não controlado
-		mem_size /= 2;
-		for (long pos = 0; pos < mem_size; pos++){
-			pos0 = (pos * 2) - (pos & (target_bit_mask-1));
-			pos1 = pos0 | target_bit_mask;
-
-			tmp = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
-			state[pos1] = term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
-			state[pos0] = tmp;
-		}
-	}
-	else{					//operador controlado
-		vector <long> free_bit_run_length, free_bit_run_ceiling;
-		long qubit_index, free_run_len, mask;
-
-		mask = term->control_mask | target_bit_mask;
-
-		free_run_len = 0;
-		for (qubit_index = 0; qubit_index < qubits; qubit_index++){
-			if (((mask >> qubit_index) & 1) == 0) free_run_len++;
-			else if (free_run_len){
-				free_bit_run_length.push_back(1<<(qubit_index-free_run_len));
-				free_bit_run_ceiling.push_back(1<<qubit_index);
-				free_run_len = 0;
-			}
-		}
-		if (free_run_len){
-			free_bit_run_length.push_back(1<<(qubit_index-free_run_len));
-			free_bit_run_ceiling.push_back(1<<(qubits+1));
-		}
-		else{
-			free_bit_run_length.push_back(1<<(qubits+1));
-			free_bit_run_ceiling.push_back(1<<(qubits+2));
-		}
-
-		long pos = 0;
-
-		while (pos < mem_size){
-				pos0 = pos | term->control_value;
-				pos1 = pos0 | target_bit_mask;
-
-				//cout << pos0 <<  " " << pos1 << endl;
-
-				tmp = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
-				state[pos1] = term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
-				state[pos0] = tmp;
-
-				pos += free_bit_run_length[0];
-				qubit_index = 0;
-				while (pos & free_bit_run_ceiling[qubit_index]){
-					pos ^= free_bit_run_ceiling[qubit_index++];
-					pos += free_bit_run_length[qubit_index];
-				}
-
-		}
-		//cout << endl;
-	}
-}
-
-void DGM::CpuExecution3_2(PT *term, long mem_size){ //Diagonal Principal
-	long pos0, target_bit_index = term->target_bit;
-
-	if (!term->control_count)	//operador não controlado
-		for (long pos = 0; pos < mem_size; pos++)
-			state[pos] = term->matrix[((pos >> target_bit_index) & 1) * 3] * state[pos];
-	else{					//operador controlado
-		vector <long> free_bit_run_length, free_bit_run_ceiling;
-		long qubit_index, free_run_len, mask;
-
-		mask = term->control_mask;
-
-		free_run_len = 0;
-		for (qubit_index = 0; qubit_index < qubits; qubit_index++){
-			if (((mask >> qubit_index) & 1) == 0) free_run_len++;
-			else if (free_run_len){
-				free_bit_run_length.push_back(1<<(qubit_index-free_run_len));
-				free_bit_run_ceiling.push_back(1<<qubit_index);
-				free_run_len = 0;
-			}
-		}
-		if (free_run_len){
-			free_bit_run_length.push_back(1<<(qubit_index-free_run_len));
-			free_bit_run_ceiling.push_back(1<<(qubits+1));
-		}
-		else{
-			free_bit_run_length.push_back(1<<(qubits+1));
-			free_bit_run_ceiling.push_back(1<<(qubits+2));
-		}
-
-		long pos = 0;
-
-		while (pos < mem_size){
-				pos0 = pos | term->control_value;
-
-				//cout << pos0 << endl;
-				state[pos0] = term->matrix[((pos0 >> target_bit_index) & 1) * 3] * state[pos0];
-
-				pos += free_bit_run_length[0];
-				qubit_index = 0;
-				while (pos & free_bit_run_ceiling[qubit_index]){
-					pos ^= free_bit_run_ceiling[qubit_index++];
-					pos += free_bit_run_length[qubit_index];
-				}
-
-		}
-	}
-}
-
-void DGM::CpuExecution3_3(PT *term, long mem_size){ //Diagonal Secundária
-	long pos0, pos1, target_bit_mask;
-
-	target_bit_mask = 1 << term->target_bit;
-
-
-	float complex tmp;
-
-	if (!term->control_count){ 	//operador não controlado
-		mem_size /= 2;
-		for (long pos = 0; pos < mem_size; pos++){
-			pos0 = (pos * 2) - (pos & (target_bit_mask-1));
-			pos1 = pos0 | target_bit_mask;
-
-			tmp = term->matrix[1] * state[pos1];
-			state[pos1] = term->matrix[2] * state[pos0];
-			state[pos0] = tmp;
-		}
-	}
-	else{					//operador controlado
-		vector <long> free_bit_run_length, free_bit_run_ceiling;
-		long qubit_index, free_run_len, mask;
-
-		mask = term->control_mask | target_bit_mask;
-
-		free_run_len = 0;
-		for (qubit_index = 0; qubit_index < qubits; qubit_index++){
-			if (((mask >> qubit_index) & 1) == 0) free_run_len++;
-			else if (free_run_len){
-				free_bit_run_length.push_back(1<<(qubit_index-free_run_len));
-				free_bit_run_ceiling.push_back(1<<qubit_index);
-				free_run_len = 0;
-			}
-		}
-		if (free_run_len){
-			free_bit_run_length.push_back(1<<(qubit_index-free_run_len));
-			free_bit_run_ceiling.push_back(1<<(qubits+1));
-		}
-		else{
-			free_bit_run_length.push_back(1<<(qubits+1));
-			free_bit_run_ceiling.push_back(1<<(qubits+2));
-		}
-
-		long pos = 0;
-
-		while (pos < mem_size){
-			pos0 = pos | term->control_value;
-			pos1 = pos0 | target_bit_mask;
-
-			tmp = term->matrix[1] * state[pos1];
-			state[pos1] = term->matrix[2] * state[pos0];
-			state[pos0] = tmp;
-
-			pos += free_bit_run_length[0];
-			qubit_index = 0;
-			while (pos & free_bit_run_ceiling[qubit_index]){
-				pos ^= free_bit_run_ceiling[qubit_index++];
-				pos += free_bit_run_length[qubit_index];
-			}
-		}
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1008,7 +748,7 @@ void report_num_threads(int level){
 }
 
 void DGM::HybridExecution(PT **pts){
-	long mem_size = pow(2.0, qubits);
+	long mem_size = 1L << qubits;
 	long qubits_limit = 20;
 	long global_coalesced_bits = 15; //(cpu_coalesced_bits > gpu_coalesced_bits) ? cpu_coalesced_bits : gpu_coalesced_bits;
 

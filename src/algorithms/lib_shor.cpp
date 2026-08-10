@@ -134,21 +134,6 @@ string genRot(int qubits, int reg, long phase_bits){
 	return "";
 }
 
-vector <string> CU(int qubits, int ctrl, int reg1, int reg2, int width, long base_value, long number_to_factor){
-	vector <string> m, rm, sw, u;
-/*
-	m = CMultMod(qubits, ctrl, reg1, reg2, width, a, N);
-	rm = CRMultMod(qubits, ctrl, reg1, reg2, width, mul_inv(a,N), N);
-	sw = CSwapR(qubits, ctrl, reg1, reg2+1, width);
-
-
-	u = m;
-	u.insert(u.end(), sw.begin(), sw.end());
-	u.insert(u.end(), rm.begin(), rm.end());
-*/
-	return u;
-}
-
 vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor){
 //        cout << "MULT" << endl;
 
@@ -667,8 +652,8 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 	vector <string> round_steps, sub_steps;
 
 	for (int round_index = top_round_index; round_index >= 0; round_index--){
-		base_pow_mod = modular_pow(base_value, pow(2,round_index), number_to_factor);
-		base_inv_pow_mod = modular_pow(base_inverse, pow(2,round_index), number_to_factor);
+		base_pow_mod = modular_pow(base_value, 1L << round_index, number_to_factor);
+		base_inv_pow_mod = modular_pow(base_inverse, 1L << round_index, number_to_factor);
 
 		round_steps.clear();
 

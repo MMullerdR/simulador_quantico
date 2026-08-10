@@ -28,14 +28,11 @@ int main(int argc, char **argv){
 		return 0;
 	}
 
-	if (exec_type == t_PAR_CPU) {
+	if (exec_type == t_PAR_CPU || exec_type == t_HYBRID) {
 		if (argc > 3) thread_count = atoi(argv[3]);
 	}
 	else if (exec_type == t_GPU) {
 		if (argc > 3) gpu_count = atoi(argv[3]);
-	}
-	else if (exec_type == t_HYBRID) {
-		if (argc > 3) thread_count = atoi(argv[3]);
 	}
 
 	int search_value = 10;
