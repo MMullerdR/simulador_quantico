@@ -787,6 +787,14 @@ void DGM::CpuExecution3_3(PT *term, long mem_size){ //Diagonal Secundária
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations){
+	// Sem isso, pedir uma região maior que o próprio número de qubits
+	// (ex: o cpu_region_bits=14 padrão dos CLIs com menos de 14 qubits)
+	// faz "1 << (qubits - region_bits)" mais abaixo deslocar por um
+	// expoente negativo — comportamento indefinido que na prática vira
+	// um reg_count gigante e escreve fora do vetor de estado (segfault
+	// confirmado; ver docs/07-bugs-e-pontos-de-atencao.md, item 6).
+	if (region_bits > qubits) region_bits = qubits;
+
 	long op_index, pts_start, pts_end;
 	op_index = pts_start = 0;
 	while (pts[op_index] != NULL){

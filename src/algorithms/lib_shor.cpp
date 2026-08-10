@@ -104,6 +104,13 @@ string genRot(int qubits, int reg, long phase_bits){
 	vector <string> step_ops(qubits, "ID");
 	string name;
 
+	// Guarda o valor original antes do laço abaixo consumi-lo bit a bit —
+	// precisamos dele pra dar um nome único à porta (ver
+	// docs/07-bugs-e-pontos-de-atencao.md, item 1: usar 'phase_bits' já
+	// zerado aqui fazia toda correção de fase colidir sob o nome
+	// "Rot_0", reaproveitando sempre a matriz da primeira correção).
+	long phase_bits_orig = phase_bits;
+
 	int k = 2;
 	float complex rot, euler_e;
 	euler_e = M_E;
@@ -117,7 +124,7 @@ string genRot(int qubits, int reg, long phase_bits){
 
 	if (rot != 1){
 		Gates g;
-		name = "Rot_" + int2str(phase_bits);
+		name = "Rot_" + int2str(phase_bits_orig);
 		g.addGate(name, 1.0, 0.0, 0.0, rot);
 		step_ops[reg] = name;
 

@@ -4,66 +4,35 @@ Lista viva de problemas/riscos encontrados lendo o código. Objetivo: não
 tomar decisões de "incrementar o algoritmo X" sobre uma base que já tem um
 bug de corretude escondido. Atualizar esta lista conforme formos mexendo.
 
-## 1. [BUG PROVÁVEL] `genRot` sempre gera/reusa a porta `"Rot_0"` — afeta o Shor
+## 1. [CORRIGIDO] `genRot` sempre gerava/reusava a porta `"Rot_0"` — afetava o Shor
 
-**Onde:** [lib_shor.cpp:103-128](../src/algorithms/lib_shor.cpp#L103)
+**Onde:** [lib_shor.cpp:103-131](../src/algorithms/lib_shor.cpp#L103)
 
-```c
-string genRot(int qubits, int reg, long value){
-    ...
-    rot = 1;
-    while (value){
-        if (value&1) rot *= cpowf(eps, -2*M_PI*I/pow(2.0, k));
-        value = value >> 1;   // <- 'value' é consumido bit a bit aqui
-        k++;
-    }
+**O bug:** `genRot` recebia `phase_bits` por valor e o consumia bit a bit
+num `while` pra calcular a rotação — no fim do laço `phase_bits` sempre
+valia `0`, independente do valor original. O nome da porta era montado
+**depois** desse laço (`name = "Rot_" + int2str(phase_bits)`), então
+sempre virava `"Rot_0"`, não importa qual correção de fase estivesse
+sendo aplicada. Como `Gates::addGate`
+([gates.cpp:33](../src/core/gates.cpp#L33)) não sobrescreve um nome já
+existente, só a **primeira** correção de fase de cada execução do Shor
+era realmente registrada — todas as chamadas seguintes reaplicavam essa
+mesma matriz antiga, em vez da correção certa daquela rodada.
 
-    if (rot != 1){
-        Gates g;
-        name = "Rot_" + int2str(value);   // <- 'value' já é 0 nesse ponto!
-        g.addGate(name, 1.0, 0.0, 0.0, rot);
-        func[reg] = name;
-        return concatena(func, qubits);
-    }
-    return "";
-}
-```
-
-`value` é passado por valor e é **usado como contador** no `while` — no fim
-do laço ele sempre vale `0`, independente do valor original. Ou seja, o nome
-gerado é sempre `"Rot_0"`, não importa qual `res` foi passado.
-
-Isso interage mal com `Gates::addGate`
-([gates.cpp:33](../src/core/gates.cpp#L33)):
+**Correção aplicada (2026-08-10):** guardar o valor original antes do
+laço consumi-lo:
 
 ```c
-bool Gates::addGate(string name, float complex* matrix){
-    if (Gates::list.find(name) != Gates::list.end()) return false;  // não sobrescreve!
-    Gates::list[name] = matrix;
-    return true;
-}
+long phase_bits_orig = phase_bits;
+// ... laço consome phase_bits normalmente ...
+name = "Rot_" + int2str(phase_bits_orig);
 ```
 
-Na primeira vez que `genRot` é chamado com uma correção não-trivial, a porta
-`"Rot_0"` é criada com a matriz de rotação certa. Em **todas as chamadas
-seguintes**, mesmo que a rotação correta (`rot`) seja calculada
-corretamente a partir do `res` daquela rodada, `addGate` recusa silenciosamente
-sobrescrever `"Rot_0"` — e o step aplica, no qubit `qft_qb`, a matriz da
-**primeira** correção de fase aplicada no processo, não a da rodada atual.
+Cada correção de fase distinta agora gera um nome único, então
+`Gates::addGate` não colide mais entre rodadas diferentes.
 
-**Efeito esperado:** a estimação de fase do Shor (a parte mais delicada do
-algoritmo) provavelmente aplica correções de fase erradas a partir da
-segunda vez que `genRot` gera uma correção não-trivial em uma mesma
-chamada de `Shor()`. Isso pode ser uma causa (talvez a principal) de o Shor
-falhar em encontrar fatores mais frequentemente do que a taxa de falha
-teórica do algoritmo.
-
-**Como corrigir (não aplicado ainda, só diagnóstico):** gerar o nome a
-partir do valor original, antes do laço consumir `value` — por exemplo,
-guardando `long value_orig = value;` no topo da função e usando
-`int2str(value_orig)` no nome. Também vale considerar usar `res` (o valor
-completo acumulado) em vez de reconstruir a partir de `value`, para garantir
-nomes realmente únicos por chamada.
+**Verificado:** rodando `shor.out 15 0` no WSL depois da correção, achou
+os fatores de `57` (`3 × 19`) já na primeira tentativa.
 
 ## 2. Código morto: `CpuExecution2_*` e `CpuExecution3_*`
 
@@ -123,39 +92,41 @@ diferentes do mesmo `Shor()`) colidem. Vale ter isso em mente ao criar
 qualquer porta nova dinamicamente (sempre garantir nomes realmente únicos,
 ou aceitar que o cache seja intencional quando o valor for de fato o mesmo).
 
-## 6. [BUG CONFIRMADO] Segfault em `t_PAR_CPU` quando `cpu_region > qubits`
+## 6. [CORRIGIDO] Segfault em `t_PAR_CPU` quando `cpu_region_bits > qubits`
 
 **Onde:** `src/cli/general.cpp` (defaults do `main()`) +
 `PCpuExecution1` em [dgm.cpp:789](../src/core/dgm.cpp#L789).
 
-`general.cpp` usa `cpu_region = 14` fixo como valor padrão,
-independente de quantos qubits o usuário pedir na linha de comando. Se
-`qubits < cpu_region` (ex: `general.out 10 1 2`, pedindo só 10 qubits),
-dentro de `PCpuExecution1`:
+**O bug:** `general.cpp` usa `cpu_region_bits = 14` fixo como valor
+padrão, independente de quantos qubits o usuário pedir na linha de
+comando. Se `qubits < cpu_region_bits` (ex: `general.out 10 1 2`, pedindo
+só 10 qubits), dentro de `PCpuExecution1`:
 
 ```c
-long reg_count = (1 << (qubits - region)) + 1;
+long region_count = (1 << (qubits - region_bits)) + 1;
 ```
 
-com `qubits=10` e `region=14`, vira `1 << (10 - 14)` = **`1 << -4`** —
-deslocamento por expoente negativo, comportamento indefinido em C/C++.
-Na prática isso produz um `reg_count` absurdamente grande, e o laço
-paralelo seguinte escreve em `state[pos]` muito além do vetor alocado →
-**segmentation fault** (reproduzido: `general.out 10 1 2` crasha;
+com `qubits=10` e `region_bits=14`, virava `1 << (10 - 14)` = **`1 << -4`**
+— deslocamento por expoente negativo, comportamento indefinido em C/C++.
+Na prática isso produzia um `region_count` absurdamente grande, e o laço
+paralelo seguinte escrevia em `state[pos]` muito além do vetor alocado →
+**segmentation fault** (reproduzido: `general.out 10 1 2` crashava;
 `general.out 16 1 2` não).
 
-**Confirmado que não tem relação com a renomeação** — a aritmética é
-idêntica antes e depois, só os nomes dos campos mudaram.
+**Correção aplicada (2026-08-10):** clamp logo no início de
+`PCpuExecution1`:
 
-**Workaround imediato:** rodar com `qubits >= cpu_region` (o padrão de
-`cpu_region` é 14, então `general.out 16 1 2` ou mais funciona).
+```c
+if (region_bits > qubits) region_bits = qubits;
+```
 
-**Como corrigir (não aplicado ainda):** validar `region <= qubits` no
-começo de `PCpuExecution1` (e possivelmente em `HybridExecution`, que
-tem uma lógica de região parecida), reduzindo `region` para `qubits`
-quando necessário — parecido com o `if (count < region) region = count;`
-que já existe logo acima, só que também cobrindo o caso do valor inicial
-de `region` já vir maior que `qubits`.
+**Verificado:** `general.out 10 1 2` no WSL, depois da correção, roda
+normalmente e imprime a amplitude uniforme correta (`0.03125 = 1/√2¹⁰`),
+sem precisar mais do workaround de pedir mais qubits.
+
+**Pendente:** `HybridExecution` (modo `t_HYBRID`, que precisa de GPU real
+pra testar) tem uma lógica de região parecida e pode ter o mesmo problema
+latente — não corrigido ainda, só sinalizado aqui.
 
 ## 7. Build de `kernel.cu` anormalmente lento (`nvcc`/`cicc`) numa máquina sem GPU
 
