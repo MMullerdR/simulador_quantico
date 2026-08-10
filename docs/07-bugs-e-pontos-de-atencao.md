@@ -123,8 +123,72 @@ diferentes do mesmo `Shor()`) colidem. Vale ter isso em mente ao criar
 qualquer porta nova dinamicamente (sempre garantir nomes realmente únicos,
 ou aceitar que o cache seja intencional quando o valor for de fato o mesmo).
 
+## 6. [BUG CONFIRMADO] Segfault em `t_PAR_CPU` quando `cpu_region > qubits`
+
+**Onde:** `src/cli/general.cpp` (defaults do `main()`) +
+`PCpuExecution1` em [dgm.cpp:789](../src/core/dgm.cpp#L789).
+
+`general.cpp` usa `cpu_region = 14` fixo como valor padrão,
+independente de quantos qubits o usuário pedir na linha de comando. Se
+`qubits < cpu_region` (ex: `general.out 10 1 2`, pedindo só 10 qubits),
+dentro de `PCpuExecution1`:
+
+```c
+long reg_count = (1 << (qubits - region)) + 1;
+```
+
+com `qubits=10` e `region=14`, vira `1 << (10 - 14)` = **`1 << -4`** —
+deslocamento por expoente negativo, comportamento indefinido em C/C++.
+Na prática isso produz um `reg_count` absurdamente grande, e o laço
+paralelo seguinte escreve em `state[pos]` muito além do vetor alocado →
+**segmentation fault** (reproduzido: `general.out 10 1 2` crasha;
+`general.out 16 1 2` não).
+
+**Confirmado que não tem relação com a renomeação** — a aritmética é
+idêntica antes e depois, só os nomes dos campos mudaram.
+
+**Workaround imediato:** rodar com `qubits >= cpu_region` (o padrão de
+`cpu_region` é 14, então `general.out 16 1 2` ou mais funciona).
+
+**Como corrigir (não aplicado ainda):** validar `region <= qubits` no
+começo de `PCpuExecution1` (e possivelmente em `HybridExecution`, que
+tem uma lógica de região parecida), reduzindo `region` para `qubits`
+quando necessário — parecido com o `if (count < region) region = count;`
+que já existe logo acima, só que também cobrindo o caso do valor inicial
+de `region` já vir maior que `qubits`.
+
+## 7. Build de `kernel.cu` anormalmente lento (`nvcc`/`cicc`) numa máquina sem GPU
+
+**Onde:** `src/core/kernel.cu`, build via WSL2 sem hardware NVIDIA.
+
+Compilar `kernel.cu` com `nvcc` chegou a levar mais de 2 horas (processo
+`cicc` preso em ~100% de CPU) mesmo depois de reduzir drasticamente o
+número de instanciações de template (`GEWrapper2`/`GpuExecutionWrapper`,
+normalmente ~260 combinações de `tam_block`/`rept`/`coalesc` — ver
+[docs/04-gpu-cuda.md](04-gpu-cuda.md)) e de baixar a otimização pra
+`-O0`. Mesmo com **uma única instanciação**, não terminou em 5 minutos —
+ou seja, não é sobre volume de templates nem nível de otimização; é algo
+mais fundamental (ambiente, WSL2 acessando `/mnt/c`, antivírus escaneando
+arquivos temporários, ou algum problema específico dessa instalação do
+`nvcc`/`cicc`) que não foi diagnosticado até o momento.
+
+**Contorno aplicado:** `src/core/kernel_stub.cpp` — implementação das
+mesmas funções `extern "C"` de `kernel.cu`, compilada com `g++` (sem
+`nvcc` nenhum), que só imprime um aviso e retorna se alguém tentar usar
+`t_GPU`/`t_HYBRID`. É o padrão do `makefile` agora (`GPU=stub`); use
+`make GPU=real` para compilar o `kernel.cu` de verdade quando for
+investigar isso com calma ou tiver acesso a uma máquina com GPU NVIDIA.
+`kernel.cu` em si não foi alterado por causa disso.
+
+**Como investigar no futuro:** testar compilar de dentro do sistema de
+arquivos nativo do WSL (`~/...`, não `/mnt/c/...`) com uma única
+instanciação isolada; testar com o Windows Defender desligado
+temporariamente pra pasta do projeto; testar uma versão do CUDA Toolkit
+diferente.
+
 ---
 
-*Achados durante a leitura de documentação em 2026-08-06. Atualizar esta
-lista conforme novos pontos forem encontrados ou os existentes forem
+*Achados durante a leitura de documentação em 2026-08-06, com adições em
+2026-08-10 durante os testes de build da Fase 1 da renomeação. Atualizar
+esta lista conforme novos pontos forem encontrados ou os existentes forem
 corrigidos.*

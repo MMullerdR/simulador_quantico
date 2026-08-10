@@ -24,10 +24,10 @@ void Gates::init(){
 	}
 }
 
-float complex* Gates::getMatrix(string gateName){
-	if (Gates::list.find(gateName) == Gates::list.end()) return 0;
+float complex* Gates::getMatrix(string gate_name){
+	if (Gates::list.find(gate_name) == Gates::list.end()) return 0;
 
-	return Gates::list[gateName];
+	return Gates::list[gate_name];
 }
 
 bool Gates::addGate(string name, float complex* matrix){
@@ -62,99 +62,104 @@ bool Gates::addGate(string name, float complex a0, float complex a1, float compl
 }
 
 /////////////////////////////////////////////////////////////////////
+// Cada função abaixo monta um "step_ops": um vetor com um token por
+// qubit ("ID"/"Control1(v)"/"Target1(porta)") que descreve uma camada
+// do circuito, e devolve isso já concatenado numa string (ver
+// docs/02-linguagem-de-circuitos.md).
+/////////////////////////////////////////////////////////////////////
 
-string CNot(int qubits, int ctrl, int target, int cv){
-	vector <string> cn (qubits, "ID");
-	cn[ctrl] = "Control1(0)";
-	if (cv) cn[ctrl] = "Control1(1)";
-	cn[target] = "Target1(X)";
+string CNot(int qubits, int ctrl, int target, int control_value){
+	vector <string> step_ops (qubits, "ID");
+	step_ops[ctrl] = "Control1(0)";
+	if (control_value) step_ops[ctrl] = "Control1(1)";
+	step_ops[target] = "Target1(X)";
 
-	return concatena(cn, qubits);
+	return concatena(step_ops, qubits);
 }
 
-string Toffoli(int qubits, int ctrl1, int ctrl2, int target, int cv){
-	vector <string> tf (qubits, "ID");
-	tf[ctrl1] = "Control1(0)";
-	if (cv>>1) tf[ctrl1] = "Control1(1)";
-	tf[ctrl2] = "Control1(0)";
-	if (cv&1) tf[ctrl2] = "Control1(1)";
-	tf[target] = "Target1(X)";
+string Toffoli(int qubits, int ctrl1, int ctrl2, int target, int control_value){
+	vector <string> step_ops (qubits, "ID");
+	step_ops[ctrl1] = "Control1(0)";
+	if (control_value>>1) step_ops[ctrl1] = "Control1(1)";
+	step_ops[ctrl2] = "Control1(0)";
+	if (control_value&1) step_ops[ctrl2] = "Control1(1)";
+	step_ops[target] = "Target1(X)";
 
-	return concatena(tf, qubits);
+	return concatena(step_ops, qubits);
 }
 
-string Controlled1(int qubits, int ctrl, int target, string op, int cv){
-	vector <string> c1 (qubits, "ID");
-	c1[ctrl] = "Control1(0)";
-	if (cv) c1[ctrl] = "Control1(1)";
-	c1[target] = "Target1(" + op + ")";
+string Controlled1(int qubits, int ctrl, int target, string op, int control_value){
+	vector <string> step_ops (qubits, "ID");
+	step_ops[ctrl] = "Control1(0)";
+	if (control_value) step_ops[ctrl] = "Control1(1)";
+	step_ops[target] = "Target1(" + op + ")";
 
-	return concatena(c1, qubits);
+	return concatena(step_ops, qubits);
 }
 
 
-string Controlled2(int qubits, int ctrl1, int ctrl2, int target, string op, int cv){
-	vector <string> c2 (qubits, "ID");
-	c2[ctrl1] = "Control1(0)";
-	if (cv&2) c2[ctrl1] = "Control1(1)";
-	c2[ctrl2] = "Control1(0)";
-	if (cv&1) c2[ctrl2] = "Control1(1)";
-	c2[target] = "Target1(" + op + ")";
+string Controlled2(int qubits, int ctrl1, int ctrl2, int target, string op, int control_value){
+	vector <string> step_ops (qubits, "ID");
+	step_ops[ctrl1] = "Control1(0)";
+	if (control_value&2) step_ops[ctrl1] = "Control1(1)";
+	step_ops[ctrl2] = "Control1(0)";
+	if (control_value&1) step_ops[ctrl2] = "Control1(1)";
+	step_ops[target] = "Target1(" + op + ")";
 
-	return concatena(c2, qubits);
+	return concatena(step_ops, qubits);
 }
 
-string ControlledN(int qubits, vector <int> ctrls, int target, string op, int cv){
-	if (cv == -1) cv = pow(2,ctrls.size()) - 1;
-	vector <string> c (qubits, "ID");
+string ControlledN(int qubits, vector <int> ctrls, int target, string op, int control_value){
+	if (control_value == -1) control_value = pow(2,ctrls.size()) - 1;
+	vector <string> step_ops (qubits, "ID");
 
-	for (int i = ctrls.size() - 1; i >=0; i--){
-		c[ctrls[i]] = "Control1(0)";
-		if (cv & 1) c[ctrls[i]] = "Control1(1)";
-		cv = cv >> 1;
+	for (int ctrl_index = ctrls.size() - 1; ctrl_index >=0; ctrl_index--){
+		step_ops[ctrls[ctrl_index]] = "Control1(0)";
+		if (control_value & 1) step_ops[ctrls[ctrl_index]] = "Control1(1)";
+		control_value = control_value >> 1;
 	}
 
-	c[target] = "Target1(" + op + ")";
+	step_ops[target] = "Target1(" + op + ")";
 
-	return concatena(c, qubits);
+	return concatena(step_ops, qubits);
 }
 
 
 string Pauli_X(int qubits, int reg, int width){
-	vector <string> px (qubits, "ID");
-	for (int i = 0; i < width; i++) px[i+reg] = "X";
+	vector <string> step_ops (qubits, "ID");
+	for (int qubit_index = 0; qubit_index < width; qubit_index++) step_ops[qubit_index+reg] = "X";
 
-	return concatena(px, qubits);
+	return concatena(step_ops, qubits);
 }
 
 string Pauli_Z(int qubits, int reg, int width){
-	vector <string> px (qubits, "ID");
-	for (int i = 0; i < width; i++) px[i+reg] = "Z";
+	vector <string> step_ops (qubits, "ID");
+	for (int qubit_index = 0; qubit_index < width; qubit_index++) step_ops[qubit_index+reg] = "Z";
 
-	return concatena(px, qubits);
+	return concatena(step_ops, qubits);
 }
 
 
 string Hadamard(int qubits, int reg, int width){
-	vector <string> hn (qubits, "ID");
-	for (int i = 0; i < width; i++) hn[i+reg] = "H";
+	vector <string> step_ops (qubits, "ID");
+	for (int qubit_index = 0; qubit_index < width; qubit_index++) step_ops[qubit_index+reg] = "H";
 
-	return concatena(hn, qubits);
+	return concatena(step_ops, qubits);
 }
 
 
-string concatena(vector <string> vec, int size, bool rev){
-	string s;
-	if (!rev){
-		s = vec[0];
-		for (int i = 1; i < size; i++)
-			s += "," + vec[i];
+string concatena(vector <string> step_ops, int qubits, bool reverse){
+	string joined_step;
+	if (!reverse){
+		joined_step = step_ops[0];
+		for (int qubit_index = 1; qubit_index < qubits; qubit_index++)
+			joined_step += "," + step_ops[qubit_index];
 	}
 	else{
-		s = vec[size-1];
-		for (int i = size - 2; i >= 0; i--)
-			s += "," + vec[i];
+		joined_step = step_ops[qubits-1];
+		for (int qubit_index = qubits - 2; qubit_index >= 0; qubit_index--)
+			joined_step += "," + step_ops[qubit_index];
 	}
 
-	return s;
+	return joined_step;
 }

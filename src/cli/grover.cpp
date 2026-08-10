@@ -9,7 +9,7 @@ using namespace std;
 int main(int argc, char **argv){
 	srand(time(NULL));
 
-	int execType = t_CPU, n_threads = 1, cpu_region = 14, cpu_coalesc = 11, multi_gpu = 1, gpu_region = 8, gpu_coalesc = 4, tam_block = 64, rept = 2;
+	int exec_type = t_CPU, thread_count = 1, cpu_region_bits = 14, cpu_coalesced_bits = 11, gpu_count = 1, gpu_region_bits = 8, gpu_coalesced_bits = 4, block_size = 64, repeat_count = 2;
 
 	if (argc < 2){
 		cout << "You need to define the execution parameters" << endl;
@@ -20,28 +20,28 @@ int main(int argc, char **argv){
 
 
   if (argc > 2) {
-    execType = atoi(argv[2]);
+    exec_type = atoi(argv[2]);
   }
 
-	if (execType < t_CPU || execType > t_HYBRID){
-		cout << "Invalid execution type: " << execType << endl; 
+	if (exec_type < t_CPU || exec_type > t_HYBRID){
+		cout << "Invalid execution type: " << exec_type << endl;
 		return 0;
 	}
 
-	if (execType == t_PAR_CPU) {
-		if (argc > 3) n_threads = atoi(argv[3]);
+	if (exec_type == t_PAR_CPU) {
+		if (argc > 3) thread_count = atoi(argv[3]);
 	}
-	else if (execType == t_GPU) {
-		if (argc > 3) multi_gpu = atoi(argv[3]);
+	else if (exec_type == t_GPU) {
+		if (argc > 3) gpu_count = atoi(argv[3]);
 	}
-	else if (execType == t_HYBRID) {
-		if (argc > 3) n_threads = atoi(argv[3]);
+	else if (exec_type == t_HYBRID) {
+		if (argc > 3) thread_count = atoi(argv[3]);
 	}
- 
-	int value = 10;
 
-	float t = Grover(qubits, value, t_CPU, n_threads, cpu_region, cpu_coalesc, multi_gpu, gpu_region, gpu_coalesc, tam_block, rept);
- 
-  cout << t << endl;
-	
+	int search_value = 10;
+
+	float elapsed = Grover(qubits, search_value, t_CPU, thread_count, cpu_region_bits, cpu_coalesced_bits, gpu_count, gpu_region_bits, gpu_coalesced_bits, block_size, repeat_count);
+
+  cout << elapsed << endl;
+
 }

@@ -15,25 +15,36 @@
 #include "common.h"
 #include "gates.h"
 
-#define complex _Complex
+#define complex __complex__
 
 using namespace std;
 
 float complex* GenericExecute(float complex *state, string function, int qubits, int type, int threads, int factor);
 float complex*  GenericExecute(float complex *state, vector<string> function, int qubits, int type, int threads, int factor);
 
-extern "C" bool setDevice(int num = 0);
+extern "C" bool setDevice(int device_id = 0);
 
-extern "C" float complex* GpuExecutionWrapper(float complex* r_memory, PT **pts, int qubits, int multi_gpu, int coalesc, int qbs_region, int tam_block, int rept, int num_it);
-extern "C" float complex* GpuExecution(float complex* r_memory, float complex* w_memory, PT **pts, int qubits, float *total_time, long MAX_PT, long MAX_QB, int it);
-extern "C" float complex* GpuExecution2(float complex* r_memory, PT **pts, int pts_size, int qubits, long MAX_PT, int it);
-extern "C" float complex* GpuExecution3(float complex* r_memory, float complex* w_memory, int sub_size, int shift_write, PT *pt, int qubits, long MAX_PT, long MAX_QB, int it);
-extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long reg_id, long reg_mask, int multi_gpu);
-extern "C" bool GetState(float complex* state, int qubits, int region_size, long reg_id, long reg_mask, int multi_gpu);
+// Wrappers de execução em GPU (implementados em kernel.cu). GpuExecutionWrapper
+// é o único efetivamente usado por DGM::execute(); os demais (GpuExecution,
+// GpuExecution2, GpuExecution3) são assinaturas de versões alternativas sem
+// implementação atual — mantidas como estão.
+// Atenção: a ordem dos parâmetros aqui precisa bater com a definição
+// real em kernel.cu (state, pts, qubits, coalesced_bits, gpu_region_bits,
+// gpu_count, block_size, repeat_count, iterations) — a declaração antiga
+// tinha os nomes multi_gpu/coalesc/qbs_region fora de ordem (inofensivo
+// em C/extern "C", já que só a posição importa para o linker, mas
+// enganoso para quem lê).
+extern "C" float complex* GpuExecutionWrapper(float complex* read_memory, PT **pts, int qubits, int coalesced_bits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int iterations);
+extern "C" float complex* GpuExecution(float complex* read_memory, float complex* write_memory, PT **pts, int qubits, float *total_time, long max_pt, long max_qubits, int iterations);
+extern "C" float complex* GpuExecution2(float complex* read_memory, PT **pts, int pts_size, int qubits, long max_pt, int iterations);
+extern "C" float complex* GpuExecution3(float complex* read_memory, float complex* write_memory, int sub_size, int shift_write, PT *pt, int qubits, long max_pt, long max_qubits, int iterations);
+extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
+extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 
-void PCpuExecution1(float complex *state, PT **pts, int qubits, long n_threads, int coales, int region, int it);
-void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int start, int end, int pos_count, int reg_id, int reg_mask);
+void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations);
+void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start, int pts_end, int pos_count, int region_id, int region_mask);
 
+// Insere um bit 0 na posição "shift" de "pos" (ver docs/03-motor-de-execucao-cpu.md).
 inline long LINE (long pos, long shift){
 	return ((pos >> shift) & 1) * 2;
 }
@@ -49,6 +60,8 @@ enum {
 	t_SPEC
 };
 
+// Agrupa os controles e alvos de um mesmo grupo dentro de um step do
+// circuito, antes de virarem PTs (ver docs/02-linguagem-de-circuitos.md).
 class Group{
 public:
 	vector <string> ops;
@@ -60,28 +73,31 @@ public:
 	bool isAfected(int pos, int afect);
 };
 
+// Motor central do simulador: guarda o vetor de estado e despacha a
+// execução dos circuitos para um dos backends (CPU serial, CPU paralela,
+// GPU ou híbrido) — ver docs/01-arquitetura-geral.md.
 class DGM{
 public:
-	long total_op, dense, main_diag, sec_diag, c_dense, c_main_diag, c_sec_diag; //counters
+	long total_op, dense, main_diag, sec_diag, c_dense, c_main_diag, c_sec_diag; //contadores de operações, ver CountOps()
 
 	vector <string> diag;
-	long MAX_QB, MAX_PT, qb_afected;
+	long max_qubits, max_pt, affected_qubit_count;
 
 	long factor;
 
 	int exec_type;
- 
- 	long n_threads;
-	long cpu_coales;
-	long cpu_region;
 
-	int multi_gpu;
-	long gpu_coales;
-	long gpu_region;
-	 
-	int tam_block;
-	int rept;
-	
+	long thread_count;
+	long cpu_coalesced_bits;
+	long cpu_region_bits;
+
+	int gpu_count;
+	long gpu_coalesced_bits;
+	long gpu_region_bits;
+
+	int block_size;
+	int repeat_count;
+
 	vector <PT*> vec_pts;
 	PT** pts;
 	long qubits;
@@ -96,51 +112,53 @@ public:
 	DGM();
 	~DGM();
 
-	bool en_print;
+	bool print_enabled;
 
 	void printPTs();
 	void erase();
 	void setExecType(int type);
 
-	void setCpuStructure(long cpu_region, long cpu_coales);
-	void setGpuStructure(long gpu_coales, long gpu_region, int rept = 1);
+	void setCpuStructure(long cpu_region_bits, long cpu_coalesced_bits);
+	void setGpuStructure(long gpu_coalesced_bits, long gpu_region_bits, int repeat_count = 1);
 
 	void allocateMemory();
 	void setMemory(float complex *mem);
 	void freeMemory();
 	void setMemoryValue(int pos);
-	
-	int measure(int q_pos);
-	map <long, float> measure(vector<int> q_pos);
-	void colapse(int q_pos, int value);
 
-	void setFunction(string function, int it = 1, bool er = true);
-	void setFunction(vector<string> steps, int it = 1, bool er = true);
+	int measure(int qubit_pos);
+	map <long, float> measure(vector<int> qubit_positions);
+	void colapse(int qubit_pos, int value);
+
+	void setFunction(string function, int iterations = 1, bool reset = true);
+	void setFunction(vector<string> steps, int iterations = 1, bool reset = true);
 	map <long, Group> genGroups(string step);
-	void genPTs(map<long, Group> &gps, vector <PT*> &step_pts);
-	void genMatrix(float complex* matrix, vector<float complex*> &matrices, long tam, long current, long line, long column, float complex cmplx);
+	void genPTs(map<long, Group> &groups, vector <PT*> &step_pts);
+	void genMatrix(float complex* matrix, vector<float complex*> &matrices, long qubit_count, long current_qubit, long line, long column, float complex value);
 
-	void CountOps(int it = 1);
+	void CountOps(int iterations = 1);
 
-	void executeFunction(string function, int it = 1);
-	void executeFunction(vector<string> steps, int it = 1);
-	float complex* execute(int it);
+	void executeFunction(string function, int iterations = 1);
+	void executeFunction(vector<string> steps, int iterations = 1);
+	float complex* execute(int iterations);
 
 	void HybridExecution(PT **pts);
 
-	void CpuExecution1(int it);
-	void CpuExecution1_1(PT *pt, long mem_size);
-	void CpuExecution1_2(PT *pt, long mem_size);
-	void CpuExecution1_3(PT *pt, long mem_size);
+	void CpuExecution1(int iterations);
+	void CpuExecution1_1(PT *term, long mem_size);
+	void CpuExecution1_2(PT *term, long mem_size);
+	void CpuExecution1_3(PT *term, long mem_size);
 
-	//void CpuExecution1(int it);
-	void CpuExecution2_1(PT *pt, long mem_size);
-	void CpuExecution2_2(PT *pt, long mem_size);
-	void CpuExecution2_3(PT *pt, long mem_size);
+	// Variações alternativas de CpuExecution1_*, não usadas por
+	// DGM::execute() atualmente — mantidas sem remoção (ver
+	// docs/07-bugs-e-pontos-de-atencao.md, item 2).
+	void CpuExecution2_1(PT *term, long mem_size);
+	void CpuExecution2_2(PT *term, long mem_size);
+	void CpuExecution2_3(PT *term, long mem_size);
 
-	void CpuExecution3_1(PT *pt, long mem_size);
-	void CpuExecution3_2(PT *pt, long mem_size);
-	void CpuExecution3_3(PT *pt, long mem_size);
+	void CpuExecution3_1(PT *term, long mem_size);
+	void CpuExecution3_2(PT *term, long mem_size);
+	void CpuExecution3_3(PT *term, long mem_size);
 
 
 };

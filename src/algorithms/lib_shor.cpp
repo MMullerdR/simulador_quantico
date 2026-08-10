@@ -8,88 +8,88 @@
 
 using namespace std;
 
-int revert_bits(int res, int n){
-	int c = 0;
+int revert_bits(int value, int bit_count){
+	int reversed = 0;
 
-	for (int i =0; i < n; i++){
-		c = (c<<1) | (res&1);
-		res = res >> 1;
+	for (int bit_index = 0; bit_index < bit_count; bit_index++){
+		reversed = (reversed<<1) | (value&1);
+		value = value >> 1;
 	}
-	return c;
+	return reversed;
 }
 
-int quantum_ipow(int a, int b)
+int quantum_ipow(int base, int exponent)
 {
-	int i;
-	int r=1;
+	int exp_index;
+	int result=1;
 
-	for(i=0; i<b ;i++)
-		r*=a;
+	for(exp_index=0; exp_index<exponent ;exp_index++)
+		result*=base;
 
-	return r;
+	return result;
 }
 
 /* Calculate the greatest common divisor with Euclid's algorithm */
 
-int quantum_gcd(int u, int v)
+int quantum_gcd(int value1, int value2)
 {
-	int r;
+	int remainder;
 
-	while(v)
+	while(value2)
 	{
-		r = v;
-		v = u % v;
-		u = r;
+		remainder = value2;
+		value2 = value1 % value2;
+		value1 = remainder;
 		//r = u % v;
 		//u = v;
 		//v = r;
 	}
-	return u;
+	return value1;
 }
 
 
-void quantum_frac_approx(int *a, int *b, int width)
+void quantum_frac_approx(int *numerator, int *denominator, int width)
 {
-	float f = (float) *a / *b;
-	float g=f;
-	int i, num2=0, den2=1, num1=1, den1=0, num=0, den=0;
+	float target_ratio = (float) *numerator / *denominator;
+	float residual=target_ratio;
+	int term, num_prev2=0, den_prev2=1, num_prev1=1, den_prev1=0, num_curr=0, den_curr=0;
 
 	do
 		{
-		i = (int) (g+0.000005);
+		term = (int) (residual+0.000005);
 
-		g -= i-0.000005;
-		g = 1.0/g;
+		residual -= term-0.000005;
+		residual = 1.0/residual;
 
-		if (i * den1 + den2 > 1<<width)
+		if (term * den_prev1 + den_prev2 > 1<<width)
 		break;
 
-		num = i * num1 + num2;
-		den = i * den1 + den2;
+		num_curr = term * num_prev1 + num_prev2;
+		den_curr = term * den_prev1 + den_prev2;
 
-		num2 = num1;
-		den2 = den1;
-		num1 = num;
-		den1 = den;
+		num_prev2 = num_prev1;
+		den_prev2 = den_prev1;
+		num_prev1 = num_curr;
+		den_prev1 = den_curr;
 
-		} while(fabs(((double) num / den) - f) > 1.0 / (2 * (1 << width)));
+		} while(fabs(((double) num_curr / den_curr) - target_ratio) > 1.0 / (2 * (1 << width)));
 
-	*a = num;
-	*b = den;
+	*numerator = num_curr;
+	*denominator = den_curr;
 
 	return;
 }
 
 
-void ApplyQFT(int qubits, int type, int multi_gpu, int qbs_region, int coalesc, int tam_block, int rept){
+void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coalesced_bits, int block_size, int repeat_count){
 	DGM dgm;
 	dgm.exec_type = type;
-	dgm.multi_gpu = multi_gpu;
+	dgm.gpu_count = gpu_count;
 
-	dgm.cpu_region = qbs_region;
-	dgm.cpu_coales = coalesc;
-	dgm.tam_block = tam_block;
-	dgm.rept = rept;
+	dgm.cpu_region_bits = gpu_region_bits;
+	dgm.cpu_coalesced_bits = coalesced_bits;
+	dgm.block_size = block_size;
+	dgm.repeat_count = repeat_count;
 
 	dgm.qubits = qubits;
 	dgm.allocateMemory();
@@ -100,34 +100,34 @@ void ApplyQFT(int qubits, int type, int multi_gpu, int qbs_region, int coalesc, 
 	dgm.executeFunction(qft);
 }
 
-string genRot(int qubits, int reg, long value){
-	vector <string> func(qubits, "ID");
+string genRot(int qubits, int reg, long phase_bits){
+	vector <string> step_ops(qubits, "ID");
 	string name;
 
 	int k = 2;
-	float complex rot, eps;
-	eps = M_E;
+	float complex rot, euler_e;
+	euler_e = M_E;
 
 	rot = 1;
-	while (value){
-		if (value&1) rot *= cpowf(eps, -2*M_PI*I/pow(2.0, k));
-		value = value >> 1;
+	while (phase_bits){
+		if (phase_bits&1) rot *= cpowf(euler_e, -2*M_PI*I/pow(2.0, k));
+		phase_bits = phase_bits >> 1;
 		k++;
 	}
 
 	if (rot != 1){
 		Gates g;
-		name = "Rot_" + int2str(value);
+		name = "Rot_" + int2str(phase_bits);
 		g.addGate(name, 1.0, 0.0, 0.0, rot);
-		func[reg] = name;
+		step_ops[reg] = name;
 
-		return concatena(func, qubits);
+		return concatena(step_ops, qubits);
 	}
 
 	return "";
 }
 
-vector <string> CU(int qubits, int ctrl, int reg1, int reg2, int width, long a, long N){
+vector <string> CU(int qubits, int ctrl, int reg1, int reg2, int width, long base_value, long number_to_factor){
 	vector <string> m, rm, sw, u;
 /*
 	m = CMultMod(qubits, ctrl, reg1, reg2, width, a, N);
@@ -142,7 +142,7 @@ vector <string> CU(int qubits, int ctrl, int reg1, int reg2, int width, long a, 
 	return u;
 }
 
-vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long a, long N){
+vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor){
 //        cout << "MULT" << endl;
 
 	int ctrl2;
@@ -150,7 +150,7 @@ vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int 
 //        cout << "MULT" << endl;
 
 
-	string HN = Hadamard(qubits, reg2, width);
+	string hadamard_step = Hadamard(qubits, reg2, width);
 
 //        cout << "MULT" << endl;
 
@@ -164,18 +164,18 @@ vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int 
 
 
 	vector <string> mult_mod;
-	vector <string> am;
+	vector <string> add_mod_steps;
 	mult_mod.push_back(Hadamard(qubits, over, 1));
-	mult_mod.push_back(HN);
+	mult_mod.push_back(hadamard_step);
 
 	ctrl2 = reg1 + width - 1;
-	for (int i = 0; i < width; i++){
-		am = C2AddMod(qubits, ctrl, ctrl2-i, reg2, over, over_bool, width, a, N);
-		//for (int j = 0; j < am.size(); j++) cout << am[j] << endl;
+	for (int bit_index = 0; bit_index < width; bit_index++){
+		add_mod_steps = C2AddMod(qubits, ctrl, ctrl2-bit_index, reg2, over, over_bool, width, base_value, number_to_factor);
+		//for (int j = 0; j < add_mod_steps.size(); j++) cout << add_mod_steps[j] << endl;
 		//exit(1);
-		mult_mod.insert(mult_mod.end(), am.begin(), am.end());
+		mult_mod.insert(mult_mod.end(), add_mod_steps.begin(), add_mod_steps.end());
 
-		a = (a*2)%N;
+		base_value = (base_value*2)%number_to_factor;
 	}
 
 //        cout << "MULT" << endl;
@@ -187,7 +187,7 @@ vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int 
 
 }
 
-vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long a, long N){
+vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor){
 	int ctrl2;
 	vector <string> qft = QFT(qubits, reg2, over, width);
 	vector <string> rqft = RQFT(qubits, reg2, over, width);
@@ -195,14 +195,14 @@ vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int
 	//////////////////////////////////////////////////////////////
 
 	vector <string> mult_mod;
-	vector <string> am;
+	vector <string> sub_mod_steps;
 
 	ctrl2 = reg1 + width - 1;
-	for (int i = 0; i < width; i++){
-		am = C2SubMod(qubits, ctrl, ctrl2-i, reg2, over, over_bool, width, a, N);
-		mult_mod.insert(mult_mod.begin(), am.begin(), am.end());
+	for (int bit_index = 0; bit_index < width; bit_index++){
+		sub_mod_steps = C2SubMod(qubits, ctrl, ctrl2-bit_index, reg2, over, over_bool, width, base_value, number_to_factor);
+		mult_mod.insert(mult_mod.begin(), sub_mod_steps.begin(), sub_mod_steps.end());
 
-		a = (a*2)%N;
+		base_value = (base_value*2)%number_to_factor;
 	}
 
 	mult_mod.insert(mult_mod.begin(), qft.begin(), qft.end());
@@ -211,192 +211,192 @@ vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int
 	return mult_mod;
 }
 
-vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long a, long N){
+vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor){
 	vector<string> qft = QFT(qubits, reg, over, width);
 	vector<string> rqft = RQFT(qubits, reg, over, width);
 
-	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, a, width);
-	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, a, width);
+	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
+	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
 
-	string sub_N = SubF(qubits, reg, over, N, width);
-	string c_add_N = CAddF(qubits, over_bool, reg, over, N, width);
+	string sub_N = SubF(qubits, reg, over, number_to_factor, width);
+	string c_add_N = CAddF(qubits, over_bool, reg, over, number_to_factor, width);
 
 	string n_over = Pauli_X(qubits, over, 1);
 	string c_over = CNot(qubits, over, over_bool);
 
-	vector <string> func;
+	vector <string> circuit_steps;
 
-	func.push_back(c2_add_a);
-	func.push_back(sub_N);
-	func.insert(func.end(), rqft.begin(), rqft.end());
-	func.push_back(c_over);
-	func.insert(func.end(), qft.begin(), qft.end());
-	func.push_back(c_add_N);
-	func.push_back(c2_sub_a);
-	func.insert(func.end(), rqft.begin(), rqft.end());
-	func.push_back(n_over);
-	func.push_back(c_over);
-	func.push_back(n_over);
-	func.insert(func.end(), qft.begin(), qft.end());
-	func.push_back(c2_add_a);
+	circuit_steps.push_back(c2_add_a);
+	circuit_steps.push_back(sub_N);
+	circuit_steps.insert(circuit_steps.end(), rqft.begin(), rqft.end());
+	circuit_steps.push_back(c_over);
+	circuit_steps.insert(circuit_steps.end(), qft.begin(), qft.end());
+	circuit_steps.push_back(c_add_N);
+	circuit_steps.push_back(c2_sub_a);
+	circuit_steps.insert(circuit_steps.end(), rqft.begin(), rqft.end());
+	circuit_steps.push_back(n_over);
+	circuit_steps.push_back(c_over);
+	circuit_steps.push_back(n_over);
+	circuit_steps.insert(circuit_steps.end(), qft.begin(), qft.end());
+	circuit_steps.push_back(c2_add_a);
 
-	return func;
+	return circuit_steps;
 }
 
-vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long a, long N){
+vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor){
 	vector <string> qft = QFT(qubits, reg, over, width);
 	vector <string> rqft = RQFT(qubits, reg, over, width);
 
-	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, a, width);
-	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, a, width);
+	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
+	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
 
-	string add_N = AddF(qubits, reg, over, N, width);
-	string c_add_N = CAddF(qubits, over_bool, reg, over, N, width);
-	string c_sub_N = CSubF(qubits, over_bool, reg, over, N, width);
+	string add_N = AddF(qubits, reg, over, number_to_factor, width);
+	string c_add_N = CAddF(qubits, over_bool, reg, over, number_to_factor, width);
+	string c_sub_N = CSubF(qubits, over_bool, reg, over, number_to_factor, width);
 
 	string n_over = Pauli_X(qubits, over, 1);
 	string c_over = CNot(qubits, over, over_bool);
 
-	vector <string> func;
+	vector <string> circuit_steps;
 
-	func.push_back(c2_sub_a);
-	func.insert(func.end(), rqft.begin(), rqft.end());
-	func.push_back(n_over);
-	func.push_back(c_over);
-	func.push_back(n_over);
-	func.insert(func.end(), qft.begin(), qft.end());
-	func.push_back(c2_add_a);
-	func.push_back(c_sub_N);
-	func.insert(func.end(), rqft.begin(), rqft.end());
-	func.push_back(c_over);
-	func.insert(func.end(), qft.begin(), qft.end());
-	func.push_back(add_N);
-	func.push_back(c2_sub_a);
+	circuit_steps.push_back(c2_sub_a);
+	circuit_steps.insert(circuit_steps.end(), rqft.begin(), rqft.end());
+	circuit_steps.push_back(n_over);
+	circuit_steps.push_back(c_over);
+	circuit_steps.push_back(n_over);
+	circuit_steps.insert(circuit_steps.end(), qft.begin(), qft.end());
+	circuit_steps.push_back(c2_add_a);
+	circuit_steps.push_back(c_sub_N);
+	circuit_steps.insert(circuit_steps.end(), rqft.begin(), rqft.end());
+	circuit_steps.push_back(c_over);
+	circuit_steps.insert(circuit_steps.end(), qft.begin(), qft.end());
+	circuit_steps.push_back(add_N);
+	circuit_steps.push_back(c2_sub_a);
 
-	return func;
+	return circuit_steps;
 }
 
 //////////////////////////////////////////////////////////////////////////
 
 
-string CAddF(int qubits, int ctrl1, int reg, int over, long num, int width){
-	vector <string> caf = AddF(qubits, reg, over, num, width, true);
+string CAddF(int qubits, int ctrl1, int reg, int over, long value_to_add, int width){
+	vector <string> step_ops = AddF(qubits, reg, over, value_to_add, width, true);
 
-	caf[ctrl1] = "Control1(1)";
+	step_ops[ctrl1] = "Control1(1)";
 
-	return concatena(caf, qubits);
+	return concatena(step_ops, qubits);
 }
 
 
-string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long num, int width){
-	vector <string> caf = AddF(qubits, reg, over, num, width, true);
+string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_add, int width){
+	vector <string> step_ops = AddF(qubits, reg, over, value_to_add, width, true);
 
-	caf[ctrl1] = "Control1(1)";
-	caf[ctrl2] = "Control1(1)";
+	step_ops[ctrl1] = "Control1(1)";
+	step_ops[ctrl2] = "Control1(1)";
 
-	return concatena(caf, qubits);
+	return concatena(step_ops, qubits);
 }
 
-string AddF(int qubits, int reg, int over, long num, int width){
-	return concatena(AddF(qubits, reg, over, num, width, false), qubits);
+string AddF(int qubits, int reg, int over, long value_to_add, int width){
+	return concatena(AddF(qubits, reg, over, value_to_add, width, false), qubits);
 }
 
-vector <string> AddF(int qubits, int reg, int over, long num, int width, bool controlled){
-	int size = width+1;
-	vector <float complex> rot (size, 1);
-	float complex  c;
+vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled){
+	int digit_count = width+1;
+	vector <float complex> rot (digit_count, 1);
+	float complex  identity;
 
 	Gates g;
 
-	long aux = num;
+	long remaining_value = value_to_add;
 
-	float complex eps = M_E;
+	float complex euler_e = M_E;
 
-	for (int i = 0; i < size; i++){
-		if (aux&1)
-			for (int j = i; j < size; j++)
-				rot[j] *= cpowf(eps, 2*M_PI*I/pow(2.0, j-i+1));
-		aux = aux >> 1;
+	for (int digit_index = 0; digit_index < digit_count; digit_index++){
+		if (remaining_value&1)
+			for (int higher_digit_index = digit_index; higher_digit_index < digit_count; higher_digit_index++)
+				rot[higher_digit_index] *= cpowf(euler_e, 2*M_PI*I/pow(2.0, higher_digit_index-digit_index+1));
+		remaining_value = remaining_value >> 1;
 	}
 
-	vector<string> add(qubits, "ID");
+	vector<string> step_ops(qubits, "ID");
 	string name;
 
-	aux = reg+width-1;
-	c = 1;
-	for (int i = 0; i < size; i++){
-		if (rot[i] != c){
-			name = "ADD_" + int2str(num) + "_" + int2str(i);
-			g.addGate(name, 1.0, 0.0, 0.0, rot[i]);
+	int msb_pos = reg+width-1;
+	identity = 1;
+	for (int digit_index = 0; digit_index < digit_count; digit_index++){
+		if (rot[digit_index] != identity){
+			name = "ADD_" + int2str(value_to_add) + "_" + int2str(digit_index);
+			g.addGate(name, 1.0, 0.0, 0.0, rot[digit_index]);
 			if (controlled) name = "Target1(" + name + ")";
-			add[aux-i] = name;
+			step_ops[msb_pos-digit_index] = name;
 		}
 	}
 
-	name = add[reg-1];
-	add[reg-1] = "ID";
-	add[over] = name;
+	name = step_ops[reg-1];
+	step_ops[reg-1] = "ID";
+	step_ops[over] = name;
 
-	return add;
+	return step_ops;
 }
 
-string CSubF(int qubits, int ctrl1, int reg, int over, long num, int width){
-	vector <string> csf = SubF(qubits, reg, over, num, width, true);
+string CSubF(int qubits, int ctrl1, int reg, int over, long value_to_sub, int width){
+	vector <string> step_ops = SubF(qubits, reg, over, value_to_sub, width, true);
 
-	csf[ctrl1] = "Control1(1)";
+	step_ops[ctrl1] = "Control1(1)";
 
-	return concatena(csf, qubits);
+	return concatena(step_ops, qubits);
 }
 
-string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long num, int width){
-	vector <string> csf = SubF(qubits, reg, over, num, width, true);
+string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_sub, int width){
+	vector <string> step_ops = SubF(qubits, reg, over, value_to_sub, width, true);
 
-	csf[ctrl1] = "Control1(1)";
-	csf[ctrl2] = "Control1(1)";
+	step_ops[ctrl1] = "Control1(1)";
+	step_ops[ctrl2] = "Control1(1)";
 
-	return concatena(csf, qubits);
+	return concatena(step_ops, qubits);
 }
 
-string SubF(int qubits, int reg, int over, long num, int width){
-	return concatena(SubF(qubits, reg, over, num, width, false), qubits);
+string SubF(int qubits, int reg, int over, long value_to_sub, int width){
+	return concatena(SubF(qubits, reg, over, value_to_sub, width, false), qubits);
 }
 
-vector <string> SubF(int qubits, int reg, int over, long num, int width, bool controlled){
-	long size = width+1;
-	vector <float complex> rot (size, 1);
-	float complex  c;
+vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width, bool controlled){
+	long digit_count = width+1;
+	vector <float complex> rot (digit_count, 1);
+	float complex  identity;
 
 	Gates g;
 
-	long aux = num;
+	long remaining_value = value_to_sub;
 
-	float complex eps = M_E;
-	for (int i = 0; i < size; i++){
-		if (aux&1)
-			for (int j = i; j < size; j++)
-				rot[j] *= cpowf(eps, -2*M_PI*I/pow(2.0, j-i+1));
-		aux = aux >> 1;
+	float complex euler_e = M_E;
+	for (int digit_index = 0; digit_index < digit_count; digit_index++){
+		if (remaining_value&1)
+			for (int higher_digit_index = digit_index; higher_digit_index < digit_count; higher_digit_index++)
+				rot[higher_digit_index] *= cpowf(euler_e, -2*M_PI*I/pow(2.0, higher_digit_index-digit_index+1));
+		remaining_value = remaining_value >> 1;
 	}
 
-	vector<string> sub(qubits, "ID");
+	vector<string> step_ops(qubits, "ID");
 	string name;
 
-	aux = reg+width-1;
-	c = 1;
-	for (int i = 0; i < size; i++){
-		if (rot[i] != c){
-			name = "SUB_" + int2str(num) + "_" + int2str(i);
-			g.addGate(name, 1.0, 0.0, 0.0, rot[i]);
+	int msb_pos = reg+width-1;
+	identity = 1;
+	for (int digit_index = 0; digit_index < digit_count; digit_index++){
+		if (rot[digit_index] != identity){
+			name = "SUB_" + int2str(value_to_sub) + "_" + int2str(digit_index);
+			g.addGate(name, 1.0, 0.0, 0.0, rot[digit_index]);
 			if (controlled) name = "Target1(" + name + ")";
-			sub[aux-i] = name;
+			step_ops[msb_pos-digit_index] = name;
 		}
 	}
 
-	name = sub[reg-1];
-	sub[reg-1] = "ID";
-	sub[over] = name;
+	name = step_ops[reg-1];
+	step_ops[reg-1] = "ID";
+	step_ops[over] = name;
 
-	return sub;
+	return step_ops;
 }
 
 
@@ -404,52 +404,52 @@ vector <string> QFT(int qubits, int reg, int over, int width){
 
 //        cout << "QFT" << endl;
 
-	string s, name;
+	string joined_step, name;
 	vector <string> qft;
 
 	Gates g;
-	float complex c;
-	for (int i = 1; i <= width+1; i++){
-                name = "R" + int2str(i);
+	float complex rotation_value;
+	for (int level = 1; level <= width+1; level++){
+                name = "R" + int2str(level);
 
-//		cout << "QFT " << i << endl;
-		c = M_E;
-		c = cpowf(c, 2*M_PI*I/pow(2.0, i));
+//		cout << "QFT " << level << endl;
+		rotation_value = M_E;
+		rotation_value = cpowf(rotation_value, 2*M_PI*I/pow(2.0, level));
 
-//                cout << "QFT " << i << endl;
-		g.addGate(name, 1.0, 0.0, 0.0, c);
-//                cout << "QFT " << i << endl;
+//                cout << "QFT " << level << endl;
+		g.addGate(name, 1.0, 0.0, 0.0, rotation_value);
+//                cout << "QFT " << level << endl;
 	}
 
 //        cout << "QFT" << endl;
 
 
-	vector <string> base (qubits, "ID");
+	vector <string> step_ops (qubits, "ID");
 
 	qft.push_back(Hadamard(qubits, over, 1));
-	for (int j = 0; j < width; j++){
-		base[j+reg] = "Control1(1)";
-		base[over] = "Target1(R" + int2str(j+2) + ")";
+	for (int control_qubit_index = 0; control_qubit_index < width; control_qubit_index++){
+		step_ops[control_qubit_index+reg] = "Control1(1)";
+		step_ops[over] = "Target1(R" + int2str(control_qubit_index+2) + ")";
 
-		s = concatena(base, qubits);
-		qft.push_back(s);
-		base[j+reg] = "ID";
+		joined_step = concatena(step_ops, qubits);
+		qft.push_back(joined_step);
+		step_ops[control_qubit_index+reg] = "ID";
 	}
-	base[over] = "ID";
+	step_ops[over] = "ID";
 
-	for (int i = 0; i < width; i++){
-		qft.push_back(Hadamard(qubits, i+reg, 1));
+	for (int target_qubit_index = 0; target_qubit_index < width; target_qubit_index++){
+		qft.push_back(Hadamard(qubits, target_qubit_index+reg, 1));
 
-		for (int j = i+1; j < width; j++){
-			base[j+reg] = "Control1(1)";
-			base[i+reg] = "Target1(R" + int2str(j-i+1) + ")";
+		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
+			step_ops[control_qubit_index+reg] = "Control1(1)";
+			step_ops[target_qubit_index+reg] = "Target1(R" + int2str(control_qubit_index-target_qubit_index+1) + ")";
 
-			s = concatena(base, qubits);
-			qft.push_back(s);
+			joined_step = concatena(step_ops, qubits);
+			qft.push_back(joined_step);
 
-			base[j+reg] = "ID";
+			step_ops[control_qubit_index+reg] = "ID";
 		}
-		base[i+reg] = "ID";
+		step_ops[target_qubit_index+reg] = "ID";
 	}
 
 //        cout << "QFT" << endl;
@@ -459,80 +459,80 @@ vector <string> QFT(int qubits, int reg, int over, int width){
 }
 
 vector <string> QFT2(int qubits, int reg, int width){
-	string s;
+	string joined_step;
 	vector <string> qft;
 
 	Gates g;
-	float complex c;
-	for (int i = 1; i <= width+1; i++){
-		c = M_E;
-		c = cpowf(c, 2*M_PI*I/pow(2.0, i));
-		g.addGate("R-" + int2str(i), 1.0, 0.0, 0.0, c);
+	float complex rotation_value;
+	for (int level = 1; level <= width+1; level++){
+		rotation_value = M_E;
+		rotation_value = cpowf(rotation_value, 2*M_PI*I/pow(2.0, level));
+		g.addGate("R-" + int2str(level), 1.0, 0.0, 0.0, rotation_value);
 	}
 
-	vector <string> base (qubits, "ID");
+	vector <string> step_ops (qubits, "ID");
 
-	for (int i = 0; i < width; i++){
-		base[i+reg] = "H";
-		s = concatena(base, qubits);
-		qft.push_back(s);
+	for (int target_qubit_index = 0; target_qubit_index < width; target_qubit_index++){
+		step_ops[target_qubit_index+reg] = "H";
+		joined_step = concatena(step_ops, qubits);
+		qft.push_back(joined_step);
 
-		for (int j = i+1; j < width; j++){
-			base[j+reg] = "Control1(1)";
-			base[i+reg] = "Target1(R-" + int2str(j-i+1) + ")";
+		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
+			step_ops[control_qubit_index+reg] = "Control1(1)";
+			step_ops[target_qubit_index+reg] = "Target1(R-" + int2str(control_qubit_index-target_qubit_index+1) + ")";
 
-			s = concatena(base, qubits);
-			qft.push_back(s);
+			joined_step = concatena(step_ops, qubits);
+			qft.push_back(joined_step);
 
-			base[j+reg] = "ID";
+			step_ops[control_qubit_index+reg] = "ID";
 		}
-		base[i+reg] = "ID";
+		step_ops[target_qubit_index+reg] = "ID";
 	}
 
 	return qft;
 }
 
 vector <string> RQFT(int qubits, int reg, int over, int width){
-	string s;
+	string joined_step;
 	vector <string> rqft;
 
 	Gates g;
-	float complex c;
-	for (int i = 1; i <= width+1; i++){
-		c = M_E;
-		c = cpowf(c, -2*M_PI*I/pow(2.0, i));
-		g.addGate("R'" + int2str(i), 1.0, 0.0, 0.0, c);
+	float complex rotation_value;
+	for (int level = 1; level <= width+1; level++){
+		rotation_value = M_E;
+		rotation_value = cpowf(rotation_value, -2*M_PI*I/pow(2.0, level));
+		g.addGate("R'" + int2str(level), 1.0, 0.0, 0.0, rotation_value);
 	}
 
-	vector <string> base (qubits, "ID");
+	vector <string> step_ops (qubits, "ID");
 
 
 	rqft.push_back(Hadamard(qubits, over, 1));
-	for (int j = 0; j < width; j++){
-		base[j+reg] = "Control1(1)";
-		base[over] = "Target1(R'" + int2str(j+2) + ")";
+	for (int control_qubit_index = 0; control_qubit_index < width; control_qubit_index++){
+		step_ops[control_qubit_index+reg] = "Control1(1)";
+		step_ops[over] = "Target1(R'" + int2str(control_qubit_index+2) + ")";
 
-		s = concatena(base, qubits);
-		rqft.push_back(s);
-		base[j+reg] = "ID";
+		joined_step = concatena(step_ops, qubits);
+		rqft.push_back(joined_step);
+		step_ops[control_qubit_index+reg] = "ID";
 	}
-	base[over] = "ID";
+	step_ops[over] = "ID";
 
-	for (int i = 0; i < width; i++){
-		base[i+reg] = "H";
-		s = concatena(base, qubits);
-		rqft.push_back(s);
+	for (int target_qubit_index = 0; target_qubit_index < width; target_qubit_index++){
+		step_ops[target_qubit_index+reg] = "H";
+		joined_step = concatena(step_ops, qubits);
+		rqft.push_back(joined_step);
 
-		for (int j = i+1; j < width; j++){
-			base[j+reg] = "Control1(1)";
-			base[i+reg] = "Target1(R'" + int2str(j-i+1) + ")";
+		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
+			step_ops[control_qubit_index+reg] = "Control1(1)";
+			step_ops[target_qubit_index+reg] = "Target1(R'" + int2str(control_qubit_index-target_qubit_index+1) + ")";
 
-			s = concatena(base, qubits);
-			rqft.push_back(s);
+			joined_step = concatena(step_ops, qubits);
+			rqft.push_back(joined_step);
 
-			base[j+reg] = "ID";
+			step_ops[control_qubit_index+reg] = "ID";
 		}
-		base[i+reg] = "ID";
+		step_ops[target_qubit_index+reg] = "ID";
 	}
 	reverse(rqft.begin(), rqft.end());
 
@@ -540,158 +540,158 @@ vector <string> RQFT(int qubits, int reg, int over, int width){
 }
 
 vector <string> CSwapR(int qubits, int ctrl, int reg1, int reg2, int width){
-	vector <string> sw;
-	vector <string>	base (qubits, "ID");
-	string s1, s2;
+	vector <string> swap_steps;
+	vector <string>	step_ops (qubits, "ID");
+	string joined_step1, joined_step2;
 
-	for (int i = 0; i < width; i++){
-		base[ctrl] = "Control1(1)";
-		base[i+reg1] = "Target1(X)";
-		base[i+reg2] = "Control1(1)";
-		s1 = concatena(base, qubits);
+	for (int qubit_index = 0; qubit_index < width; qubit_index++){
+		step_ops[ctrl] = "Control1(1)";
+		step_ops[qubit_index+reg1] = "Target1(X)";
+		step_ops[qubit_index+reg2] = "Control1(1)";
+		joined_step1 = concatena(step_ops, qubits);
 
-		base[ctrl] = "ID";
-		base[i+reg1] = "Control1(1)";
-		base[i+reg2] = "Target1(X)";
-		s2 = concatena(base, qubits);
+		step_ops[ctrl] = "ID";
+		step_ops[qubit_index+reg1] = "Control1(1)";
+		step_ops[qubit_index+reg2] = "Target1(X)";
+		joined_step2 = concatena(step_ops, qubits);
 
-		base[i+reg1] = base[i+reg2] = "ID";
+		step_ops[qubit_index+reg1] = step_ops[qubit_index+reg2] = "ID";
 
-		sw.push_back(s2);
-		sw.push_back(s1);
-		sw.push_back(s2);
+		swap_steps.push_back(joined_step2);
+		swap_steps.push_back(joined_step1);
+		swap_steps.push_back(joined_step2);
 	}
 
-	return sw;
+	return swap_steps;
 }
 
 vector <string> SwapOver(int qubits, int reg, int width){
-	vector <string> so;
+	vector <string> swap_steps;
 
-	for(int i=0; i<width/2; i++){
-		so.push_back(CNot(qubits, reg+width-i-1, reg+i));
-		so.push_back(CNot(qubits, reg+i, reg+width-i-1));
-		so.push_back(CNot(qubits, reg+width-i-1, reg+i));
+	for(int qubit_index=0; qubit_index<width/2; qubit_index++){
+		swap_steps.push_back(CNot(qubits, reg+width-qubit_index-1, reg+qubit_index));
+		swap_steps.push_back(CNot(qubits, reg+qubit_index, reg+width-qubit_index-1));
+		swap_steps.push_back(CNot(qubits, reg+width-qubit_index-1, reg+qubit_index));
     }
 
-	return so;
+	return swap_steps;
 }
 
-long mul_inv(long a, long b){
-	long b0 = b, t, q;
-	long x0 = 0, x1 = 1;
-	if (b == 1) return 1;
-	while (a > 1) {
-		q = a / b;
-		t = b, b = a % b, a = t;
-		t = x0, x0 = x1 - q * x0, x1 = t;
+long mul_inv(long value, long modulus){
+	long modulus_orig = modulus, temp, quotient;
+	long coeff_prev = 0, coeff_curr = 1;
+	if (modulus == 1) return 1;
+	while (value > 1) {
+		quotient = value / modulus;
+		temp = modulus, modulus = value % modulus, value = temp;
+		temp = coeff_prev, coeff_prev = coeff_curr - quotient * coeff_prev, coeff_curr = temp;
 	}
-	if (x1 < 0) x1 += b0;
+	if (coeff_curr < 0) coeff_curr += modulus_orig;
 
-	return x1;
+	return coeff_curr;
 }
 
 string int2str(int number){
 	stringstream ss;
 	ss << number;
 
-	string str = ss.str();
+	string text = ss.str();
 
-	return str;
+	return text;
 }
 
 //////////////////////////////////////////////////////
 
-//N - Number to ne factored
-//type - Execution Type
-//threads - Number of threads to be used in case of a parallel execution on CPU
-vector<int> Shor(long N, int type, int n_threads, int cpu_region, int cpu_coalesc, int multi_gpu, int gpu_region, int gpu_coalesc, int tam_block, int rept){
-	long a, n, mod_a, mod_inv_a, aux, m, res;
+//number_to_factor - número a ser fatorado
+//type - tipo de execução
+//thread_count - número de threads usadas na execução paralela em CPU
+vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
+	long base_value, bit_width, base_pow_mod, base_inv_pow_mod, remaining_value, measured_bit, measured_phase_bits;
 
 	int qubits, qft_qb, reg1, reg2, over, over_bool;
-	int f1, f2, factor;
+	int gcd_candidate1, gcd_candidate2, found_factor;
 
 	//////////////////////////////////
 	DGM dgm;
 	dgm.exec_type = type;
-	dgm.multi_gpu = multi_gpu;
-	dgm.n_threads = n_threads;
+	dgm.gpu_count = gpu_count;
+	dgm.thread_count = thread_count;
 
-	dgm.cpu_region = cpu_region;
-	dgm.cpu_coales = cpu_coalesc;
-	
-	dgm.gpu_region = gpu_region;
-	dgm.gpu_coales = gpu_coalesc;
-	dgm.tam_block = tam_block;
-	dgm.rept = rept;
+	dgm.cpu_region_bits = cpu_region_bits;
+	dgm.cpu_coalesced_bits = cpu_coalesced_bits;
+
+	dgm.gpu_region_bits = gpu_region_bits;
+	dgm.gpu_coalesced_bits = gpu_coalesced_bits;
+	dgm.block_size = block_size;
+	dgm.repeat_count = repeat_count;
 	//-----------------------------//
 
-	aux = N;
-	a = n = 0;
-	while (aux){
-		n++;
-		aux = aux >> 1;
+	remaining_value = number_to_factor;
+	base_value = bit_width = 0;
+	while (remaining_value){
+		bit_width++;
+		remaining_value = remaining_value >> 1;
 	}
-	qubits = 2*n+3;
+	qubits = 2*bit_width+3;
 
 	//////////////////////////////////////
 	dgm.qubits = qubits;
 	dgm.allocateMemory();
-	dgm.setMemoryValue((1<<(n+2)));
+	dgm.setMemoryValue((1<<(bit_width+2)));
 	//----------------------------------//
 
 	qft_qb = 0;
 	reg1 = 1;
-	reg2 = n+2;
-	over = n+1;
+	reg2 = bit_width+2;
+	over = bit_width+1;
 	over_bool = qubits - 1;
 
-	while((quantum_gcd(N, a) > 1) || (a < 2)){
-		a = rand() % N;
+	while((quantum_gcd(number_to_factor, base_value) > 1) || (base_value < 2)){
+		base_value = rand() % number_to_factor;
 	}
 
-	string X0 = Pauli_X(qubits, 0, 1);
-	string H0 = Hadamard(qubits, qft_qb, 1);
+	string x_step0 = Pauli_X(qubits, 0, 1);
+	string hadamard_step0 = Hadamard(qubits, qft_qb, 1);
 
-	res = 0;
-	int L = 2*n-1;
-	long inv_a = mul_inv(a,N);
+	measured_phase_bits = 0;
+	int top_round_index = 2*bit_width-1;
+	long base_inverse = mul_inv(base_value,number_to_factor);
 
-	vector <string> func, f;
+	vector <string> round_steps, sub_steps;
 
-	for (int i = L; i >= 0; i--){
-		mod_a = modular_pow(a, pow(2,i), N);
-		mod_inv_a = modular_pow(inv_a, pow(2,i), N);
+	for (int round_index = top_round_index; round_index >= 0; round_index--){
+		base_pow_mod = modular_pow(base_value, pow(2,round_index), number_to_factor);
+		base_inv_pow_mod = modular_pow(base_inverse, pow(2,round_index), number_to_factor);
 
-		func.clear();
+		round_steps.clear();
 
-		func.push_back(H0);
+		round_steps.push_back(hadamard_step0);
 
-		f = CMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, n, mod_a, N);
+		sub_steps = CMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor);
 
-		func.insert(func.end(), f.begin(), f.end());
-		f = CSwapR(qubits, qft_qb, reg1, reg2, n);
-		func.insert(func.end(), f.begin(), f.end());
+		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
+		sub_steps = CSwapR(qubits, qft_qb, reg1, reg2, bit_width);
+		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
 
-		f = CRMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, n, mod_a, N);
-		func.insert(func.end(), f.begin(), f.end());
-		func.push_back(H0);
+		sub_steps = CRMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor);
+		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
+		round_steps.push_back(hadamard_step0);
 
-		if (res) func.push_back(genRot(qubits, qft_qb, res));
+		if (measured_phase_bits) round_steps.push_back(genRot(qubits, qft_qb, measured_phase_bits));
 
-		dgm.executeFunction(func);
+		dgm.executeFunction(round_steps);
 
-		m = dgm.measure(qft_qb);
+		measured_bit = dgm.measure(qft_qb);
 
-		res = (res << 1) | m;
+		measured_phase_bits = (measured_phase_bits << 1) | measured_bit;
 	}
 
 /*
-	dgm.setFunction(func);
+	dgm.setFunction(round_steps);
 	//cout << "Aqui" << endl;
 	dgm.CountOps();
-	
-	
+
+
 	cout << "Shor " << qubits << " qubits" << endl;
 	cout << "Dense: " << dgm.dense << endl;
 	cout << "Main Diagonal: " << dgm.main_diag << endl;
@@ -707,80 +707,80 @@ vector<int> Shor(long N, int type, int n_threads, int cpu_region, int cpu_coales
 	// Result check
 	vector<int> factors;
 
-	int c = revert_bits(res, 2*n);
+	int numerator = revert_bits(measured_phase_bits, 2*bit_width);
 
-	//cout << c << "   " << res << endl;
+	//cout << numerator << "   " << measured_phase_bits << endl;
 
-	if(c==0)
+	if(numerator==0)
 	{
 		//printf("Fail - Measured Zero.\n");
 		return factors;
 	}
 
-	int q = 1<<(2*n);
+	int denominator = 1<<(2*bit_width);
 
-	//printf("Measured %i (%f), ", c, (float)c/q);
+	//printf("Measured %i (%f), ", numerator, (float)numerator/denominator);
 
-	quantum_frac_approx(&c, &q, n);
+	quantum_frac_approx(&numerator, &denominator, bit_width);
 
-	//printf("fractional approximation is %i/%i.\n", c, q);
+	//printf("fractional approximation is %i/%i.\n", numerator, denominator);
 
-	int r = q;
-	int i = 1;
-	while ((r*i) < (1<<n)){
-		if (modular_pow(a, r*i, N) == 1){
-			q = r * i;
+	int cf_denominator = denominator;
+	int multiple_index = 1;
+	while ((cf_denominator*multiple_index) < (1<<bit_width)){
+		if (modular_pow(base_value, cf_denominator*multiple_index, number_to_factor) == 1){
+			denominator = cf_denominator * multiple_index;
 			break;
 		}
-		i++;
+		multiple_index++;
 	}
-	if (q >= N) q = r;
+	if (denominator >= number_to_factor) denominator = cf_denominator;
 
 	/*
-	if((q % 2 == 1) && (2*q<(1<<n)))
+	if((denominator % 2 == 1) && (2*denominator<(1<<bit_width)))
 	{
 		//printf("Odd denominator, trying to expand by 2.\n");
-		q *= 2;
+		denominator *= 2;
 	}
 
-	if(q % 2 == 1)
+	if(denominator % 2 == 1)
 	{
 		//printf("Odd period, try again.\n");
 		return;
 	}
 	*/
 
-	//printf("Possible period is %i.\n", q);
+	//printf("Possible period is %i.\n", denominator);
 
-	i = modular_pow(a, q/2, N);
-	f1 = quantum_gcd(N, i+1);
-	f2 = quantum_gcd(N, i-1);
+	int half_period_pow_mod = modular_pow(base_value, denominator/2, number_to_factor);
+	gcd_candidate1 = quantum_gcd(number_to_factor, half_period_pow_mod+1);
+	gcd_candidate2 = quantum_gcd(number_to_factor, half_period_pow_mod-1);
 
-	if(f1>f2)
-		factor=f1;
+	if(gcd_candidate1>gcd_candidate2)
+		found_factor=gcd_candidate1;
 	else
-		factor=f2;
+		found_factor=gcd_candidate2;
 
-	if((factor < N) && (factor > 1))
+	if((found_factor < number_to_factor) && (found_factor > 1))
 	{
-		factors.push_back(factor);
-		factors.push_back((int)N/factor);
+		factors.push_back(found_factor);
+		factors.push_back((int)number_to_factor/found_factor);
 		return factors;
 	}
 
-	if (r!=q){
-		i = modular_pow(a, r/2, N);
-		f1 = quantum_gcd(N, i+1);
-		f2 = quantum_gcd(N, i-1);
+	if (cf_denominator!=denominator){
+		half_period_pow_mod = modular_pow(base_value, cf_denominator/2, number_to_factor);
+		gcd_candidate1 = quantum_gcd(number_to_factor, half_period_pow_mod+1);
+		gcd_candidate2 = quantum_gcd(number_to_factor, half_period_pow_mod-1);
 
-		if(f1>f2)
-			factor=f1;
+		if(gcd_candidate1>gcd_candidate2)
+			found_factor=gcd_candidate1;
 		else
-			factor=f2;
+			found_factor=gcd_candidate2;
 
-		if((factor < N) && (factor > 1)){
-			factors.push_back(factor);
-			factors.push_back((int)N/factor);
+		if((found_factor < number_to_factor) && (found_factor > 1)){
+			factors.push_back(found_factor);
+			factors.push_back((int)number_to_factor/found_factor);
 			return factors;
 		}
 	}
@@ -788,4 +788,3 @@ vector<int> Shor(long N, int type, int n_threads, int cpu_region, int cpu_coales
 	//printf("Fail - Try Again.\n");
 	return factors;
 }
-

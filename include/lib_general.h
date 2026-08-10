@@ -1,11 +1,15 @@
 #ifndef _LIBGENERAL_H_
 #define _LIBGENERAL_H_
 
-#define complex _Complex
+// <complex.h> precisa ser incluído antes da define abaixo, senão a
+// definição de "complex" daqui contamina a inicialização do <complex.h>
+// do sistema quando ele for incluído depois (por common.h/dgm.h).
+#include <complex.h>
+#define complex __complex__
 
-float HadamardNQubits(long qubits, long num_of_it, int type, int n_threads, int cpu_region, int cpu_coales, int multi_gpu, int gpu_region, int gpu_coales, int tam_block, int rept);
+float HadamardNQubits(long qubits, long iterations, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count);
 
-float HadamardNQubits_PAR_CPU(long qubits, long num_of_it, int n_threads = 1, int cpu_region = 13, int cpu_coales = 9);
-float HadamardNQubits_GPU(long qubits, long num_of_it, int multi_gpu = 1, int gpu_region = 8, int gpu_coales = 4, int tam_block = 64, int rept = 2);
+float HadamardNQubits_PAR_CPU(long qubits, long iterations, int thread_count = 1, int cpu_region_bits = 13, int cpu_coalesced_bits = 9);
+float HadamardNQubits_GPU(long qubits, long iterations, int gpu_count = 1, int gpu_region_bits = 8, int gpu_coalesced_bits = 4, int block_size = 64, int repeat_count = 2);
 
 #endif

@@ -3,14 +3,18 @@
 
 #include <vector>
 #include <string>
+// <complex.h> precisa ser incluído antes da define abaixo, senão a
+// definição de "complex" daqui contamina a inicialização do <complex.h>
+// do sistema quando ele for incluído depois (por common.h/dgm.h).
+#include <complex.h>
 
 using namespace std;
 
-#define complex _Complex
+#define complex __complex__
 
-float Grover(long qubits, long value, int type, int n_threads, int cpu_region, int cpu_coales, int multi_gpu, int gpu_region, int gpu_coales, int tam_block, int rept);
+float Grover(long qubits, long search_value, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count);
 
 string ControledZ(int qubits);
-string Oracle1(long qubits, long int value);
+string Oracle1(long qubits, long search_value);
 
 #endif

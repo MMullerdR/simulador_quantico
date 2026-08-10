@@ -7,6 +7,15 @@ CXX  = g++
 OPS_BLOCK = 300
 INCLUDES  = -Iinclude
 
+# kernel.cu instancia ~260 versões do mesmo kernel via template (uma por
+# combinação de tam_block/rept/coalesc — ver docs/04-gpu-cuda.md). Em -O3
+# (padrão do nvcc) isso pode fazer o back-end (cicc/ptxas) travar por
+# muito tempo numa única instanciação mais pesada de otimizar. KERNEL_OPT
+# fica em -O0 por padrão pra manter o ciclo de compilar/verificar rápido;
+# pra um build de produção de verdade (com performance real), rode
+# "make KERNEL_OPT=-O3 kernel.o" (ou "make clean && make KERNEL_OPT=-O3").
+KERNEL_OPT = -O0
+
 CXXFLAGS  = $(INCLUDES)
 NVCCFLAGS = $(INCLUDES)
 LDFLAGS   = -Xcompiler "-fopenmp"
@@ -19,9 +28,26 @@ OUT = outputs
 # without caring which of the three subfolders it actually lives in.
 VPATH = $(SRC)/core:$(SRC)/algorithms:$(SRC)/cli
 
+# GPU=stub (padrão): usa src/core/kernel_stub.cpp, compilado com g++,
+# no lugar de kernel.cu — não usa nvcc em NADA do build, só serve pros
+# backends de CPU (t_CPU/t_PAR_CPU). Existe porque o nvcc está
+# anormalmente lento nesta máquina (a investigar depois).
+# GPU=real: usa o kernel.cu de verdade, compilado com nvcc, com suporte
+# a GPU (precisa de nvcc funcionando; roda "make GPU=real").
+GPU ?= stub
+
+ifeq ($(GPU),stub)
+GPU_OBJS = $(OUT)/kernel_stub.o
+LINKER   = $(CXX)
+LDFLAGS  = -fopenmp
+else
+GPU_OBJS = $(OUT)/kernel.o
+LINKER   = $(NVCC)
+LDFLAGS  = -Xcompiler "-fopenmp"
+endif
+
 # Object groups
 CORE_OBJS = $(addprefix $(OUT)/, dgm.o common.o gates.o lib_general.o lib_shor.o lib_grover.o)
-GPU_OBJS  = $(OUT)/kernel.o
 
 .PHONY: all clean shor grover general
 
@@ -34,20 +60,20 @@ grover: $(OUT)/grover.out
 general: $(OUT)/general.out
 
 $(OUT)/shor.out: $(OUT)/shor.o $(CORE_OBJS) $(GPU_OBJS)
-	$(NVCC) -o $@ $^ $(LDFLAGS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
 
 $(OUT)/grover.out: $(OUT)/grover.o $(CORE_OBJS) $(GPU_OBJS)
-	$(NVCC) -o $@ $^ $(LDFLAGS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
 
 $(OUT)/general.out: $(OUT)/general.o $(CORE_OBJS) $(GPU_OBJS)
-	$(NVCC) -o $@ $^ $(LDFLAGS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
 
 # entry points also need OpenMP at compile time
 $(OUT)/shor.o $(OUT)/general.o $(OUT)/grover.o: CXXFLAGS += -fopenmp
 
 # per-file extra flags
 $(OUT)/dgm.o: CXXFLAGS += -fopenmp -O3 -fcx-limited-range
-$(OUT)/kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK)
+$(OUT)/kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK) $(KERNEL_OPT)
 
 # pattern rules (the "| $(OUT)" order-only prerequisite makes sure the
 # output folder exists before compiling, without forcing a rebuild every

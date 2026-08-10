@@ -9,90 +9,90 @@
 using namespace std;
 
 
-float Grover(long qubits, long value, int type, int n_threads, int cpu_region, int cpu_coales, int multi_gpu, int gpu_region, int gpu_coales, int tam_block, int rept){
+float Grover(long qubits, long search_value, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
 	DGM dgm;
 	dgm.qubits = qubits;
 	dgm.exec_type = type;
- 
-	dgm.n_threads = n_threads;
-	dgm.cpu_region = cpu_region;
-	dgm.cpu_coales = cpu_coales;
-	
-	dgm.multi_gpu = multi_gpu;
-	dgm.gpu_region = gpu_region;
-	dgm.gpu_coales = gpu_coales;
-	dgm.tam_block = tam_block;
-	dgm.rept = rept;
+
+	dgm.thread_count = thread_count;
+	dgm.cpu_region_bits = cpu_region_bits;
+	dgm.cpu_coalesced_bits = cpu_coalesced_bits;
+
+	dgm.gpu_count = gpu_count;
+	dgm.gpu_region_bits = gpu_region_bits;
+	dgm.gpu_coalesced_bits = gpu_coalesced_bits;
+	dgm.block_size = block_size;
+	dgm.repeat_count = repeat_count;
 
 	dgm.allocateMemory();
 	dgm.setMemoryValue(1<<(qubits-1));
-	
-	string H = Hadamard(qubits, 0, qubits);
-	string orcl = Oracle1(qubits, value);
-	string CZ = ControledZ(qubits);
+
+	string hadamard_step = Hadamard(qubits, 0, qubits);
+	string oracle_step = Oracle1(qubits, search_value);
+	string controlled_z_step = ControledZ(qubits);
 
 	vector <string> grover_step;
 
-	grover_step.push_back(orcl);
-	
-	for (int i = 1; i < qubits; i++){
-		grover_step.push_back(Hadamard(qubits, i, 1));
-		grover_step.push_back(Pauli_X(qubits, i, 1));
-	}
-	
-	grover_step.push_back(CZ);
+	grover_step.push_back(oracle_step);
 
-	for (int i = qubits-1; i >= 1; i--){
-		grover_step.push_back(Pauli_X(qubits, i, 1));
-		grover_step.push_back(Hadamard(qubits, i, 1));
+	for (int qubit_index = 1; qubit_index < qubits; qubit_index++){
+		grover_step.push_back(Hadamard(qubits, qubit_index, 1));
+		grover_step.push_back(Pauli_X(qubits, qubit_index, 1));
 	}
 
-	int num_of_it = (int) (M_PI/4.0*sqrt(1<<(qubits-1)));
+	grover_step.push_back(controlled_z_step);
+
+	for (int qubit_index = qubits-1; qubit_index >= 1; qubit_index--){
+		grover_step.push_back(Pauli_X(qubits, qubit_index, 1));
+		grover_step.push_back(Hadamard(qubits, qubit_index, 1));
+	}
+
+	int iteration_count = (int) (M_PI/4.0*sqrt(1<<(qubits-1)));
 	long result = 0;
 
-	dgm.setFunction(H);
-	dgm.setFunction(grover_step, num_of_it, false);
+	dgm.setFunction(hadamard_step);
+	dgm.setFunction(grover_step, iteration_count, false);
 
-	
+
 	struct timeval timev, tvBegin, tvEnd;
 	gettimeofday(&tvBegin, NULL);
-	
+
 	dgm.execute(1);
 
-	for (int i = 1; i < qubits; i++) {
-		result = (result << 1) | dgm.measure(i);
+	for (int qubit_index = 1; qubit_index < qubits; qubit_index++) {
+		result = (result << 1) | dgm.measure(qubit_index);
 	}
 
 	gettimeofday(&tvEnd, NULL);
 	timeval_subtract(&timev, &tvEnd, &tvBegin);
-	float t = timev.tv_sec + (timev.tv_usec / 1000000.0);
+	float elapsed = timev.tv_sec + (timev.tv_usec / 1000000.0);
 
 	dgm.freeMemory();
 
-	return t;
+	return elapsed;
 }
 
-string Oracle1(long qubits, long int value){
-	vector <string> t(qubits);
-	int ctrl_v;
+string Oracle1(long qubits, long search_value){
+	vector <string> step_ops(qubits);
+	int ctrl_bit;
 
-	for (int i = qubits - 1; i >= 1; i--){
-		ctrl_v = value&1;
-		value = value >> 1;
-		if (ctrl_v) t[i] = "Control1(1)";
-		else t[i] = "Control1(0)";
+	for (int qubit_index = qubits - 1; qubit_index >= 1; qubit_index--){
+		ctrl_bit = search_value&1;
+		search_value = search_value >> 1;
+		if (ctrl_bit) step_ops[qubit_index] = "Control1(1)";
+		else step_ops[qubit_index] = "Control1(0)";
 	}
-	t[0] = "Target1(X)";
+	step_ops[0] = "Target1(X)";
 
-	return concatena(t, qubits);
+	return concatena(step_ops, qubits);
 
 }
 
 string ControledZ(int qubits){
-	vector <string> cz;
-	cz.push_back("ID");
-	for (int i = 0; i < qubits-2; i++) cz.push_back("Control1(1)");
-	cz.push_back("Target1(Z)");
+	vector <string> step_ops;
+	step_ops.push_back("ID");
+	for (int qubit_index = 0; qubit_index < qubits-2; qubit_index++) step_ops.push_back("Control1(1)");
+	step_ops.push_back("Target1(Z)");
 
-	return concatena(cz, qubits);
+	return concatena(step_ops, qubits);
 }

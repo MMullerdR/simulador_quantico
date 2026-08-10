@@ -7,7 +7,7 @@
 using namespace std;
 
 int main(int argc, char **argv){
-	int n_threads = 1, cpu_region = 14, cpu_coalesc = 11, multi_gpu = 1, gpu_region = 8, gpu_coalesc = 4, tam_block = 64, rept = 2;
+	int thread_count = 1, cpu_region_bits = 14, cpu_coalesced_bits = 11, gpu_count = 1, gpu_region_bits = 8, gpu_coalesced_bits = 4, block_size = 64, repeat_count = 2;
 
 	if (argc < 3){
 		cout << "You need to define the execution parameters" << endl;
@@ -16,36 +16,36 @@ int main(int argc, char **argv){
 
 	int qubits = atoi(argv[1]);
 
-	int execType = atoi(argv[2]);
-	if (execType < t_PAR_CPU || execType > t_HYBRID){
-		cout << "Invalid execution type: " << execType << endl; 
+	int exec_type = atoi(argv[2]);
+	if (exec_type < t_PAR_CPU || exec_type > t_HYBRID){
+		cout << "Invalid execution type: " << exec_type << endl;
 		return 0;
 	}
 
-	if (execType == t_PAR_CPU) {
-		if (argc > 3) n_threads = atoi(argv[3]);
+	if (exec_type == t_PAR_CPU) {
+		if (argc > 3) thread_count = atoi(argv[3]);
 	}
-	else if (execType == t_GPU) {
-		if (argc > 3) multi_gpu = atoi(argv[3]);
+	else if (exec_type == t_GPU) {
+		if (argc > 3) gpu_count = atoi(argv[3]);
 	}
-	else if (execType == t_HYBRID) {
-		if (argc > 3) n_threads = atoi(argv[3]);
+	else if (exec_type == t_HYBRID) {
+		if (argc > 3) thread_count = atoi(argv[3]);
 	}
 
-	vector <float> amostras;
+	vector <float> samples;
 
 	struct timeval timev, tvBegin, tvEnd;
-	float t;
-	long num_of_it = 3;
-	
+	float elapsed;
+	long iterations = 3;
+
 	gettimeofday(&tvBegin, NULL);
-	HadamardNQubits(qubits, num_of_it, execType, n_threads, cpu_region, cpu_coalesc, multi_gpu, gpu_region, gpu_coalesc, tam_block, rept);
+	HadamardNQubits(qubits, iterations, exec_type, thread_count, cpu_region_bits, cpu_coalesced_bits, gpu_count, gpu_region_bits, gpu_coalesced_bits, block_size, repeat_count);
 	gettimeofday(&tvEnd, NULL);
 
 	timeval_subtract(&timev, &tvEnd, &tvBegin);
-	t = timev.tv_sec + (timev.tv_usec / 1000000.0);
+	elapsed = timev.tv_sec + (timev.tv_usec / 1000000.0);
 
-	cout << t << endl;
+	cout << elapsed << endl;
 
 	return 0;
 }
