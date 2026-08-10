@@ -94,6 +94,6 @@ região** (um subconjunto de índices que compartilham os bits fora de
 `reg_mask` iguais a `reg_id`) entre a memória do host e a GPU, em vez do
 vetor inteiro. É isso que permite ao `HybridExecution` (ver
 [03-motor-de-execucao-cpu.md](03-motor-de-execucao-cpu.md), seção 5, e o
-código em [dgm.cu:1002](../src/core/dgm.cu#L1002)) mandar só a fatia
+código em [dgm.cpp:1002](../src/core/dgm.cpp#L1002)) mandar só a fatia
 do estado que a GPU vai processar naquele momento, enquanto o resto do
 estado continua sendo processado pelas threads de CPU em paralelo.

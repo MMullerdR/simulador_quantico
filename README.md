@@ -33,7 +33,7 @@ estão listados em
 ```
 include/            headers (.h) — comuns a todo o projeto
 src/
- ├─ core/           motor de simulação: common.cpp, dgm.cu, gates.cpp, kernel.cu
+ ├─ core/           motor de simulação: common.cpp, dgm.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
  └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
 outputs/            gerado pelo build (.o e .out) — não versionado

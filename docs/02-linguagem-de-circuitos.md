@@ -5,7 +5,7 @@ disso, um "passo" (*step*) do circuito — ou seja, uma camada de portas que
 atuam simultaneamente em qubits diferentes — é escrito como uma **string com
 um token por qubit, separados por vírgula**. Isso é gerado pelas funções de
 [gates.cpp](../src/core/gates.cpp) e depois interpretado por
-`DGM::genGroups` + `DGM::genPTs` em [dgm.cu](../src/core/dgm.cu).
+`DGM::genGroups` + `DGM::genPTs` em [dgm.cpp](../src/core/dgm.cpp).
 
 ## 1. Os tokens
 
@@ -61,7 +61,7 @@ independentemente por `genGroups`.
 
 ## 2. `DGM::genGroups` — de string para grupos
 
-[dgm.cu:238](../src/core/dgm.cu#L238). Recebe um step (string), separa
+[dgm.cpp:238](../src/core/dgm.cpp#L238). Recebe um step (string), separa
 por vírgula (`Tokenize`) e percorre token a token, acumulando um
 `map<long, Group>` (grupo → controles e alvos):
 
@@ -75,7 +75,7 @@ por vírgula (`Tokenize`) e percorre token a token, acumulando um
 
 ## 3. `DGM::genPTs` — de grupos para `PT`
 
-[dgm.cu:285](../src/core/dgm.cu#L285). Para cada grupo:
+[dgm.cpp:285](../src/core/dgm.cpp#L285). Para cada grupo:
 
 1. Calcula `ctrl_mask` e `ctrl_value` (inteiros de `qubits` bits) a partir das
    posições e valores dos controles daquele grupo — convertendo a posição no
@@ -95,7 +95,7 @@ condicionada a um padrão de bits de controle**.
 
 Um circuito completo pode ter vários steps separados por `;`
 (`DGM::setFunction(string function, ...)` faz `Tokenize(function, steps, ";")`,
-[dgm.cu:204](../src/core/dgm.cu#L204)), ou já vir como
+[dgm.cpp:204](../src/core/dgm.cpp#L204)), ou já vir como
 `vector<string>` (um item = um step). `setFunction` monta, para cada step, os
 `PT`s daquele step, ordena (`increasing`/`decreasing`, alternando a cada step
 — uma heurística de ordenação para melhorar localidade/coalescimento) e

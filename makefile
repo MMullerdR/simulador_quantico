@@ -46,7 +46,7 @@ $(OUT)/general.out: $(OUT)/general.o $(CORE_OBJS) $(GPU_OBJS)
 $(OUT)/shor.o $(OUT)/general.o $(OUT)/grover.o: CXXFLAGS += -fopenmp
 
 # per-file extra flags
-$(OUT)/dgm.o: NVCCFLAGS += -Xcompiler "-fopenmp -O3 -fcx-limited-range"
+$(OUT)/dgm.o: CXXFLAGS += -fopenmp -O3 -fcx-limited-range
 $(OUT)/kernel.o: NVCCFLAGS += -D OPS_BLOCK=$(OPS_BLOCK)
 
 # pattern rules (the "| $(OUT)" order-only prerequisite makes sure the

@@ -11,7 +11,7 @@ em C/C++/CUDA, com muita manipulação de bits para performance.
 ```
 include/            headers (.h) — comuns a todo o projeto
 src/
- ├─ core/           motor de simulação: common.cpp, dgm.cu, gates.cpp, kernel.cu
+ ├─ core/           motor de simulação: common.cpp, dgm.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
  └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
 outputs/            gerado pelo `make` (.o e .out) — não versionado
@@ -45,15 +45,15 @@ main() (general.cpp / grover.cpp / shor.cpp)
 lib_general.cpp / lib_grover.cpp / lib_shor.cpp   <- monta o circuito como strings
    |                                                  ("Hadamard", "CNot", "QFT", ...)
    v
-DGM::setFunction() / executeFunction()   (dgm.cu)  <- faz o parsing das strings -> PT[]
+DGM::setFunction() / executeFunction()   (dgm.cpp)  <- faz o parsing das strings -> PT[]
    |
    v
-DGM::execute()   (dgm.cu)
+DGM::execute()   (dgm.cpp)
    |
-   +-- t_CPU      -> CpuExecution1_*        (dgm.cu, um core, sem paralelismo)
-   +-- t_PAR_CPU  -> PCpuExecution1         (dgm.cu, OpenMP, vários cores CPU)
+   +-- t_CPU      -> CpuExecution1_*        (dgm.cpp, um core, sem paralelismo)
+   +-- t_PAR_CPU  -> PCpuExecution1         (dgm.cpp, OpenMP, vários cores CPU)
    +-- t_GPU      -> GpuExecutionWrapper    (kernel.cu, CUDA)
-   +-- t_HYBRID   -> HybridExecution        (dgm.cu, CPU + GPU ao mesmo tempo)
+   +-- t_HYBRID   -> HybridExecution        (dgm.cpp, CPU + GPU ao mesmo tempo)
 ```
 
 Todos os quatro caminhos implementam **a mesma operação matemática** (aplicar uma

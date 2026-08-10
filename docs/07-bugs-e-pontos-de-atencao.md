@@ -68,12 +68,12 @@ nomes realmente únicos por chamada.
 ## 2. Código morto: `CpuExecution2_*` e `CpuExecution3_*`
 
 **Onde:** [dgm.h:137-143](../include/dgm.h#L137),
-[dgm.cu:529-783](../src/core/dgm.cu#L529)
+[dgm.cpp:529-783](../src/core/dgm.cpp#L529)
 
 Três famílias de funções (`_1_*`, `_2_*`, `_3_*`) implementam o mesmo
 cálculo (denso / diagonal principal / diagonal secundária) de formas
 diferentes. `DGM::execute()` só despacha para `CpuExecution1(it)`
-([dgm.cu:361](../src/core/dgm.cu#L361)) — as famílias `2` e `3`
+([dgm.cpp:361](../src/core/dgm.cpp#L361)) — as famílias `2` e `3`
 não são chamadas de lugar nenhum no projeto atual. Parecem experimentos de
 otimização anteriores (a família `3`, com os vetores `gap`/`max`, é uma
 tentativa de pular blocos contíguos de bits livres de forma mais eficiente
@@ -104,7 +104,7 @@ importar se o objetivo for rodar circuitos muito grandes/repetidos.
 
 ## 4. `DGM::freeMemory()` chamado sobre estado que não foi alocado por `DGM`
 
-**Onde:** `GenericExecute` ([dgm.cu:28](../src/core/dgm.cu#L28)) usa
+**Onde:** `GenericExecute` ([dgm.cpp:28](../src/core/dgm.cpp#L28)) usa
 `dgm.setMemory(state)` (que não copia, só aponta `state` para o ponteiro
 recebido). Se o chamador espera manter posse desse ponteiro depois, é
 preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
