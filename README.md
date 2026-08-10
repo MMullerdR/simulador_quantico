@@ -36,7 +36,7 @@ include/
  ├─ algorithms/     lib_general.h, lib_grover.h, lib_shor.h
  └─ cli/            cli_common.h
 src/
- ├─ core/           motor de simulação: common.cpp, dgm.cpp, gates.cpp, kernel.cu
+ ├─ core/           motor de simulação: common.cpp, dgm_*.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
  └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
 outputs/            gerado pelo build (.o e .out) — não versionado

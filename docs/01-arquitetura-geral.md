@@ -4,10 +4,10 @@
 
 Um registrador de `qubits` qubits é representado por um vetor de
 `2^qubits` números complexos (`float complex *state`, alocado em
-`DGM::allocateMemory()`, [dgm.cpp:101](../src/core/dgm.cpp#L101)):
+`DGM::allocateMemory()`, [dgm_core.cpp:84](../src/core/dgm_core.cpp#L84)):
 
 ```c
-state = (float complex*) calloc(pow(2, qubits), sizeof(float complex));
+state = (float complex*) calloc(1L << qubits, sizeof(float complex));
 ```
 
 Cada posição `i` desse vetor é a amplitude do estado da base computacional
@@ -23,16 +23,16 @@ e o último qubit (`qubits-1`) é o bit menos significativo (LSB). Isso aparece
 em `DGM::measure()`:
 
 ```c
-long shift = (qubits - 1 - q_pos);   // dgm.cpp:122
+long qubit_bit_shift = (qubits - 1 - qubit_pos);   // dgm_core.cpp:104
 ```
 
 e na hora de transformar a posição de uma porta no circuito (`pos_ops`, contado
-da esquerda) em um "bit de deslocamento" (`end`) usado durante a execução
-(`DGM::genPTs`, [dgm.cpp:314](../src/core/dgm.cpp#L314)):
+da esquerda) em um "bit de deslocamento" (`target_bit`) usado durante a execução
+(`DGM::genPTs`, [dgm_parser.cpp:107](../src/core/dgm_parser.cpp#L107)):
 
 ```c
-pt->start = qubits - gp.pos_ops[p];
-pt->end   = pt->start - 1;   // == qubits - 1 - pos_ops[p]
+term->span_start_bit = qubits - group.pos_ops[op_index];
+term->target_bit     = term->span_start_bit - 1;   // == qubits - 1 - pos_ops[op_index]
 ```
 
 Exemplo com 3 qubits (`q0 q1 q2`), índice `i` em binário `b2 b1 b0`:
@@ -49,9 +49,10 @@ Se `state[0b100] = 1` isso é o estado `|q0=1, q1=0, q2=0>`.
   [02-linguagem-de-circuitos.md](02-linguagem-de-circuitos.md)), terminada por `NULL`.
 - `exec_type` — qual dos 4 backends usar (`t_CPU`, `t_PAR_CPU`, `t_GPU`, `t_HYBRID`,
   enum em [dgm.h:44](../include/core/dgm.h#L44)).
-- parâmetros de tuning de performance: `n_threads`, `cpu_region`/`cpu_coales`,
-  `gpu_region`/`gpu_coales`/`tam_block`/`rept`, `multi_gpu` (explicados em
-  [03](03-motor-de-execucao-cpu.md) e [04](04-gpu-cuda.md)).
+- parâmetros de tuning de performance: `thread_count`, `cpu_region_bits`/
+  `cpu_coalesced_bits`, `gpu_region_bits`/`gpu_coalesced_bits`/`block_size`/
+  `repeat_count`, `gpu_count` (explicados em [03](03-motor-de-execucao-cpu.md)
+  e [04](04-gpu-cuda.md)).
 
 Um uso típico (visto em `Grover()`, `Shor()`, etc.) é:
 
@@ -74,15 +75,15 @@ dgm.freeMemory();
 
 ## 3. Os quatro backends de execução
 
-`DGM::execute()` ([dgm.cpp:361](../src/core/dgm.cpp#L361)) despacha para um
-dos quatro caminhos, todos calculando a mesma coisa:
+`DGM::execute()` ([dgm_core.cpp:199](../src/core/dgm_core.cpp#L199)) despacha
+para um dos quatro caminhos, todos calculando a mesma coisa:
 
 | `exec_type`   | Função                                    | Onde                          | Ideia                                                                 |
 |---------------|--------------------------------------------|--------------------------------|------------------------------------------------------------------------|
-| `t_CPU`       | `CpuExecution1(it)`                        | dgm.cpp                        | 1 thread, laço simples sobre o vetor de estado                        |
-| `t_PAR_CPU`   | `PCpuExecution1(...)`                      | dgm.cpp                        | OpenMP: divide o vetor em "regiões" e processa várias em paralelo     |
+| `t_CPU`       | `CpuExecution1(it)`                        | dgm_cpu_exec.cpp               | 1 thread, laço simples sobre o vetor de estado                        |
+| `t_PAR_CPU`   | `PCpuExecution1(...)`                      | dgm_par_exec.cpp               | OpenMP: divide o vetor em "regiões" e processa várias em paralelo     |
 | `t_GPU`       | `GpuExecutionWrapper(...)`                 | kernel.cu (`extern "C"`)      | CUDA: usa memória compartilhada e agrupa portas em blocos              |
-| `t_HYBRID`    | `HybridExecution(pts)`                     | dgm.cpp                        | Um thread OpenMP comanda a GPU, os demais processam regiões na CPU    |
+| `t_HYBRID`    | `HybridExecution(pts)`                     | dgm_par_exec.cpp               | Um thread OpenMP comanda a GPU, os demais processam regiões na CPU    |
 
 A ideia geral de "região" (usada em `t_PAR_CPU`, `t_GPU` e `t_HYBRID`) é:
 como o vetor de estado é gigante (`2^qubits`) e não muda de tamanho, dá para

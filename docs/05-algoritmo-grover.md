@@ -18,7 +18,7 @@ usando `O(sqrt(N))` consultas ao oráculo em vez de `O(N)`.
 
 ```c
 dgm.setMemoryValue(1<<(qubits-1));   // seta o bit do qubit 0 para 1
-string H = Hadamard(qubits, 0, qubits);  // H em TODOS os qubits, inclusive o 0
+string hadamard_step = Hadamard(qubits, 0, qubits);  // H em TODOS os qubits, inclusive o 0
 ```
 
 O qubit 0 começa em `|1>` e depois de `H` vira `(|0> - |1>)/sqrt2` (o estado
@@ -59,18 +59,19 @@ equivale a refletir as amplitudes em torno da média.
 ## 5. Número de iterações e execução
 
 ```c
-int num_of_it = (int)(M_PI/4.0*sqrt(1<<(qubits-1)));
-dgm.setFunction(H);                             // prepara superposição inicial
-dgm.setFunction(grover_step, num_of_it, false);  // repete oráculo+difusor N vezes
+int iteration_count = (int)(M_PI/4.0*sqrt(1<<(qubits-1)));
+dgm.setFunction(hadamard_step);                          // prepara superposição inicial
+dgm.setFunction(grover_step, iteration_count, false);     // repete oráculo+difusor N vezes
 dgm.execute(1);
 ```
 
 `M_PI/4*sqrt(N)` é exatamente o número ótimo de iterações do Grover para um
 espaço de busca de tamanho `N = 2^(qubits-1)` (maximiza a probabilidade de
 medir o item marcado). O `false` em `setFunction` diz para **não apagar** o
-que já estava montado (a preparação `H`), só emendar as repetições do passo
-de amplificação (ver `DGM::setFunction`, que faz `vec_pts.pop_back()` para
-remover o `NULL` sentinela antes de emendar mais `PT`s — [02](02-linguagem-de-circuitos.md)).
+que já estava montado (a preparação `hadamard_step`), só emendar as
+repetições do passo de amplificação (ver `DGM::setFunction`, que faz
+`vec_pts.pop_back()` para remover o `NULL` sentinela antes de emendar mais
+`PT`s — [02](02-linguagem-de-circuitos.md)).
 
 ## 6. Medição
 

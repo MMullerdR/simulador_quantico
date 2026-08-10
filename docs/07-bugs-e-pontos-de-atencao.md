@@ -6,7 +6,7 @@ bug de corretude escondido. Atualizar esta lista conforme formos mexendo.
 
 ## 1. [CORRIGIDO] `genRot` sempre gerava/reusava a porta `"Rot_0"` — afetava o Shor
 
-**Onde:** [lib_shor.cpp:103-131](../src/algorithms/lib_shor.cpp#L103)
+**Onde:** [lib_shor_circuits.cpp:11-43](../src/algorithms/lib_shor_circuits.cpp#L11)
 
 **O bug:** `genRot` recebia `phase_bits` por valor e o consumia bit a bit
 num `while` pra calcular a rotação — no fim do laço `phase_bits` sempre
@@ -36,7 +36,10 @@ os fatores de `57` (`3 × 19`) já na primeira tentativa.
 
 ## 2. [REMOVIDO] Código morto: `CpuExecution2_*`, `CpuExecution3_*` e `CU()`
 
-Três famílias de funções em `dgm.cpp`/`dgm.h` (`_1_*`, `_2_*`, `_3_*`)
+Três famílias de funções, então ainda em `dgm.cpp`/`dgm.h` (arquivo
+monolítico na época, mais tarde dividido em `dgm_core.cpp`/`dgm_parser.cpp`/
+`dgm_cpu_exec.cpp`/`dgm_par_exec.cpp` — ver [00-indice.md](00-indice.md))
+(`_1_*`, `_2_*`, `_3_*`)
 implementavam o mesmo cálculo (denso / diagonal principal / diagonal
 secundária) de formas diferentes. `DGM::execute()` só despachava pra
 `CpuExecution1` — as famílias `2` e `3` nunca eram chamadas em lugar
@@ -52,24 +55,25 @@ não foi tocada.
 
 ```c
 void PT::destructor(){
-    if ((mat_size != 1) && !matrix) free(matrix);
-    if (!ctrl_pos) free(ctrl_pos);
-    if (!ctrl_rest) free(ctrl_rest);
+    if ((matrix_size != 1) && !matrix) free(matrix);
+    if (!control_bit_positions) free(control_bit_positions);
+    if (!control_rest) free(control_rest);
 }
 ```
 
 As condições estão invertidas: `!matrix` só é verdadeiro quando `matrix ==
 NULL` — ou seja, `free(matrix)` só roda quando `matrix` já é `NULL` (o que
 não libera nada de útil e depender de `free(NULL)` ser um no-op). O mesmo
-vale para `ctrl_pos`/`ctrl_rest`. O provável objetivo original era `if
-(matrix) free(matrix);` (liberar quando o ponteiro **existe**). Na prática
+vale para `control_bit_positions`/`control_rest`. O provável objetivo
+original era `if (matrix) free(matrix);` (liberar quando o ponteiro
+**existe**). Na prática
 isso é um vazamento de memória lento (cada `PT` alocado nunca libera sua
 matriz/arrays de controle), pouco crítico para execuções curtas, mas pode
 importar se o objetivo for rodar circuitos muito grandes/repetidos.
 
 ## 4. `DGM::freeMemory()` chamado sobre estado que não foi alocado por `DGM`
 
-**Onde:** `GenericExecute` ([dgm.cpp:28](../src/core/dgm.cpp#L28)) usa
+**Onde:** `GenericExecute` ([dgm_core.cpp:28](../src/core/dgm_core.cpp#L28)) usa
 `dgm.setMemory(state)` (que não copia, só aponta `state` para o ponteiro
 recebido). Se o chamador espera manter posse desse ponteiro depois, é
 preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
@@ -78,7 +82,7 @@ preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
 
 ## 5. `Gates::list` é `static` (compartilhado entre todas as instâncias)
 
-**Onde:** [gates.h:29](../include/core/gates.h#L29),
+**Onde:** [gates.h:34](../include/core/gates.h#L34),
 [gates.cpp:7](../src/core/gates.cpp#L7)
 
 Não é um bug isoladamente, mas é a causa raiz de por que o problema do item
@@ -91,7 +95,7 @@ ou aceitar que o cache seja intencional quando o valor for de fato o mesmo).
 ## 6. [CORRIGIDO] Segfault em `t_PAR_CPU` quando `cpu_region_bits > qubits`
 
 **Onde:** `src/cli/general.cpp` (defaults do `main()`) +
-`PCpuExecution1` em [dgm.cpp:789](../src/core/dgm.cpp#L789).
+`PCpuExecution1` em [dgm_par_exec.cpp:8](../src/core/dgm_par_exec.cpp#L8).
 
 **O bug:** `general.cpp` usa `cpu_region_bits = 14` fixo como valor
 padrão, independente de quantos qubits o usuário pedir na linha de
@@ -131,7 +135,7 @@ latente — não corrigido ainda, só sinalizado aqui.
 Compilar `kernel.cu` com `nvcc` chegou a levar mais de 2 horas (processo
 `cicc` preso em ~100% de CPU) mesmo depois de reduzir drasticamente o
 número de instanciações de template (`GEWrapper2`/`GpuExecutionWrapper`,
-normalmente ~260 combinações de `tam_block`/`rept`/`coalesc` — ver
+normalmente ~260 combinações de `block_size`/`repeat_count`/`coalesced_bits` — ver
 [docs/04-gpu-cuda.md](04-gpu-cuda.md)) e de baixar a otimização pra
 `-O0`. Mesmo com **uma única instanciação**, não terminou em 5 minutos —
 ou seja, não é sobre volume de templates nem nível de otimização; é algo

@@ -5,7 +5,7 @@ disso, um "passo" (*step*) do circuito — ou seja, uma camada de portas que
 atuam simultaneamente em qubits diferentes — é escrito como uma **string com
 um token por qubit, separados por vírgula**. Isso é gerado pelas funções de
 [gates.cpp](../src/core/gates.cpp) e depois interpretado por
-`DGM::genGroups` + `DGM::genPTs` em [dgm.cpp](../src/core/dgm.cpp).
+`DGM::genGroups` + `DGM::genPTs` em [dgm_parser.cpp](../src/core/dgm_parser.cpp).
 
 ## 1. Os tokens
 
@@ -27,7 +27,7 @@ grupo diferentes.
 
 ### Exemplo: CNOT
 
-`gates.cpp::CNot(qubits, ctrl, target, cv)` ([gates.cpp:66](../src/core/gates.cpp#L66))
+`gates.cpp::CNot(qubits, ctrl, target, cv)` ([gates.cpp:71](../src/core/gates.cpp#L71))
 gera, para `qubits=3, ctrl=0, target=2, cv=1`:
 
 ```
@@ -61,31 +61,31 @@ independentemente por `genGroups`.
 
 ## 2. `DGM::genGroups` — de string para grupos
 
-[dgm.cpp:238](../src/core/dgm.cpp#L238). Recebe um step (string), separa
+[dgm_parser.cpp:60](../src/core/dgm_parser.cpp#L60). Recebe um step (string), separa
 por vírgula (`Tokenize`) e percorre token a token, acumulando um
 `map<long, Group>` (grupo → controles e alvos):
 
 - Se o token contém `"Control"`: extrai o número do grupo (dígito logo após
-  "Control") e o valor entre parênteses, e guarda em `gps[N].ctrl` /
-  `gps[N].pos_ctrl`.
+  "Control") e o valor entre parênteses, e guarda em `groups[N].ctrl` /
+  `groups[N].pos_ctrl`.
 - Se contém `"Target"`: extrai o número do grupo e o nome da porta (o que
-  está entre parênteses), guarda em `gps[N].ops` / `gps[N].pos_ops`.
+  está entre parênteses), guarda em `groups[N].ops` / `groups[N].pos_ops`.
 - Senão, se não for `"ID"`: é uma porta solta, vai para o grupo `0`
-  (`gps[0]`), que nunca tem controle.
+  (`groups[0]`), que nunca tem controle.
 
 ## 3. `DGM::genPTs` — de grupos para `PT`
 
-[dgm.cpp:285](../src/core/dgm.cpp#L285). Para cada grupo:
+[dgm_parser.cpp:107](../src/core/dgm_parser.cpp#L107). Para cada grupo:
 
-1. Calcula `ctrl_mask` e `ctrl_value` (inteiros de `qubits` bits) a partir das
+1. Calcula `group_control_mask` e `group_control_value` (inteiros de `qubits` bits) a partir das
    posições e valores dos controles daquele grupo — convertendo a posição no
    circuito para o bit de deslocamento (`qubits - pos - 1`, a mesma convenção
    do estado, ver [01](01-arquitetura-geral.md)).
-2. Para cada alvo do grupo, cria um `struct PT` ([common.h:39](../include/core/common.h#L39)):
+2. Para cada alvo do grupo, cria um `struct PT` ([common.h:49](../include/core/common.h#L49)):
    - `matrix` = a matriz 2x2 da porta (`Gates::getMatrix(nome)`);
-   - `start`/`end` = bit de deslocamento do qubit alvo no vetor de estado;
-   - `ctrl_mask`/`ctrl_value`/`ctrl_count` = o controle calculado acima;
-   - `ctrl_pos` = array com as posições (bits) de cada qubit de controle.
+   - `span_start_bit`/`target_bit` = bit de deslocamento do qubit alvo no vetor de estado;
+   - `control_mask`/`control_value`/`control_count` = o controle calculado acima;
+   - `control_bit_positions` = array com as posições (bits) de cada qubit de controle.
 
 Um `PT` ("Pauli Term"/porta compilada) é a unidade mínima que o motor de
 execução sabe aplicar: **uma matriz 2x2 em um qubit alvo, opcionalmente
@@ -95,7 +95,7 @@ condicionada a um padrão de bits de controle**.
 
 Um circuito completo pode ter vários steps separados por `;`
 (`DGM::setFunction(string function, ...)` faz `Tokenize(function, steps, ";")`,
-[dgm.cpp:204](../src/core/dgm.cpp#L204)), ou já vir como
+[dgm_parser.cpp:26](../src/core/dgm_parser.cpp#L26)), ou já vir como
 `vector<string>` (um item = um step). `setFunction` monta, para cada step, os
 `PT`s daquele step, ordena (`increasing`/`decreasing`, alternando a cada step
 — uma heurística de ordenação para melhorar localidade/coalescimento) e
