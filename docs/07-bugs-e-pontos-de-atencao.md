@@ -671,6 +671,71 @@ variância estatística mesmo com sementes já independentes.
 
 ---
 
+## 17. [INVESTIGAR] `t_HYBRID` não bate CPU nem GPU de forma consistente — duas hipóteses, não confirmadas com hardware real
+
+**Onde:** `DGM::HybridExecution` em
+[dgm_par_exec.cpp:258-454](../src/core/dgm_par_exec.cpp#L258).
+
+Motivado pelos números de [docs/08-performance.md](08-performance.md)
+(primeira medição real de GPU do projeto): `HYBRID(4)` não fica
+consistentemente entre CPU e GPU como seria de se esperar — às vezes
+fica pior que a melhor configuração de CPU sozinha (ex: 22 qubits,
+0.2530s contra 0.0582s de `PAR_CPU(16)`). Lido o código (sem GPU real
+disponível nesta máquina pra confirmar em runtime), duas causas
+estruturais concretas, ainda **não confirmadas por observação real**:
+
+**Hipótese A — abaixo de `qubits_limit` (20, fixo em
+[dgm_par_exec.cpp:260](../src/core/dgm_par_exec.cpp#L260), nunca
+parametrizado via `TuningDefaults`), HYBRID não paraleliza nada de
+verdade.** `global_region_bits` é clampado contra `qubits`
+([dgm_par_exec.cpp:272](../src/core/dgm_par_exec.cpp#L272)) — pra
+qualquer `qubits <= 20`, `global_region_bits == qubits`, e
+`compute_region` produz **uma única região cobrindo o vetor de estado
+inteiro**. Como o desempate de quem processa cada região é uma corrida
+(`#pragma omp critical`, linhas 300 e 363) entre a thread 0 (GPU) e as
+N-1 threads de CPU disputando a mesma fila, e só existe 1 região real
+pra disputar, o thread que vencer a corrida faz **100% do trabalho
+sozinho** — os outros ficam ociosos. Os números de `docs/08` batem com
+isso: `HYBRID(4)` em 10 qubits (0.000288s) fica perto de `PAR_CPU(4)`
+(0.000255s), não da GPU (0.235s) — sugerindo que a CPU vence a corrida
+quase sempre nesses tamanhos.
+
+**Hipótese B — acima de 20 qubits, quando existem múltiplas regiões, a
+distribuição é round-robin ingênuo entre workers de capacidade muito
+diferente.** A thread GPU e cada thread de CPU competem pela mesma fila
+de regiões de **tamanho igual** (`global_region_bits` idêntico pros dois
+lados) — nenhum ajuste pelo fato de que 1 lançamento de kernel GPU custa
+~0.2s fixos (medido em `docs/08`) enquanto uma região de CPU processa
+muito mais rápido nesses tamanhos. Se a thread GPU pegar só 1 região
+"cara" enquanto as CPUs terminam o resto rápido, o tempo total fica
+refém desse único lançamento de GPU.
+
+**Como confirmar (precisa de GPU real):** instrumentação opt-in barata
+— imprimir em `stderr`, por região global processada, se foi CPU ou GPU
+e o id (`gpu_proj_id`/`cpu_proj_id`), sem tocar em nada do cálculo. Se a
+hipótese A estiver certa, `qubits<=20` deve mostrar só 1 linha de log
+(um único vencedor); se a B estiver certa, `qubits>20` deve mostrar a
+thread GPU pegando poucas regiões mas dominando o tempo total.
+
+**Possíveis correções, nenhuma implementada ainda** (dependem de
+confirmar as hipóteses primeiro):
+- Tornar `qubits_limit`/`global_coalesced_bits` tunáveis de verdade (via
+  `TuningDefaults`) em vez de fixos em 20/15 — não resolve o caso
+  degenerado abaixo do limite (mais regiões pra um problema pequeno só
+  piora, dado o overhead fixo por lançamento), mas torna o
+  comportamento visível/configurável em vez de uma surpresa silenciosa.
+- Deixar o tamanho de região que a thread GPU reivindica por rodada ser
+  independente do tamanho usado pelas threads de CPU (hoje é o mesmo
+  `global_region_bits` pros dois) — a GPU poderia reivindicar regiões
+  maiores por vez, amortizando melhor o overhead fixo de lançamento.
+
+**Não investigado além disso nesta sessão** — decidido continuar a
+investigação (instrumentação + confirmação + correção) inteiramente na
+máquina com GPU real, onde dá pra observar e verificar em runtime sem
+o vai-e-volta de handoff entre máquinas.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
 2026-08-11 durante a rodada de arquitetura, a passada de comentários e um
