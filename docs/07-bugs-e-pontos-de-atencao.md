@@ -955,6 +955,97 @@ verdade, não um gerador de números aleatórios quebrado por cima dele.
 
 ---
 
+## 19. [CORRIGIDO] `Gates::~Gates()` vazio — cada `DGM` vazava seu cache inteiro de matrizes de porta
+
+**Onde:** `src/core/gates.cpp`, `src/core/common.cpp` (comentário).
+
+**O bug:** `Gates::addGate()` (as duas sobrecargas) sempre aloca a matriz
+com `new float complex[4]` e guarda o ponteiro em `Gates::list`
+(`map<string, float complex*>`). `Gates::~Gates()` estava vazio — nada
+nunca liberava essas alocações. Como cada `DGM` tem sua própria instância
+de `Gates` (campo `DGM::gates`, desde o item 5), toda vez que uma `DGM` é
+destruída, o cache inteiro de matrizes vaza: as 7 portas base (H/X/Y/Z/
+R1-R3) mais qualquer porta dinâmica que `lib_shor_circuits.cpp` tenha
+gerado (`genRot`/`SubF`/etc. criam uma porta nova por nome único, e o
+Shor faz isso repetidamente por rodada de QFT). Mesma classe de bug já
+corrigida no item 15 (`DGM::state`), só que no cache de portas em vez do
+vetor de estado — invisível na prática pelo mesmo motivo: os 3 CLIs
+criam uma única `DGM` por processo, e o SO libera tudo na saída.
+
+Efeito colateral: o comentário em `PT::~PT()` (`common.cpp`) ainda
+descrevia esse cache como "estático, compartilhado entre execuções" — um
+desenho que o item 5 já tinha corrigido (virou um cache por `DGM`), mas
+o comentário nunca foi atualizado. Corrigido junto.
+
+**Correção aplicada (2026-08-11):** `Gates::~Gates()` agora itera
+`list` e dá `delete[]` em cada ponteiro. Seguro por construção: todo
+ponteiro que entra em `list` vem de um `new[]` dentro da própria classe
+(confirmado por `grep` — a sobrecarga `addGate(string, float complex*)`,
+que aceitaria um ponteiro externo, nunca é chamada em nenhum lugar do
+projeto hoje), e `PT` (o único outro lugar que lê esses ponteiros, via
+`term->matrix = gates.getMatrix(...)`) nunca os libera — só empresta,
+como o próprio comentário de `PT::~PT()` já dizia.
+
+**Verificado:** `make test` completo (66/66 + 32/32 + smoke test) sem
+regressão no WSL com GPU real. Não foi possível medir o vazamento com um
+harness de RSS dedicado nesta sessão (Shor a 15 qubits em `t_CPU`, mesmo
+repetido só ~500x, ficou lento demais na máquina/VM ocupada no momento
+do teste) — a correção foi validada por inspeção de código (todo
+ponteiro em `list` tem origem única e conhecida, `delete[]` casa
+exatamente com o `new[]` que o criou), não por medição empírica de
+memória, ao contrário do item 15.
+
+---
+
+## 20. `genRot()` podia devolver `""` e corromper `DGM::qubits` a meio da execução do Shor
+
+**Onde:** `src/algorithms/lib_shor_circuits.cpp` (`genRot`),
+`src/core/dgm_parser.cpp` (`DGM::genGroups`).
+
+**O problema:** `genRot()` monta a porta de correção de fase da QFT
+semiclássica do Shor. Quando o produto das rotações (`rot`) dava
+exatamente `1` (fisicamente só aconteceria por coincidência de
+arredondamento em ponto flutuante de precisão simples — com
+`phase_bits != 0`, já garantido pelo único chamador antes de invocar
+`genRot`, o produto de raízes da unidade diádicas distintas não pode ser
+exatamente 1 por construção matemática, exceto por erro de
+arredondamento), a função devolvia `""` em vez de um step válido.
+
+Essa string vazia seguia até `DGM::setFunction()` → `DGM::genGroups()`
+(`dgm_parser.cpp`), que faz `Tokenize(step, ops)` e depois
+`qubits = ops.size()` — um step vazio produz `ops` vazio, e
+`DGM::qubits` (campo usado em todo deslocamento de bit e cálculo de
+memória do projeto inteiro) seria zerado só pra esse step. O `PT` gerado
+a partir daí teria `target_bit = -1` (`span_start_bit - 1` com
+`span_start_bit = qubits - pos = 0 - 0`), e aplicar esse `PT` mais tarde
+faria `1 << term->target_bit` com expoente negativo — comportamento
+indefinido, caminho plausível pra crash ou resultado silenciosamente
+errado a meio de uma execução de Shor.
+
+**Por que não foi pego antes:** o caminho é matematicamente quase
+inalcançável (só via coincidência de ponto flutuante), então nunca
+disparou nos milhares de execuções de Shor já feitas neste projeto.
+Achado por inspeção de código (não por reprodução), na mesma rodada que
+achou o item 19.
+
+**Correção aplicada (2026-08-11):** `genRot()` nunca mais devolve `""`.
+Quando `rot == 1`, devolve o step com todos os qubits em `"ID"` (já era
+o valor default de `step_ops`) em vez de string vazia — um layer
+no-op válido e inofensivo, em vez de um step malformado.
+
+**Verificado:** `make test` completo (66/66 + 32/32 + smoke test,
+incluindo Shor nos 4 backends a 15 qubits) sem regressão, WSL/GPU real.
+Uma tentativa de estresse dedicado (Shor a 27 qubits, mais bits de fase
+e portanto mais chamadas a `genRot`, repetido em `t_CPU`) foi iniciada
+mas abandonada depois de >1h de uma única chamada sem terminar — Shor
+serial a 27 qubits é genuinamente muito custoso (vetor de estado de
+~1GB, circuito com complexidade ~O(bit_width³)), não um sinal de que o
+fix travou algo; a correção em si é uma troca local e óbvia por
+inspeção (retornar um step válido em vez de um inválido), não dependia
+desse teste pra ser considerada segura.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
 2026-08-11 durante a rodada de arquitetura, a passada de comentários e um

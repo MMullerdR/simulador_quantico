@@ -19,9 +19,11 @@ PT::PT(){
 }
 
 PT::~PT(){
-	// matrix é emprestado de Gates::list (cache estático de matrizes de
-	// porta, compartilhado entre PTs e entre execuções) — nunca é dono
-	// desse ponteiro, então nunca deve liberá-lo (ver docs/07, item 3).
+	// matrix é emprestado de Gates::list (cache de matrizes de porta da
+	// execução atual — um por DGM, não mais compartilhado entre execuções
+	// desde o item 5 em docs/07-bugs-e-pontos-de-atencao.md) — PT nunca é
+	// dono desse ponteiro, então nunca deve liberá-lo; quem libera é
+	// Gates::~Gates() (ver docs/07, item 3).
 	if (control_bit_positions) free(control_bit_positions);
 	if (control_rest) free(control_rest);
 }

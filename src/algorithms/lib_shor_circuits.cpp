@@ -34,11 +34,14 @@ string genRot(int qubits, int reg, long phase_bits, Gates &g){
 		name = "Rot_" + int2str(phase_bits_orig);
 		g.addGate(name, 1.0, 0.0, 0.0, rot);
 		step_ops[reg] = name;
-
-		return concatena(step_ops, qubits);
 	}
-
-	return "";
+	// rot==1 (fisicamente quase impossível com phase_bits!=0 -- só
+	// aconteceria por coincidência de arredondamento em ponto flutuante):
+	// step_ops fica só "ID" (default acima), viramos um step neutro em
+	// vez de "" -- devolver "" faria Tokenize()/genGroups() (dgm_parser.cpp)
+	// contar 0 tokens e zerar dgm.qubits pra esse step, injetando um PT com
+	// target_bit inválido no circuito (ver docs/07-bugs-e-pontos-de-atencao.md).
+	return concatena(step_ops, qubits);
 }
 
 vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g){

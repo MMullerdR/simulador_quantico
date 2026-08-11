@@ -8,7 +8,17 @@ Gates::Gates(){
 	init();
 }
 
-Gates::~Gates(){}
+// Todo ponteiro em "list" foi alocado com "new[]" por addGate() (as duas
+// sobrecargas) -- Gates é dona deles (ver comentário sobre PT::matrix em
+// common.cpp: PT só empresta, nunca libera). Sem isso, cada DGM destruído
+// vazava o cache de matrizes inteiro -- pouco por instância (H/X/Y/Z/R1-3
+// mais o que lib_shor_circuits.cpp gerar dinamicamente, ex: um "Rot_N" por
+// correção de fase de QFT), mas o mesmo tipo de vazamento já corrigido em
+// DGM::state (docs/07-bugs-e-pontos-de-atencao.md, item 15).
+Gates::~Gates(){
+	for (map<string, float complex*>::iterator it = list.begin(); it != list.end(); ++it)
+		delete[] it->second;
+}
 
 void Gates::init(){
 	// list não é mais estático (cada DGM tem a sua, ver gates.h) — uma
