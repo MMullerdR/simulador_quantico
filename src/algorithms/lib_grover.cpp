@@ -9,6 +9,9 @@
 using namespace std;
 
 
+// Monta e executa o circuito completo do Grover (preparação + oráculo +
+// difusor repetidos ~sqrt(2^(qubits-1)) vezes) e mede o registrador de
+// busca — ver docs/05-algoritmo-grover.md.
 float Grover(long qubits, long search_value, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
 	DGM dgm;
 	dgm.qubits = qubits;

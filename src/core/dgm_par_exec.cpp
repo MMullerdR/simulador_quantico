@@ -130,6 +130,10 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 	}
 }
 
+// Aplica os PT de pts[pts_start..pts_end) restritos a uma única região
+// (region_id/region_mask) — mesma lógica de pares (pos0, pos1) e tipos de
+// matriz de CpuExecution1_1/2/3, só que iterando apenas sobre a fatia de
+// memória dessa região (ver docs/03-motor-de-execucao-cpu.md, seção 5).
 void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start, int pts_end, int pos_count, int region_id, int region_mask){
 	PT *term;
 	long pos0, pos1;
@@ -140,7 +144,6 @@ void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start,
 		term = pts[op_index];
 		long target_bit_mask = (1 << term->target_bit);						//mascara com a posição do qubit do operador
 		long matrix_type = term->matrixType();
-		//if (matrix_type == DIAG_PRI) target_bit_mask = coalesced_bits;	//se for um operador de diagonal principal, a posição do qubit não é relevante
 		long pos_mask = region_mask & ~target_bit_mask;			//mascara da posição --- retira o 'target_bit_mask' da region_mask, para o 'inc pular sobre ' esse bit também
 		long inc = ~pos_mask + 1;						  	//usado para calcular a proxima posição de uma região
 		long pos = 0;
@@ -248,6 +251,8 @@ void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start,
 	}
 }
 
+// Imprime quantas threads OpenMP estão ativas no nível atual; sem uso
+// no código atual.
 void report_num_threads(int level){
 	#pragma omp single
 	{
@@ -255,10 +260,17 @@ void report_num_threads(int level){
 	}
 }
 
+// Backend t_HYBRID: a thread OpenMP 0 comanda a GPU (projeta o estado,
+// dispara o kernel, recolhe o resultado) enquanto as demais processam
+// regiões em CPU ao mesmo tempo, região "global" por região "global" —
+// ver docs/01-arquitetura-geral.md e docs/04-gpu-cuda.md.
 void DGM::HybridExecution(PT **pts){
 	long mem_size = 1L << qubits;
 	long qubits_limit = 20;
-	long global_coalesced_bits = 15; //(cpu_coalesced_bits > gpu_coalesced_bits) ? cpu_coalesced_bits : gpu_coalesced_bits;
+	// Fixo em 15 (em vez de derivado de cpu_coalesced_bits/gpu_coalesced_bits)
+	// — nunca chegou a ser parametrizado; ver item 6 do design de
+	// arquitetura em docs/07-bugs-e-pontos-de-atencao.md, item 7.
+	long global_coalesced_bits = 15;
 
 	long global_region_bits = qubits_limit;
 	// Mesmo bug de PCpuExecution1 (docs/07-bugs-e-pontos-de-atencao.md,
@@ -354,8 +366,7 @@ void DGM::HybridExecution(PT **pts){
 				}
 
 			}
-			//#pragma omp section          //GPU EXECUTION
-			else{
+			else{  // thread 0: GPU
 				long gpu_proj_id;
 
 				#pragma omp critical (global_teste)
@@ -368,7 +379,9 @@ void DGM::HybridExecution(PT **pts){
 				}
 
 				while (gpu_proj_id != -1){
-					//Project Gates
+					// Reconstrói, só pra essa região, uma lista de PT com
+					// qubits renumerados (0..region_bits-1) — a GPU só
+					// enxerga a fatia projetada, não o registrador inteiro.
 					vector <PT*> gpu_pts;
 
 					int qubit_index;
@@ -443,7 +456,6 @@ void DGM::HybridExecution(PT **pts){
 				}
 			}
 
-		//}
 		}
 
 		op_index = global_op_end;

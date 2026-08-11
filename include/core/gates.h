@@ -12,11 +12,14 @@
 
 using namespace std;
 
+// Cada uma monta um "step" (string com um token por qubit — ver
+// docs/02-linguagem-de-circuitos.md) para a porta correspondente.
 string CNot(int qubits, int ctrl, int target, int control_value = 1);
 string Toffoli(int qubits, int ctrl1, int ctrl2, int target, int control_value = 3);
 string Controlled1(int qubits, int ctrl, int target, string op, int control_value = 1);
 string Controlled2(int qubits, int ctrl1, int ctrl2, int target, string op, int control_value = 3);
 string ControlledN(int qubits, vector<int> ctrls, int target, string op, int control_value = -1);
+// H/X/Z aplicado em "width" qubits seguidos a partir de "reg".
 string Pauli_X(int qubits, int reg, int width = 1);
 string Pauli_Z(int qubits, int reg, int width = 1);
 string Hadamard(int qubits, int reg, int width = 1);
@@ -39,8 +42,13 @@ public:
 	map <string, float complex*> list;
 	Gates();
 	~Gates();
+	// Registra as portas base (H, X, Y, Z, R1, R2, R3) — chamado pelo
+	// construtor.
 	void init();
+	// Devolve a matriz cadastrada sob "gate_name", ou 0 se não existir.
 	float complex* getMatrix(string gate_name);
+	// Registra uma matriz nova sob "name"; não sobrescreve um nome já
+	// existente (devolve false nesse caso).
 	bool addGate(string name, float complex* matrix);
 	bool addGate(string name, float complex a0, float complex a1, float complex a2, float complex a3);
 };

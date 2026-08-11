@@ -7,6 +7,8 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
+// Monta uma DGM, aponta pro "state" recebido (sem copiar), roda o
+// circuito e devolve o estado final.
 float complex* GenericExecute(float complex *state, string function, int qubits, int type, int threads, int factor = 0){
 	DGM dgm;
 	dgm.exec_type = type;
@@ -60,6 +62,7 @@ void DGM::setExecType(int type){
 	exec_type = type;
 }
 
+// Imprime todos os PT já compilados (depuração).
 void DGM::printPTs(){
 	for (int pt_index = 0; pt_index < vec_pts.size() -1; pt_index++){
 		vec_pts[pt_index]->print();
@@ -97,6 +100,8 @@ void DGM::setMemoryValue(int pos){
 	state[pos] = 1;
 }
 
+// Mede um qubit: soma a probabilidade (|amplitude|²) de cada lado (0/1),
+// sorteia o resultado, e colapsa+renormaliza o estado de acordo.
 int DGM::measure(int qubit_pos){
 	long size = 1L << qubits;
 
@@ -149,6 +154,8 @@ int DGM::measure(int qubit_pos){
 	return measured_bit;
 }
 
+// Força o qubit "qubit_pos" a valer "value", zerando as amplitudes
+// incompatíveis e renormalizando o resto (colapso sem medir de fato).
 void DGM::colapse(int qubit_pos, int value){
 	long size = 1L << qubits;
 	long qubit_bit_shift = (qubits - 1 - qubit_pos);
@@ -168,6 +175,8 @@ void DGM::colapse(int qubit_pos, int value){
 	}
 }
 
+// Mede vários qubits sem colapsar o estado: devolve a distribuição de
+// probabilidade sobre as combinações desses qubits.
 map <long, float> DGM::measure(vector<int> qubit_positions){
 	long qubit_positions_mask = 0;
 
@@ -264,6 +273,7 @@ void DGM::CountOps(int iterations){
 	total_op = dense + c_dense + main_diag + c_main_diag + sec_diag + c_sec_diag;
 }
 
+// Ajusta os parâmetros de tuning de CPU depois de já ter construído a DGM.
 void DGM::setCpuStructure(long cpu_region_bits, long cpu_coalesced_bits){
 	this->cpu_region_bits = cpu_region_bits;
 	this->cpu_coalesced_bits = cpu_coalesced_bits;

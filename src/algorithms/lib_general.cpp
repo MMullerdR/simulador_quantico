@@ -10,6 +10,8 @@
 
 using namespace std;
 
+// Benchmark simples: aplica H em todos os qubits (repetido "iterations"
+// vezes) e mede o tempo — usado por general.cpp pra comparar backends.
 float HadamardNQubits(long qubits, long iterations, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
 	DGM dgm;
 	dgm.qubits = qubits;

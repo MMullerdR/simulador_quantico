@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <iterator>
 
+// Separa "text" em tokens usando qualquer caractere de "delimiters" como
+// separador (equivalente a um split, ignorando delimitadores repetidos).
 void Tokenize(const string& text, vector<string>& tokens, const string& delimiters = ",")
 {
 	// Skip delimiters at beginning.
@@ -23,6 +25,7 @@ void Tokenize(const string& text, vector<string>& tokens, const string& delimite
 	}
 }
 
+// Separa "function" em steps por ";" e delega pra sobrecarga de vector.
 void DGM::setFunction(string function, int iterations, bool reset){
 	vector <string> steps;
 
@@ -31,6 +34,11 @@ void DGM::setFunction(string function, int iterations, bool reset){
 	setFunction(steps, iterations, reset);
 }
 
+// Faz o parsing de cada step (genGroups + genPTs), ordena os PT de cada
+// step (alternando crescente/decrescente pra ajudar localidade/
+// coalescimento) e monta vec_pts/pts. reset=false emenda no que já
+// existia em vez de recomeçar (usado pra repetir um bloco sem remontar
+// a string, ver Grover).
 void DGM::setFunction(vector <string> steps, int iterations, bool reset){
 	if (reset) erase();
 	else vec_pts.pop_back();
@@ -57,6 +65,8 @@ void DGM::setFunction(vector <string> steps, int iterations, bool reset){
 	pts = &vec_pts[0];
 }
 
+// Recebe um step (string com um token por qubit) e agrupa controles e
+// alvos por número de grupo — ver docs/02-linguagem-de-circuitos.md.
 map <long, Group> DGM::genGroups(string step){
 	vector <string> ops;
 	Tokenize(step, ops); //separa os operadores usando "," como delimitador
@@ -73,7 +83,6 @@ map <long, Group> DGM::genGroups(string step){
 	vector<string>::iterator it;
 	for (it = ops.begin() ; it != ops.end(); ++it){ //percorre os operadores
 		token = *it;
-		//cout << token << endl;
 		control_keyword_pos = token.find("Control"); //tamanho 7
 		target_keyword_pos = token.find("Target");  //tamanho 6
 		paren_pos = token.find("(") + 1;
@@ -104,10 +113,10 @@ map <long, Group> DGM::genGroups(string step){
 	return groups;
 }
 
+// Transforma os grupos (controles + alvos) em PT compilados, buscando a
+// matriz de cada porta no cache desta execução (DGM::gates, ver gates.h).
 void DGM::genPTs(map<long, Group> &groups, vector <PT*> &step_pts){
 	step_pts.clear();
-	// usa o cache de portas desta execução (DGM::gates), não um local —
-	// ver gates.h.
 
 	map<long,Group>::iterator it;
 	Group group;

@@ -7,6 +7,8 @@
 #define M_RANGE 512
 #define M_PREC 10000
 
+// Confere cudaGetLastError() e aborta o processo se algo deu errado —
+// chamada depois de toda operação CUDA relevante abaixo.
 bool error();
 static int error_check_count = 0;
 static int call_count = 0;
@@ -15,15 +17,22 @@ static int call_peer_count = 0;
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Equivalente, do lado da GPU, do struct PT do lado da CPU: matriz 2x2 +
+// os argumentos de controle/deslocamento pré-calculados por
+// PT::setArgsGPU (ver docs/04-gpu-cuda.md).
 struct DEV_OP{
 	long arg[TAM_ARG];
 	cuFloatComplex matrix[4];
 };
 
+// Inicializa a GPU escolhida (cudaFree(0) força a inicialização do
+// contexto CUDA sem alocar nada de verdade).
 extern "C" bool setDevice(int device_id = 0){
 	return cudaFree(0);
 }
 
+// Habilita acesso direto (DMA) entre as GPUs 0 e 1; sem uso no código
+// atual (GpuExecution01 habilita peer access por conta própria, abaixo).
 extern "C" bool enablePeerAccess(){
 	cudaSetDevice(0);
 	cudaDeviceEnablePeerAccess(1, 0);
@@ -45,10 +54,16 @@ static cuFloatComplex *gpu_mem[4];
 __constant__ cuFloatComplex *gpu_pointer[4];
 
 
+// Em qual bloco de região cairia o qubit alvo de "term"; sem uso no
+// código atual.
 inline int GET_BLOCK_ID(PT *term, int coalesced_bits, int gpu_region_bits){
 	return (term->target_bit - coalesced_bits)/(gpu_region_bits-coalesced_bits);
 }
 
+// Insere "bit_count" bits 0 em "value" a partir do bit "from_bit" — usado
+// em ApplyValuesC01 pra mapear a posição de uma thread dentro do bloco
+// pro índice global do vetor de estado (mesmo espírito do truque de
+// inserir bit usado no motor de CPU, ver docs/03-motor-de-execucao-cpu.md).
 __device__ long OPEN_SPACE(long value, int from_bit, int bit_count){
 	return ((value >> from_bit) << (from_bit + bit_count)) | (value & ((1 << from_bit) - 1));
 }
@@ -56,7 +71,10 @@ __device__ long OPEN_SPACE(long value, int from_bit, int bit_count){
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//extern "C"
+// Kernel principal: copia um bloco de amplitudes da memória global pra
+// shared memory, aplica até op_count portas seguidas ali (evitando idas
+// e vindas à memória global a cada porta — o "coalescimento" do
+// projeto), e escreve o resultado de volta. Ver docs/04-gpu-cuda.md.
 template <int t_block_size, int t_repeat_count, int t_coalesced_bits>
 __global__ void ApplyValuesC01(int const region_start_bit, int const extra_region_bits, int const op_count, int const rept_bits, int const gpu_slice_size, int const block_offset){
 	long local_pos, global_index0, global_index1, block = (blockIdx.x + block_offset);
@@ -311,7 +329,9 @@ extern "C" float* GpuExecutionWrapper(float* state, PT **pts, int qubits, int co
 	return state;
 }
 
-//Primeiro Wrapper -- Coalescimento
+// Copia só a fatia do estado correspondente a uma região (region_id/
+// region_mask) do host pra GPU — usado pelo modo híbrido pra mandar só
+// a parte que a GPU vai processar naquela rodada, não o vetor inteiro.
 extern "C" bool ProjectState(float* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
 	int coalesced_bits = 0;
 	for (int bit_index = 0; bit_index < qubits; bit_index++){
@@ -353,6 +373,8 @@ extern "C" bool ProjectState(float* state, int qubits, int region_size, long reg
 	return true;
 }
 
+// Inverso de ProjectState: copia a fatia processada de volta da GPU pro
+// vetor de estado no host.
 extern "C" bool GetState(float* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
 	int coalesced_bits = 0;
 	for (int bit_index = 0; bit_index < qubits; bit_index++){
@@ -390,6 +412,8 @@ extern "C" bool GetState(float* state, int qubits, int region_size, long region_
 	return true;
 }
 
+// Confere se a última chamada CUDA falhou; se falhou, imprime o erro e
+// aborta o processo (exit(1)).
 bool error(){
 	error_check_count++;
 	cudaError_t cuda_error;

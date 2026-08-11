@@ -4,7 +4,7 @@
 
 Um registrador de `qubits` qubits é representado por um vetor de
 `2^qubits` números complexos (`float complex *state`, alocado em
-`DGM::allocateMemory()`, [dgm_core.cpp:84](../src/core/dgm_core.cpp#L84)):
+`DGM::allocateMemory()`, [dgm_core.cpp:82](../src/core/dgm_core.cpp#L82)):
 
 ```c
 state = (float complex*) calloc(1L << qubits, sizeof(float complex));
@@ -75,7 +75,7 @@ dgm.freeMemory();
 
 ## 3. Os quatro backends de execução
 
-`DGM::execute()` ([dgm_core.cpp:199](../src/core/dgm_core.cpp#L199)) despacha
+`DGM::execute()` ([dgm_core.cpp:209](../src/core/dgm_core.cpp#L209)) despacha
 para um dos quatro caminhos, todos calculando a mesma coisa:
 
 | `exec_type`   | Função                                    | Onde                          | Ideia                                                                 |

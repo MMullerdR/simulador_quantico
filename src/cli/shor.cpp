@@ -8,6 +8,9 @@
 
 using namespace std;
 
+// Fatoração de Shor: outputs/shor.out <qubits> [exec_type] [threads|gpus]
+// qubits precisa ser um dos valores mapeados abaixo (determina o número
+// a ser fatorado).
 int main(int argc, char** argv){
 	map <int, int> factor_target_by_qubit_count;
 	factor_target_by_qubit_count[15] = 57;
@@ -55,6 +58,10 @@ int main(int argc, char** argv){
 	cout << "Executing Shor: " << qubits << " qubits" << endl;
 
 	gettimeofday(&tvBegin, NULL);
+	// ATENÇÃO: mesma inconsistência de grover.cpp — passa t_CPU fixo em
+	// vez de "exec_type" (parseado/validado acima). Pedir t_PAR_CPU/
+	// t_GPU/t_HYBRID na linha de comando não muda o backend realmente
+	// usado por Shor(), só os parâmetros de tuning.
 	factors = Shor(factor_target_by_qubit_count[qubits], t_CPU, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
 	gettimeofday(&tvEnd, NULL);
 	timeval_subtract(&timev, &tvEnd, &tvBegin);

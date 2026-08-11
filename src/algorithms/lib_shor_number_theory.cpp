@@ -8,6 +8,9 @@
 
 using namespace std;
 
+// Inverte a ordem dos bit_count bits de "value" (bit 0 vira o mais
+// significativo e vice-versa) — desfaz a ordem em que a QFT semiclássica
+// do Shor mede os bits da fase.
 int revert_bits(int value, int bit_count){
 	int reversed = 0;
 
@@ -18,6 +21,7 @@ int revert_bits(int value, int bit_count){
 	return reversed;
 }
 
+// Potência inteira (base^exponent); sem uso no código atual.
 int quantum_ipow(int base, int exponent)
 {
 	int exp_index;
@@ -40,14 +44,13 @@ int quantum_gcd(int value1, int value2)
 		remainder = value2;
 		value2 = value1 % value2;
 		value1 = remainder;
-		//r = u % v;
-		//u = v;
-		//v = r;
 	}
 	return value1;
 }
 
-
+// Aproxima *numerator/*denominator pela fração contínua mais simples com
+// denominador < 2^width — usado no Shor pra extrair o período candidato
+// a partir da fase medida (ver docs/06-algoritmo-shor.md).
 void quantum_frac_approx(int *numerator, int *denominator, int width)
 {
 	float target_ratio = (float) *numerator / *denominator;
@@ -80,6 +83,8 @@ void quantum_frac_approx(int *numerator, int *denominator, int width)
 	return;
 }
 
+// Inverso multiplicativo de "value" módulo "modulus" (algoritmo de
+// Euclides estendido, iterativo).
 long mul_inv(long value, long modulus){
 	long modulus_orig = modulus, temp, quotient;
 	long coeff_prev = 0, coeff_curr = 1;
@@ -94,6 +99,8 @@ long mul_inv(long value, long modulus){
 	return coeff_curr;
 }
 
+// Converte um inteiro em string — usado pra montar nomes únicos de porta
+// (ex: "ADD_" + int2str(value) + "_" + int2str(digit)).
 string int2str(int number){
 	stringstream ss;
 	ss << number;

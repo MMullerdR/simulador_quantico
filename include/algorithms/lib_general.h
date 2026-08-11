@@ -7,8 +7,11 @@
 #include <complex.h>
 #define complex __complex__
 
+// Benchmark: aplica H em todos os qubits, "iterations" vezes seguidas
+// (usado por general.cpp).
 float HadamardNQubits(long qubits, long iterations, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count);
 
+// Atalhos de HadamardNQubits com exec_type fixo; sem uso no código atual.
 float HadamardNQubits_PAR_CPU(long qubits, long iterations, int thread_count = 1, int cpu_region_bits = 13, int cpu_coalesced_bits = 9);
 float HadamardNQubits_GPU(long qubits, long iterations, int gpu_count = 1, int gpu_region_bits = 8, int gpu_coalesced_bits = 4, int block_size = 64, int repeat_count = 2);
 

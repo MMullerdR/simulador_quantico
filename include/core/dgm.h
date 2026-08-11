@@ -19,9 +19,12 @@
 
 using namespace std;
 
+// Atalho que monta uma DGM, roda um circuito do início ao fim e devolve
+// o estado final — usado por código de teste/benchmark fora dos CLIs.
 float complex* GenericExecute(float complex *state, string function, int qubits, int type, int threads, int factor);
 float complex*  GenericExecute(float complex *state, vector<string> function, int qubits, int type, int threads, int factor);
 
+// Inicializa a GPU escolhida (implementado em kernel.cu/kernel_stub.cpp).
 extern "C" bool setDevice(int device_id = 0);
 
 // Wrappers de execução em GPU (implementados em kernel.cu). GpuExecutionWrapper
@@ -41,10 +44,14 @@ extern "C" float complex* GpuExecution3(float complex* read_memory, float comple
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 
+// Backend t_PAR_CPU: divide o vetor de estado em regiões e processa
+// várias em paralelo via OpenMP (ver docs/03-motor-de-execucao-cpu.md).
 void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations);
+// Aplica os operadores de uma região específica — chamada por
+// PCpuExecution1 e por DGM::HybridExecution (lado CPU do modo híbrido).
 void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start, int pts_end, int pos_count, int region_id, int region_mask);
 
-// Insere um bit 0 na posição "shift" de "pos" (ver docs/03-motor-de-execucao-cpu.md).
+// Funções auxiliares de indexação de bit; sem uso no código atual.
 inline long LINE (long pos, long shift){
 	return ((pos >> shift) & 1) * 2;
 }
@@ -52,6 +59,7 @@ inline long BASE (long pos, long shift){
 	return pos & (~(1 << shift));
 }
 
+// Backends de execução (DGM::exec_type); t_SPEC nunca chegou a ser usado.
 enum {
 	t_CPU,
 	t_PAR_CPU,
@@ -119,27 +127,38 @@ public:
 	bool print_enabled;
 
 	void printPTs();
+	// Libera todos os PT já compilados (vec_pts) e zera pts.
 	void erase();
 	void setExecType(int type);
 
 	void setCpuStructure(long cpu_region_bits, long cpu_coalesced_bits);
 	void setGpuStructure(long gpu_coalesced_bits, long gpu_region_bits, int repeat_count = 1);
 
+	// Aloca/associa/libera o vetor de estado (state).
 	void allocateMemory();
 	void setMemory(float complex *mem);
 	void freeMemory();
+	// Seta state[pos] = 1 — estado inicial |pos>.
 	void setMemoryValue(int pos);
 
+	// Mede um qubit (ou vários) e colapsa o estado de acordo com o resultado.
 	int measure(int qubit_pos);
 	map <long, float> measure(vector<int> qubit_positions);
 	void colapse(int qubit_pos, int value);
 
+	// Faz o parsing de um circuito (string ou vector<string>) e monta
+	// vec_pts/pts — ver docs/02-linguagem-de-circuitos.md.
 	void setFunction(string function, int iterations = 1, bool reset = true);
 	void setFunction(vector<string> steps, int iterations = 1, bool reset = true);
 	map <long, Group> genGroups(string step);
 	void genPTs(map<long, Group> &groups, vector <PT*> &step_pts);
+	// Montaria a matriz combinada de um step via produto de Kronecker das
+	// matrizes individuais de cada qubit; não é chamada de lugar nenhum
+	// hoje (sem uso).
 	void genMatrix(float complex* matrix, vector<float complex*> &matrices, long qubit_count, long current_qubit, long line, long column, float complex value);
 
+	// Conta quantos PT de cada tipo (DENSE/DIAG_PRI/DIAG_SEC, com/sem
+	// controle) o circuito atual tem — só estatística, não afeta execução.
 	void CountOps(int iterations = 1);
 
 	// Clampa os parâmetros de região contra qubits antes do despacho —
@@ -148,12 +167,19 @@ public:
 	// docs/07-bugs-e-pontos-de-atencao.md, item 6.
 	void validateTuning();
 
+	// setFunction() + execute() num só passo.
 	void executeFunction(string function, int iterations = 1);
 	void executeFunction(vector<string> steps, int iterations = 1);
+	// Despacha pts[] pro backend escolhido em exec_type.
 	float complex* execute(int iterations);
 
+	// Backend t_HYBRID: um thread OpenMP comanda a GPU enquanto os
+	// demais processam regiões em CPU ao mesmo tempo.
 	void HybridExecution(PT **pts);
 
+	// Backend t_CPU: aplica cada PT sobre o vetor de estado inteiro,
+	// numa só thread, escolhendo CpuExecution1_1/2/3 conforme o tipo de
+	// matriz (DENSE/DIAG_PRI/DIAG_SEC).
 	void CpuExecution1(int iterations);
 	void CpuExecution1_1(PT *term, long mem_size);
 	void CpuExecution1_2(PT *term, long mem_size);

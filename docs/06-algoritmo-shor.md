@@ -48,7 +48,7 @@ de Griffiths–Niu / "Kitaev phase estimation" com reaproveitamento de qubit):
   seguinte, antes da próxima medição.
 
 Esse laço é o coração da função `Shor()`
-([lib_shor.cpp:35](../src/algorithms/lib_shor.cpp#L35)):
+([lib_shor.cpp:39](../src/algorithms/lib_shor.cpp#L39)):
 
 ```c
 for (i = L; i >= 0; i--){                       // L = 2n-1, ou seja, 2n rodadas
@@ -148,7 +148,7 @@ espelhamento de sinal.
 
 Depois das `2n` rodadas, `res` contém a fase medida (em binário, invertida
 bit a bit por `revert_bits`). O resto de `Shor()`
-([lib_shor.cpp:137](../src/algorithms/lib_shor.cpp#L137)) é **matemática
+([lib_shor.cpp:123](../src/algorithms/lib_shor.cpp#L123)) é **matemática
 clássica pura**, sem nenhum qubit envolvido:
 
 1. `quantum_frac_approx` — aproximação por frações contínuas, para

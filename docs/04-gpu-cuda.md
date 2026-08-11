@@ -53,7 +53,7 @@ cada thread processa) e `t_coalesced_bits` (bits coalescidos). Passos:
 `DEV_OP` ([kernel.cu:18](../src/core/kernel.cu#L18)) é o equivalente,
 do lado da GPU, da struct `PT` do lado da CPU: matriz 2x2 + os argumentos de
 controle/deslocamento pré-calculados por `PT::setArgsGPU`
-([common.cpp:92](../src/core/common.cpp#L92)), que ajusta as máscaras
+([common.cpp:94](../src/core/common.cpp#L94)), que ajusta as máscaras
 de controle considerando que parte dos qubits está "dentro" da região
 coalescida e parte "fora".
 
@@ -108,6 +108,6 @@ região** (um subconjunto de índices que compartilham os bits fora de
 `region_mask` iguais a `region_id`) entre a memória do host e a GPU, em vez
 do vetor inteiro. É isso que permite ao `HybridExecution` (ver
 [03-motor-de-execucao-cpu.md](03-motor-de-execucao-cpu.md), seção 5, e o
-código em [dgm_par_exec.cpp:263](../src/core/dgm_par_exec.cpp#L263)) mandar
+código em [dgm_par_exec.cpp:258](../src/core/dgm_par_exec.cpp#L258)) mandar
 só a fatia do estado que a GPU vai processar naquele momento, enquanto o
 resto do estado continua sendo processado pelas threads de CPU em paralelo.

@@ -82,7 +82,7 @@ compilar não é o mesmo que rodar, principalmente quando o fix mexe em
 
 ## 3.1. [CORRIGIDO] `DGM::genPTs` aloca `PT` com `malloc()` sem inicializar `control_bit_positions`/`control_rest`
 
-**Onde:** [dgm_parser.cpp:132](../src/core/dgm_parser.cpp#L132)
+**Onde:** [dgm_parser.cpp:138](../src/core/dgm_parser.cpp#L138)
 
 **O bug:** `genPTs` cria cada `PT` com `term = (PT*) malloc(sizeof(PT));`
 — `malloc()` puro, que **não chama** `PT::PT()`. Antes da correção do
@@ -106,14 +106,14 @@ chamar `free()` em cima de um ponteiro de lixo toda vez que
 `control_rest_count = 0` logo após o `malloc()`, antes de qualquer uso —
 não só dentro do `if (group_control_count)`. O caminho equivalente em
 `HybridExecution` (`projected_term = new PT();`, em
-[dgm_par_exec.cpp:397](../src/core/dgm_par_exec.cpp#L397)) já usa `new
+[dgm_par_exec.cpp:392](../src/core/dgm_par_exec.cpp#L392)) já usa `new
 PT()` de verdade, então não tinha esse problema.
 
 **Superado em seguida (2026-08-11):** esse fix pontual foi substituído
 por uma correção estrutural — `genPTs` passou a usar `new PT()` (a
 mesma forma que `HybridExecution` já usava), e `PT` ganhou um `~PT()`
 de verdade no lugar do `destructor()` manual. Ver
-[dgm_parser.cpp:137](../src/core/dgm_parser.cpp#L137). Duas formas de
+[dgm_parser.cpp:138](../src/core/dgm_parser.cpp#L138). Duas formas de
 alocação inconsistentes para o mesmo struct era, junto com o
 `destructor()` de chamada manual, a causa raiz dessa classe inteira de
 bug — agora estruturalmente impossível de esquecer.
@@ -174,7 +174,7 @@ ambiente, não algo introduzido por esta mudança).
 ## 6. [CORRIGIDO] Segfault em `t_PAR_CPU`/`t_HYBRID` quando `region_bits > qubits` disponíveis
 
 **Onde:** `src/cli/general.cpp` (defaults do `main()`) +
-`PCpuExecution1` em [dgm_par_exec.cpp:78](../src/core/dgm_par_exec.cpp#L78).
+`PCpuExecution1` em [dgm_par_exec.cpp:81](../src/core/dgm_par_exec.cpp#L81).
 
 **O bug:** `general.cpp` usa `cpu_region_bits = 14` fixo como valor
 padrão, independente de quantos qubits o usuário pedir na linha de
@@ -207,7 +207,7 @@ sem precisar mais do workaround de pedir mais qubits.
 `global_region_bits` (inicializado com o valor fixo `qubits_limit = 20`) e
 `cpu_region_bits` (mesmo default de 14 do `t_PAR_CPU`) — ambos usados como
 expoente de `1 << (... - region_bits)` do mesmo jeito que `PCpuExecution1`,
-em [dgm_par_exec.cpp:263](../src/core/dgm_par_exec.cpp#L263). Diferente do
+em [dgm_par_exec.cpp:258](../src/core/dgm_par_exec.cpp#L258). Diferente do
 bug do `t_PAR_CPU` (que só aparecia com uma combinação específica de
 argumentos de linha de comando), este dispara **sempre** que `qubits <
 qubits_limit` (ou seja, em praticamente qualquer circuito de teste, já que
@@ -292,9 +292,38 @@ Fica pra quando houver acesso a uma máquina com GPU NVIDIA de verdade —
 sem isso, qualquer mudança em `kernel.cu` não tem como ser testada além
 de "compila" (e nem isso, dado o problema acima).
 
+## 8. `grover.cpp`/`shor.cpp` ignoram `exec_type` na hora de chamar o algoritmo
+
+**Onde:** [grover.cpp:37](../src/cli/grover.cpp#L37),
+[shor.cpp:58](../src/cli/shor.cpp#L58).
+
+**O problema:** os dois CLIs fazem o parsing e a validação de
+`exec_type` a partir de `argv[2]` normalmente, e usam esse valor pra
+decidir se `argv[3]` é `thread_count` ou `gpu_count` (via
+`parse_backend_arg`) — mas na hora de chamar `Grover(...)`/`Shor(...)`,
+passam o literal `t_CPU` no lugar da variável `exec_type`. Ou seja,
+pedir `t_PAR_CPU`/`t_GPU`/`t_HYBRID` na linha de comando (ex:
+`shor.out 15 3 4`) faz o programa aceitar e validar o pedido, ajustar
+`thread_count`, e depois **rodar em `t_CPU` (serial) mesmo assim** — os
+outros backends nunca são exercitados por esses dois CLIs.
+
+`general.cpp` não tem esse problema — passa `exec_type` corretamente pra
+`HadamardNQubits(...)`.
+
+**Impacto no que já foi testado nesta sessão:** os testes de `t_HYBRID`
+feitos com `grover.out`/`shor.out` ao longo desta sessão (incluindo no
+`tests/smoke_test.sh`) na prática rodaram em `t_CPU`, não exercitaram
+`HybridExecution` de verdade. Os testes de `t_HYBRID` feitos com
+`general.out` continuam válidos (esse CLI não tem o bug).
+
+**Não corrigido ainda** — encontrado durante uma passada de comentários
+no código (2026-08-11), fora do escopo dessa tarefa; fica registrado
+aqui pra decisão em uma rodada própria.
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
-2026-08-10 durante os testes de build da Fase 1 da renomeação. Atualizar
-esta lista conforme novos pontos forem encontrados ou os existentes forem
-corrigidos.*
+2026-08-10 durante os testes de build da Fase 1 da renomeação e em
+2026-08-11 durante a rodada de arquitetura e a passada de comentários.
+Atualizar esta lista conforme novos pontos forem encontrados ou os
+existentes forem corrigidos.*

@@ -7,6 +7,8 @@
 
 using namespace std;
 
+// Benchmark de Hadamard: outputs/general.out <qubits> <exec_type> [threads|gpus]
+// exec_type aqui exige t_PAR_CPU/t_GPU/t_HYBRID (t_CPU não é aceito).
 int main(int argc, char **argv){
 	TuningDefaults tuning;
 

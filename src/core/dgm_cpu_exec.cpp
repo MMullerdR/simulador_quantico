@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <iterator>
 
+// Backend t_CPU: aplica cada PT em sequência, escolhendo a rotina
+// certa (denso/diagonal principal/diagonal secundária) pelo tipo de
+// matriz — ver docs/03-motor-de-execucao-cpu.md.
 void DGM::CpuExecution1(int iterations){
 	long mem_size = 1L << qubits;
 
@@ -31,6 +34,8 @@ void DGM::CpuExecution1(int iterations){
 	}
 }
 
+// Matriz DENSE (ex: H): mistura o par de amplitudes (pos0, pos1) cheio —
+// 4 multiplicações + 2 somas por par (docs/03, seção 2).
 void DGM::CpuExecution1_1(PT *term, long mem_size){ //Denso
 	long pos0, pos1, target_bit_mask;
 
@@ -64,6 +69,9 @@ void DGM::CpuExecution1_1(PT *term, long mem_size){ //Denso
 	}
 }
 
+// Matriz DIAG_PRI (ex: Z, R1..R3): só multiplica cada amplitude pelo
+// elemento da diagonal — 1 multiplicação por amplitude, sem parear
+// (docs/03, seção 4).
 void DGM::CpuExecution1_2(PT *term, long mem_size){ //Diagonal Principal
 	long pos0, target_bit_index = term->target_bit;
 
@@ -82,6 +90,8 @@ void DGM::CpuExecution1_2(PT *term, long mem_size){ //Diagonal Principal
 	}
 }
 
+// Matriz DIAG_SEC (ex: X): m00=m11=0, então cada amplitude só troca de
+// posição multiplicada por um fator — metade das multiplicações do caso denso.
 void DGM::CpuExecution1_3(PT *term, long mem_size){ //Diagonal Secundária
 	long pos0, pos1, target_bit_mask;
 

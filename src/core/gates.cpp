@@ -37,24 +37,13 @@ bool Gates::addGate(string name, float complex* matrix){
 }
 
 bool Gates::addGate(string name, float complex a0, float complex a1, float complex a2, float complex a3){
-//        cout << "GATES" << endl;
-
 	if (Gates::list.find(name) != Gates::list.end()) return false;
-
-//        cout << "GATES" << endl;
 
 	float complex* matrix = new float complex[4];
 	matrix[0] = a0;
 	matrix[1] = a1;
 	matrix[2] = a2;
 	matrix[3] = a3;
-
-	/*
-	cout << "Gate Adicionado " << name << endl;
-	cout << "Matrix" << endl;
-	cout << crealf(matrix[0]) << " , " << cimagf(matrix[0]) << "\t" << crealf(matrix[1]) << " , " << cimagf(matrix[1]) << endl;
-	cout << crealf(matrix[2]) << " , " << cimagf(matrix[2]) << "\t" << crealf(matrix[3]) << " , " << cimagf(matrix[3]) << endl << endl;
-	*/
 
 	Gates::list[name] = matrix;
 	return true;

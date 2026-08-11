@@ -8,6 +8,8 @@
 
 using namespace std;
 
+// Roda só a QFT (QFT2) isolada sobre o estado |0>, sem o resto do
+// circuito do Shor — usado como teste/benchmark independente.
 void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coalesced_bits, int block_size, int repeat_count){
 	DGM dgm;
 	dgm.exec_type = type;
@@ -29,9 +31,11 @@ void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coal
 
 //////////////////////////////////////////////////////
 
-//number_to_factor - número a ser fatorado
-//type - tipo de execução
-//thread_count - número de threads usadas na execução paralela em CPU
+// Fatora "number_to_factor" pelo algoritmo de Shor com estimação de fase
+// semiclássica (um único qubit de fase reaproveitado a cada rodada, ver
+// docs/06-algoritmo-shor.md). Devolve os dois fatores encontrados, ou um
+// vector vazio se essa tentativa falhar (é esperado falhar uma fração
+// das vezes; quem chama decide se tenta de novo).
 vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
 	long base_value, bit_width, base_pow_mod, base_inv_pow_mod, remaining_value, measured_bit, measured_phase_bits;
 
@@ -113,44 +117,19 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 		measured_phase_bits = (measured_phase_bits << 1) | measured_bit;
 	}
 
-/*
-	dgm.setFunction(round_steps);
-	//cout << "Aqui" << endl;
-	dgm.CountOps();
-
-
-	cout << "Shor " << qubits << " qubits" << endl;
-	cout << "Dense: " << dgm.dense << endl;
-	cout << "Main Diagonal: " << dgm.main_diag << endl;
-	cout << "Secondary Diagonal: " << dgm.sec_diag << endl;
-	cout << "C-Dense: " << dgm.c_dense << endl;
-	cout << "C-Main Diagonal: " << dgm.c_main_diag << endl;
-	cout << "C-Secondary Diagonal: " << dgm.c_sec_diag << endl;
-	cout << "Total: " << dgm.total_op << endl << endl;
-
-	return;
-*/
-
 	// Result check
 	vector<int> factors;
 
 	int numerator = revert_bits(measured_phase_bits, 2*bit_width);
 
-	//cout << numerator << "   " << measured_phase_bits << endl;
-
 	if(numerator==0)
 	{
-		//printf("Fail - Measured Zero.\n");
 		return factors;
 	}
 
 	int denominator = 1<<(2*bit_width);
 
-	//printf("Measured %i (%f), ", numerator, (float)numerator/denominator);
-
 	quantum_frac_approx(&numerator, &denominator, bit_width);
-
-	//printf("fractional approximation is %i/%i.\n", numerator, denominator);
 
 	int cf_denominator = denominator;
 	int multiple_index = 1;
@@ -162,22 +141,6 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 		multiple_index++;
 	}
 	if (denominator >= number_to_factor) denominator = cf_denominator;
-
-	/*
-	if((denominator % 2 == 1) && (2*denominator<(1<<bit_width)))
-	{
-		//printf("Odd denominator, trying to expand by 2.\n");
-		denominator *= 2;
-	}
-
-	if(denominator % 2 == 1)
-	{
-		//printf("Odd period, try again.\n");
-		return;
-	}
-	*/
-
-	//printf("Possible period is %i.\n", denominator);
 
 	int half_period_pow_mod = modular_pow(base_value, denominator/2, number_to_factor);
 	gcd_candidate1 = quantum_gcd(number_to_factor, half_period_pow_mod+1);
@@ -212,6 +175,5 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 		}
 	}
 
-	//printf("Fail - Try Again.\n");
 	return factors;
 }

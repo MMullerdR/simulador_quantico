@@ -82,7 +82,7 @@ ver [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md), item 2.
 
 ## 4. Os três "tipos de matriz" — a otimização mais importante
 
-`PT::matrixType()` ([common.cpp:27](../src/core/common.cpp#L27)) olha
+`PT::matrixType()` ([common.cpp:29](../src/core/common.cpp#L29)) olha
 para a matriz 2x2 da porta e classifica em três formatos, **sem olhar para o
 vetor de estado**:
 
@@ -120,7 +120,7 @@ código paralelo de CPU abaixo.
 
 ## 5. Execução paralela em CPU: `PCpuExecution1` — o conceito de "região"
 
-[dgm_par_exec.cpp:78](../src/core/dgm_par_exec.cpp#L78). Ideia: em vez de rodar
+[dgm_par_exec.cpp:81](../src/core/dgm_par_exec.cpp#L81). Ideia: em vez de rodar
 um `PT` de cada vez sobre o vetor inteiro, o vetor de `2^qubits` posições é
 dividido em **regiões** — blocos definidos por fixar um conjunto de bits do
 índice (`region_mask`) em um valor (`region_id`), variando o resto. Cada
@@ -140,7 +140,7 @@ lugar. `compute_region` também é usado pelas duas passagens de região do
 `HybridExecution` (ver [04-gpu-cuda.md](04-gpu-cuda.md)).
 
 Dentro da região, `PCpuExecution1_0`
-([dgm_par_exec.cpp:138](../src/core/dgm_par_exec.cpp#L138)) faz basicamente o
+([dgm_par_exec.cpp:133](../src/core/dgm_par_exec.cpp#L133)) faz basicamente o
 mesmo que `CpuExecution1_1/2/3`, mas usando `region_id`/`region_mask` no
 lugar de todo o índice — ou seja, a mesma lógica de pares `(pos0, pos1)` e
 tipos de matriz, só que restrita à fatia de memória daquela região/thread.

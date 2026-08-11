@@ -70,22 +70,36 @@ struct PT{
 	PT();
 	~PT();
 
+	// Quantos controles têm posição de bit menor que "qubit" (parte de
+	// uma otimização de controle parcial nunca finalizada).
 	long ctrlAffect(long qubit);
+	// Classifica a matriz em DENSE/DIAG_PRI/DIAG_SEC (ver enum acima).
 	long matrixType();
+	// Empacota deslocamento/máscara/valor de controle em "arg" (formato
+	// usado pelo motor de CPU).
 	void setArgs(long *arg, long up_to_bit);
 	void setArgs_soft(long *arg, long up_to_bit);
+	// Mesma ideia de setArgs, mas separando a parte do controle que cai
+	// dentro da região coalescida da GPU do restante.
 	void setArgsGPU(long *arg, int region_start, int region_size, int coalesced_bits);
 	void print();
 	void printMatrix();
 
 };
 
+// Imprime o vetor de estado inteiro (índice: parte real, parte imaginária).
 void printMem(float complex* mem, int qubits);
+// Como printMem, mas decompondo o índice em dois sub-registradores
+// (útil para depurar exponenciação modular no Shor).
 void printMemExp(float complex* mem, int qubits, int reg1, int reg2, long width);
+// Como printMemExp, mas também conferindo se o valor medido bate com
+// modular_pow(base_value, expoente, modulus) — usado só em depuração.
 void printMemCheckExp(float complex* mem, int qubits, long width, long base_value, long modulus);
 
+// Exponenciação modular rápida (base^exponent mod modulus).
 long modular_pow(long base, long exponent, long modulus);
 
+// Critérios de ordenação usados ao montar vec_pts em DGM::setFunction.
 bool increasing(const PT *term1, const PT *term2);
 bool decreasing(const PT *term1, const PT *term2);
 
@@ -93,6 +107,7 @@ void swap_value(int *value1, int *value2);
 void swap_ptr(float **ptr1, float **ptr2);
 void swap_ptr(float complex **ptr1, float complex **ptr2);
 
+// Diferença entre dois "timeval" (fim - início), pra medir tempo de execução.
 int timeval_subtract(struct timeval *result, struct timeval *end, struct timeval *start);
 
 #endif
