@@ -19,7 +19,13 @@ DGM::DGM(){
 	gpu_count = 1;
 }
 
-DGM::~DGM(){erase();}
+// RAII: state é sempre de posse exclusiva da DGM que o alocou
+// (allocateMemory(), calloc) — liberado aqui incondicionalmente, sem
+// depender de cada função de algoritmo lembrar de chamar freeMemory()
+// antes de cada "return" (Shor() tinha 4 pontos de retorno e não
+// liberava em nenhum deles até esta correção — vazava o vetor de estado
+// inteiro em toda chamada, ver docs/07-bugs-e-pontos-de-atencao.md item 15).
+DGM::~DGM(){erase(); freeMemory();}
 
 void DGM::setExecType(int type){
 	exec_type = type;
@@ -47,11 +53,6 @@ void DGM::erase(){
 
 void DGM::allocateMemory(){
 	state = (float complex*) calloc(1L << qubits, sizeof(float complex));
-}
-
-void DGM::setMemory(float complex* mem){
-	freeMemory();
-	state = mem;
 }
 
 void DGM::freeMemory(){

@@ -597,6 +597,80 @@ e no WSL com GPU real (`GPU=real`), sem regressão.
 
 ---
 
+## 15. [CORRIGIDO] `Shor()` nunca liberava `dgm.state` — vazava o vetor de estado inteiro em toda chamada
+
+**Onde:** `src/algorithms/lib_shor.cpp`, `src/core/dgm_core.cpp`,
+`include/core/dgm.h`.
+
+**O bug:** `Shor()` tem 4 pontos de `return` (achou fatores em duas
+formas diferentes, `numerator==0`, e o `return factors;` final de
+"desistiu"), e nenhum deles chamava `dgm.freeMemory()`.
+`DGM::~DGM()` só chamava `erase()` (limpa `pts`), nunca liberava
+`state`. Como `dgm` é uma variável local de `Shor()`, cada chamada
+alocava (`dgm.allocateMemory()`, `calloc`) e nunca liberava
+`2^qubits` complexos — de ~256KB (15 qubits) a mais de 1GB (27 qubits)
+vazados **por chamada**. O próprio comentário de `Shor()` já dizia "quem
+chama decide se tenta de novo" — ou seja, o uso esperado (dado que Shor é
+probabilístico) é chamar em loop até funcionar, exatamente o padrão que
+vazaria memória sem parar. Invisível na prática até agora porque
+`shor.cpp` (o único chamador) roda `Shor()` uma única vez por processo —
+o SO libera tudo quando o processo termina.
+
+**Correção aplicada (2026-08-11):** em vez de adicionar `freeMemory()`
+manual nos 4 pontos de retorno (frágil — fácil esquecer um quinto ponto
+de saída no futuro, foi exatamente assim que o bug apareceu), RAII de
+verdade: `DGM::~DGM()` passou a chamar `freeMemory()` incondicionalmente,
+junto de `erase()` — `state` é sempre de posse exclusiva da `DGM` que o
+alocou (nenhuma outra estrutura no projeto compartilha esse ponteiro,
+confirmado por `grep`), então liberar no destrutor é seguro por
+construção, sem depender de disciplina manual em código de algoritmo
+novo. `DGM::setMemory()` (o único método que quebraria essa garantia,
+por assumir posse de um ponteiro *externo*) já não tinha nenhum
+chamador desde a remoção de `GenericExecute` (item 4) — removida
+também. As chamadas manuais de `dgm.freeMemory()` em
+`lib_general.cpp`/`lib_grover.cpp`, que já existiam e continuam corretas,
+viraram redundantes e foram removidas.
+
+**Verificado com um harness dedicado** (chama `Shor()` 30× num mesmo
+processo, monitora RSS via `/proc/self/status`): antes do fix, RSS subia
+de forma linear e contínua (10MB → 128MB em 30 chamadas, ~4MB por
+chamada — bate exatamente com `2^19 * 8 bytes` pros 19 qubits usados no
+teste); depois do fix, RSS fica estável (~12MB do início ao fim).
+`make test` (66/66 + 32/32 + smoke test) no Windows (`GPU=stub`) e no
+WSL com GPU real (`GPU=real`), sem regressão.
+
+## 16. [CORRIGIDO] `srand(time(NULL))` em `grover.cpp`/`shor.cpp` — processos lançados no mesmo segundo repetiam a "mesma aleatoriedade"
+
+**Onde:** `src/cli/grover.cpp`, `src/cli/shor.cpp`.
+
+Descoberto ao adicionar as checagens de taxa de sucesso ao
+`tests/smoke_test.sh` (item anterior a este / commits do mesmo dia):
+`shor.out 15 2 1` (`t_GPU`) e `shor.out 15 3 2` (`t_HYBRID`) deram **0
+sucessos em 8 tentativas cada** numa rodada real de `make test` — bem
+abaixo da taxa histórica (25-75%, ver item 7). A causa: `srand(time(NULL))`
+usa só o segundo do relógio como semente, e um laço de shell chamando o
+binário 8 vezes seguidas roda rápido o bastante pra várias (ou todas) as
+chamadas caírem no mesmo segundo — cada uma reproduzindo exatamente a
+mesma sequência de `rand()` (inclusive a escolha de `base_value` em
+`Shor()`), fazendo as "8 tentativas independentes" na prática se
+reduzirem a 1-2 sementes únicas repetidas. `grover.cpp` tinha o mesmo
+padrão (`DGM::measure()` também usa `rand()` pra amostrar a medição),
+sem sintoma visível até agora só porque a taxa de sucesso do Grover é
+alta o bastante (ver item 12) pra mascarar o efeito.
+
+**Correção aplicada (2026-08-11):** `srand(time(NULL) ^ getpid())` nos
+dois — `getpid()` garante sementes diferentes entre processos
+concorrentes/rápidos mesmo dentro do mesmo segundo.
+
+**Verificado:** `shor.out 15 2 1`/`shor.out 15 3 2` rodados 16× cada
+depois do fix deram 8/16 e 5/16 respectivamente — de volta à faixa
+histórica esperada, sem mais o padrão de 0/N correlacionado.
+`tests/smoke_test.sh` também passou a rodar `shor.out` 16 vezes (não 8)
+por checagem, reduzindo ainda mais a chance de falso alarme por
+variância estatística mesmo com sementes já independentes.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
 2026-08-11 durante a rodada de arquitetura, a passada de comentários e um

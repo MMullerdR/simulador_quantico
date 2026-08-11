@@ -112,9 +112,10 @@ public:
 	void setCpuStructure(long cpu_region_bits, long cpu_coalesced_bits);
 	void setGpuStructure(long gpu_coalesced_bits, long gpu_region_bits, int repeat_count = 1);
 
-	// Aloca/associa/libera o vetor de estado (state).
+	// Aloca/libera o vetor de estado (state) -- freeMemory() também é
+	// chamado automaticamente pelo destrutor (RAII), então só precisa ser
+	// chamado manualmente se quiser liberar antes do fim do escopo.
 	void allocateMemory();
-	void setMemory(float complex *mem);
 	void freeMemory();
 	// Seta state[pos] = 1 — estado inicial |pos>.
 	void setMemoryValue(int pos);

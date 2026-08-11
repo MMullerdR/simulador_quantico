@@ -62,8 +62,6 @@ long Grover(long qubits, long search_value, int type, int thread_count, int cpu_
 		result = (result << 1) | dgm.measure(qubit_index);
 	}
 
-	dgm.freeMemory();
-
 	return result;
 }
 

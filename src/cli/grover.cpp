@@ -4,6 +4,7 @@
 #include <vector>
 #include <iostream>
 #include <sys/time.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -11,7 +12,14 @@ using namespace std;
 // block_size/repeat_count/gpu_region_bits só valem pra t_GPU/t_HYBRID.
 // search_value precisa caber no registrador de busca (qubits-1 bits).
 int main(int argc, char **argv){
-	srand(time(NULL));
+	// time(NULL) sozinho repete a mesma semente pra processos lançados
+	// dentro do mesmo segundo (comum em scripts/testes chamando o binário
+	// várias vezes seguidas) -- DGM::measure() usa rand() pra amostrar a
+	// medição, então duas execuções nesse caso reproduziriam exatamente a
+	// mesma sequência "aleatória". getpid() garante seeds diferentes entre
+	// processos concorrentes mesmo no mesmo segundo (ver mesmo fix em
+	// shor.cpp).
+	srand(time(NULL) ^ getpid());
 
 	int exec_type = t_CPU;
 	TuningDefaults tuning;

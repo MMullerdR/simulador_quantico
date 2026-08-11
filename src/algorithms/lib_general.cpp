@@ -37,7 +37,5 @@ float HadamardNQubits(long qubits, long iterations, int type, int thread_count, 
 
 	printMem(dgm.state, 4);
 
-	dgm.freeMemory();
-
 	return 0;
 }

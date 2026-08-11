@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sys/time.h>
 #include <map>
+#include <unistd.h>
 
 using namespace std;
 
@@ -23,7 +24,13 @@ int main(int argc, char** argv){
 	factor_target_by_qubit_count[27] = 2863;
 
 
-	srand (time(NULL));
+	// time(NULL) sozinho repete a mesma semente pra processos lançados
+	// dentro do mesmo segundo (comum em scripts/testes chamando o binário
+	// várias vezes seguidas) — Shor() escolhe base_value via rand(), então
+	// duas execuções "aleatórias" nesse caso reproduziriam exatamente a
+	// mesma sequência de tentativas. getpid() garante seeds diferentes
+	// entre processos concorrentes mesmo no mesmo segundo.
+	srand(time(NULL) ^ getpid());
 
 	struct timeval timev, tvBegin, tvEnd;
 	float elapsed;
