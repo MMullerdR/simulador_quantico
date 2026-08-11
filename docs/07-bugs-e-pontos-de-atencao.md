@@ -703,13 +703,63 @@ cobrindo tudo de uma vez. A fila round-robin distribui **número de
 regiões** igualmente entre CPU e GPU, não tempo esperado — daí o
 desbalanceamento.
 
-**Ainda não implementada nenhuma correção** — as duas causas de raiz
-seguem as mesmas do item original (`qubits_limit`/`global_coalesced_bits`
-fixos, tamanho de região igual pra CPU e GPU na fila), agora com dados
-reais em vez de só leitura de código. Próximo passo natural: medir se
-deixar a GPU reivindicar regiões maiores por vez (menos lançamentos,
-mais trabalho por lançamento) melhora `HYBRID` de fato — não tentado
-ainda nesta sessão.
+**Duas tentativas de correção nesta sessão, nenhuma das duas ficou —
+ambas testadas com hardware real e descartadas por dados/segurança, não
+por preguiça:**
+
+**Tentativa 1 — só subir `qubits_limit`: rejeitada, dados mostram que
+piora às vezes.** Varredura empírica (`general.out <q> 3 4`,
+`qubits_limit` ∈ {20,22,24,26}):
+
+| qubits_limit | 20q | 22q | 24q | 26q |
+|---|---|---|---|---|
+| 20 (atual) | 0.074s | 0.307s | **0.397s** | 1.252s |
+| 22 | 0.074s | 0.317s | 0.495s | 1.179s |
+| 24 | 0.074s | 0.317s | **1.388s** | 2.110s |
+| 26 | 0.196s | 0.320s | 1.388s | **0.773s** |
+
+Nada consistente: às vezes melhora (26q/limit=26), às vezes piora muito
+(24q/limit=24, 1.388s — bate exato com `PAR_CPU(1)`, single-thread).
+Causa: com região única (`qubits == qubits_limit`), quem processa tudo é
+**loteria de agendamento do SO** entre as `thread_count` threads
+disputando a mesma região — não CPU vs GPU de verdade. Às vezes a GPU
+vence (bom, se for uma faixa de qubits onde GPU já é mais rápida — ver
+`docs/08-performance.md`), às vezes uma única thread de CPU vence e
+processa tudo sozinha, sem paralelismo nenhum (péssimo). Subir
+`qubits_limit` só desloca *onde* essa loteria acontece, não resolve o
+problema de fundo.
+
+**Tentativa 2 — GPU reserva estaticamente um bloco de regiões
+consecutivas (mescladas numa única chamada maior), CPU disputa
+dinamicamente o resto: implementada, testada, revertida por segfault.**
+Design: antes da seção paralela, calcular quantas regiões "normais"
+(`gpu_slots = 2^gpu_batch_bits`) cabem reservadas só pra GPU, estender
+`global_region_mask` com esse tanto de bits livres extras (seguro,
+confirmado por leitura de `compute_region`: bits fora do mask original
+não são tocados por nenhum operador do lote atual, por construção), e
+fazer a GPU processar esse bloco maior numa única chamada
+`ProjectState`/`GpuExecutionWrapper`/`GetState`, enquanto CPU continua
+disputando 1 região por vez a partir do restante. Implementado e testado
+com GPU real: **segfault em `general.out 24 3 4`** (24 qubits), e a
+instrumentação `HYBRID_DEBUG` em 22 qubits mostrou `0 região(ões) CPU`
+quando o esperado (pela conta de `region_count - gpu_slots`) era sobrar
+1 região pra CPU. Causa provável: `RegionPlan::region_count` (retornado
+por `compute_region`) tem um `+1` (`plan.region_count = (1 <<
+(outer_bound_bits - region_bits)) + 1`) cujo papel exato não está claro
+— parece ser uma margem de segurança do laço de reivindicação
+decremento-até-zero original, não uma contagem literal de regiões
+distintas disponíveis. Minha reserva estática assumiu que
+`region_count` era essa contagem literal, e não era — a região "extra"
+que eu contava como sobra pra CPU na verdade não existia, causando a
+GPU e a CPU disputarem (e escreverem em) memória sobreposta.
+
+**Revertido nesta sessão** (não corrigido) — entender o `+1` de verdade
+antes de tentar de novo essa abordagem. Mudar a lógica de indexação de
+região é exatamente a classe de mudança que já causou bugs de memória
+neste projeto antes (itens 3, 3.1, 6); um segfault reproduzível é sinal
+de parar e não de ajustar às cegas. Instrumentação `HYBRID_DEBUG` (a
+única parte desta investigação que ficou) continua no código, sem
+custo quando desligada.
 
 ---
 
