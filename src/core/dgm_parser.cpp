@@ -106,7 +106,8 @@ map <long, Group> DGM::genGroups(string step){
 
 void DGM::genPTs(map<long, Group> &groups, vector <PT*> &step_pts){
 	step_pts.clear();
-	Gates gates;
+	// usa o cache de portas desta execução (DGM::gates), não um local —
+	// ver gates.h.
 
 	map<long,Group>::iterator it;
 	Group group;

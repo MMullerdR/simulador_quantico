@@ -77,7 +77,7 @@ rodada seguinte via `genRot`.
 
 ## 3. `CMultMod` / `CRMultMod` — multiplicação modular controlada
 
-[lib_shor_circuits.cpp:45](../src/algorithms/lib_shor_circuits.cpp#L45). A ideia (técnica
+[lib_shor_circuits.cpp:44](../src/algorithms/lib_shor_circuits.cpp#L44). A ideia (técnica
 de Vedral–Barenco–Ekert / Beckman et al.): para multiplicar `reg2` por `a`
 módulo `N`, controlado por `ctrl`:
 
@@ -102,14 +102,16 @@ Todas em [lib_shor_circuits.cpp](../src/algorithms/lib_shor_circuits.cpp). A
 QFT aqui é implementada como a sequência padrão de `H` + portas de fase
 controladas (`R2`, `R3`, ...) entre pares de qubits do registrador — a
 construção de circuito de QFT de livro-texto. `QFT`
-([lib_shor_circuits.cpp:332](../src/algorithms/lib_shor_circuits.cpp#L332))
-e `RQFT` ([lib_shor_circuits.cpp:370](../src/algorithms/lib_shor_circuits.cpp#L370))
+([lib_shor_circuits.cpp:312](../src/algorithms/lib_shor_circuits.cpp#L312))
+e `RQFT` ([lib_shor_circuits.cpp:349](../src/algorithms/lib_shor_circuits.cpp#L349))
 são espelhos exatos um do outro (mesmo circuito, só muda o sinal da fase, o
 prefixo do nome da porta — `"R"` vs `"R'"`, necessário porque o nome vira
-chave no `Gates::list` estático — e um `reverse()` final), por isso
-compartilham a implementação interna `QFT_impl(qubits, reg, over, width,
-inverse)` e cada uma é só um wrapper de uma linha. `QFT2`
-([lib_shor_circuits.cpp:336](../src/algorithms/lib_shor_circuits.cpp#L336))
+chave no cache de portas da execução (`Gates &g`, ver
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md) item 5) —
+e um `reverse()` final), por isso compartilham a implementação interna
+`QFT_impl(qubits, reg, over, width, inverse, g)` e cada uma é só um wrapper
+de uma linha. `QFT2`
+([lib_shor_circuits.cpp:316](../src/algorithms/lib_shor_circuits.cpp#L316))
 é uma variante sem o qubit `over`, usada isoladamente em `ApplyQFT` (função
 de teste/benchmark) — não compartilha a implementação com `QFT`/`RQFT`.
 `QFT`/`RQFT` (com o qubit `over` extra) são as versões usadas dentro de
@@ -120,11 +122,11 @@ registrador vira apenas uma sequência de portas de fase `Rk` em cada qubit**
 (o "somador de Draper", puramente em portas diagonais de fase — daí porque
 `AddF`/`SubF` só criam portas do tipo `DIAG_PRI`, o tipo mais barato de
 executar, ver [03](03-motor-de-execucao-cpu.md)). `AddF`
-([lib_shor_circuits.cpp:249](../src/algorithms/lib_shor_circuits.cpp#L249))
-e `SubF` ([lib_shor_circuits.cpp:274](../src/algorithms/lib_shor_circuits.cpp#L274))
+([lib_shor_circuits.cpp:230](../src/algorithms/lib_shor_circuits.cpp#L230))
+e `SubF` ([lib_shor_circuits.cpp:255](../src/algorithms/lib_shor_circuits.cpp#L255))
 são, pelo mesmo motivo que `QFT`/`RQFT`, espelhos exatos (sinal da fase e
 prefixo `"ADD_"`/`"SUB_"` do nome da porta) e compartilham a implementação
-`AddSubF_impl(qubits, reg, over, value, width, controlled, subtract)`. Ela
+`AddSubF_impl(qubits, reg, over, value, width, controlled, subtract, g)`. Ela
 calcula, para cada qubit do registrador, qual produto de rotações
 corresponde a somar/subtrair `value` naquela posição binária, registra essa
 porta combinada sob um nome único (`"ADD_" + value + "_" + i` /
@@ -133,7 +135,7 @@ análogos `Sub`) são as mesmas portas com um ou dois controles extra
 amarrados.
 
 `C2AddMod`/`C2SubMod`
-([lib_shor_circuits.cpp:114](../src/algorithms/lib_shor_circuits.cpp#L114))
+([lib_shor_circuits.cpp:97](../src/algorithms/lib_shor_circuits.cpp#L97))
 combinam `AddF`/`SubF` com o qubit `over` para implementar soma **modular**
 (soma `a`, subtrai `N`, verifica overflow via `over_bool`, soma `N` de volta
 condicionalmente) — o gadget clássico de soma modular reversível. Ao
@@ -170,4 +172,5 @@ tinha um bug que fazia toda correção de fase depois da primeira reaproveitar
 a matriz da primeira, comprometendo a corretude das rodadas seguintes — já
 corrigido, ver [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md),
 item 1. Vale ler mesmo assim antes de mexer em `genRot`/`Gates::list`, pelo
-motivo raiz explicado ali (nomes de porta como chave num cache estático).
+motivo raiz explicado ali (nomes de porta como chave num cache — hoje por
+execução, ver item 5).

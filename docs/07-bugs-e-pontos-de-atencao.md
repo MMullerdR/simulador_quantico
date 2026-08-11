@@ -59,8 +59,8 @@ quando o ponteiro já era `NULL`, o que não libera nada de útil.
 
 **Não é tão simples quanto inverter as três condições de volta.** Investigando
 antes de corrigir: `matrix` **não pertence** ao `PT` — é sempre um ponteiro
-emprestado de `Gates::list` (`gates.getMatrix(...)`, o cache estático de
-matrizes de porta, ver item 5). Se essa condição também fosse invertida para
+emprestado de `Gates::list` (`gates.getMatrix(...)`, o cache de matrizes de
+porta da execução, ver item 5). Se essa condição também fosse invertida para
 `if (matrix) free(matrix);`, o resultado seria bem pior que o leak original:
 `free()` numa matriz **compartilhada**, causando double-free/use-after-free
 na próxima vez que qualquer outro `PT` (ou execução futura) referenciasse a
@@ -134,17 +134,42 @@ preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
 `free(state)` sobre esse mesmo ponteiro. Vale revisar caso a caso quem é
 "dono" do buffer antes de usar essas funções em código novo.
 
-## 5. `Gates::list` é `static` (compartilhado entre todas as instâncias)
+## 5. [CORRIGIDO] `Gates::list` era `static` (compartilhado entre todas as instâncias)
 
-**Onde:** [gates.h:34](../include/core/gates.h#L34),
+**Onde:** [gates.h:39](../include/core/gates.h#L39),
 [gates.cpp:7](../src/core/gates.cpp#L7)
 
-Não é um bug isoladamente, mas é a causa raiz de por que o problema do item
-1 se manifesta como está: como `Gates::list` é global/estático, portas
-registradas com o mesmo nome em execuções diferentes (ou até rodadas
-diferentes do mesmo `Shor()`) colidem. Vale ter isso em mente ao criar
-qualquer porta nova dinamicamente (sempre garantir nomes realmente únicos,
-ou aceitar que o cache seja intencional quando o valor for de fato o mesmo).
+Não era um bug isoladamente, mas era a causa raiz de por que o problema do
+item 1 se manifestava como se manifestava: como `Gates::list` era
+global/estático, portas registradas com o mesmo nome em execuções
+diferentes (ou até rodadas diferentes do mesmo `Shor()`) colidiam.
+
+**Correção aplicada (2026-08-11):** `Gates::list` deixou de ser `static` e
+virou um campo não-estático de `Gates`; `DGM` passou a ter uma instância
+própria (`DGM::gates`, [dgm.h](../include/core/dgm.h)), passada por
+referência (`Gates &g`) por todas as funções que constroem circuito em
+`lib_shor_circuits.cpp`. O cache continua vivo durante toda uma execução
+(uma única instância de `DGM` do início ao fim de um `Shor()`/`Grover()`,
+preservando o reaproveitamento de matrizes já cacheadas — `SubF(N)`, as
+rotações da QFT, etc.), mas não sobrevive entre execuções diferentes,
+eliminando a classe de bug do item 1 por construção, não por disciplina de
+nomes únicos.
+
+Escopo dessa mudança: só as funções que realmente chamam `addGate`/
+`getMatrix` (`genRot`, `QFT_impl`, `QFT2`, `AddSubF_impl`, `DGM::genPTs`) e
+quem está no caminho entre elas e o `DGM` (`CMultMod`, `CRMultMod`,
+`C2AddMod`, `C2SubMod`, `CAddF`/`C2AddF`/`CSubF`/`C2SubF`, `AddF`/`SubF`,
+`QFT`/`RQFT`, `Shor`, `ApplyQFT`) precisaram de um parâmetro `Gates &g` a
+mais — `Hadamard`/`CNot`/`Toffoli`/etc. (que só montam tokens de string,
+nunca tocam o cache) e `lib_general.cpp`/`lib_grover.cpp` (que não usam
+portas geradas dinamicamente) ficaram de fora.
+
+**Verificado:** compila limpo em todo o projeto; `make test` local (66/66
++ 8/8) e no WSL; comparação A/B interativa contra o binário do commit
+anterior a esta mudança, rodando `shor.out 15 0` 8 vezes intercaladas —
+mesma taxa de sucesso dos dois lados, confirmando que não é regressão (o
+0/8 observado é a mesma limitação probabilística já documentada deste
+ambiente, não algo introduzido por esta mudança).
 
 ## 6. [CORRIGIDO] Segfault em `t_PAR_CPU`/`t_HYBRID` quando `region_bits > qubits` disponíveis
 

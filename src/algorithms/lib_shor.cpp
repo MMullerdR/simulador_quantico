@@ -22,7 +22,7 @@ void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coal
 	dgm.allocateMemory();
 	dgm.setMemoryValue(0);
 
-	vector<string> qft = QFT2(qubits,0,qubits);
+	vector<string> qft = QFT2(qubits,0,qubits,dgm.gates);
 
 	dgm.executeFunction(qft);
 }
@@ -94,17 +94,17 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 
 		round_steps.push_back(hadamard_step0);
 
-		sub_steps = CMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor);
+		sub_steps = CMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor, dgm.gates);
 
 		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
 		sub_steps = CSwapR(qubits, qft_qb, reg1, reg2, bit_width);
 		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
 
-		sub_steps = CRMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor);
+		sub_steps = CRMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor, dgm.gates);
 		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
 		round_steps.push_back(hadamard_step0);
 
-		if (measured_phase_bits) round_steps.push_back(genRot(qubits, qft_qb, measured_phase_bits));
+		if (measured_phase_bits) round_steps.push_back(genRot(qubits, qft_qb, measured_phase_bits, dgm.gates));
 
 		dgm.executeFunction(round_steps);
 

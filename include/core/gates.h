@@ -27,11 +27,16 @@ string concatena(vector <string> step_ops, int qubits, bool reverse = false);
 
 
 // Catálogo de matrizes de porta (H, X, Y, Z, R1..R3, e as geradas
-// dinamicamente por lib_shor.cpp). Gates::list é estático: compartilhado
-// por toda instância de Gates no processo.
+// dinamicamente por lib_shor_circuits.cpp). Cada DGM tem sua própria
+// instância de Gates (campo DGM::gates) — o cache dura a vida de uma
+// execução (Shor()/Grover()/etc), não do processo inteiro, evitando
+// colisão de nomes entre execuções diferentes (ver
+// docs/07-bugs-e-pontos-de-atencao.md, item 1) sem perder o reaproveitamento
+// de matrizes dentro de uma mesma execução (a QFT e os somadores de valor
+// fixo, como SubF(N) no Shor, são chamados repetidamente com o mesmo nome).
 class Gates{
 public:
-	static map <string, float complex*> list;
+	map <string, float complex*> list;
 	Gates();
 	~Gates();
 	void init();

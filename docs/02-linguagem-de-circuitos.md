@@ -109,11 +109,14 @@ motor (`while (pts[i] != NULL)`) depende disso.
 ## 5. Catálogo de portas (`Gates`)
 
 [gates.h](../include/core/gates.h) / [gates.cpp](../src/core/gates.cpp).
-`Gates::list` é um `map<string, float complex*>` **estático** (compartilhado
-por todas as instâncias) com as portas base: `H`, `X`, `Y`, `Z`, `R1`, `R2`,
-`R3`. Cada matriz é um array de 4 complexos em ordem *row-major*:
+`Gates::list` é um `map<string, float complex*>` com as portas base: `H`,
+`X`, `Y`, `Z`, `R1`, `R2`, `R3`. Cada `DGM` tem sua própria instância de
+`Gates` (campo `DGM::gates`) — o cache dura a vida de uma execução, não do
+processo inteiro (ver [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md),
+item 5). Cada matriz é um array de 4 complexos em ordem *row-major*:
 `[m00, m01, m10, m11]`. Novas portas (como as rotações usadas no QFT e no
 somador do Shor) são adicionadas dinamicamente com `Gates::addGate(nome, a0,
-a1, a2, a3)` — mas `addGate` **não sobrescreve** um nome já existente
-(retorna `false` silenciosamente), o que é importante para entender um bug
-descrito em [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+a1, a2, a3)`, recebendo o cache da execução atual por referência — mas
+`addGate` **não sobrescreve** um nome já existente (retorna `false`
+silenciosamente), o que é importante para entender o bug do item 1 do
+mesmo documento.

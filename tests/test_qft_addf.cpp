@@ -168,6 +168,11 @@ int main(){
 	bool all_ok = true;
 	int case_count = 0;
 
+	// Uma única instância de Gates, como uma DGM real teria (ver
+	// DGM::gates em include/core/dgm.h) — QFT/RQFT/AddF/SubF de verdade
+	// agora recebem o cache por referência em vez de criar o deles.
+	Gates g;
+
 	int cases[3][4] = { // qubits, reg, over, width
 		{10, 1, 6, 4},
 		{15, 2, 9, 6},
@@ -176,8 +181,8 @@ int main(){
 
 	for (int i = 0; i < 3; i++){
 		int qubits=cases[i][0], reg=cases[i][1], over=cases[i][2], width=cases[i][3];
-		all_ok = cmp(QFT(qubits,reg,over,width), OLD_QFT(qubits,reg,over,width), "QFT") && all_ok;
-		all_ok = cmp(RQFT(qubits,reg,over,width), OLD_RQFT(qubits,reg,over,width), "RQFT") && all_ok;
+		all_ok = cmp(QFT(qubits,reg,over,width,g), OLD_QFT(qubits,reg,over,width), "QFT") && all_ok;
+		all_ok = cmp(RQFT(qubits,reg,over,width,g), OLD_RQFT(qubits,reg,over,width), "RQFT") && all_ok;
 		case_count += 2;
 	}
 
@@ -188,10 +193,10 @@ int main(){
 			long v = values[vi];
 			int w = widths[wi];
 			int qubits = w+3, reg=1, over=w+1;
-			all_ok = cmp(AddF(qubits,reg,over,v,w,true), OLD_AddF(qubits,reg,over,v,w,true), "AddF(controlled)") && all_ok;
-			all_ok = cmp(AddF(qubits,reg,over,v,w,false), OLD_AddF(qubits,reg,over,v,w,false), "AddF") && all_ok;
-			all_ok = cmp(SubF(qubits,reg,over,v,w,true), OLD_SubF(qubits,reg,over,v,w,true), "SubF(controlled)") && all_ok;
-			all_ok = cmp(SubF(qubits,reg,over,v,w,false), OLD_SubF(qubits,reg,over,v,w,false), "SubF") && all_ok;
+			all_ok = cmp(AddF(qubits,reg,over,v,w,true,g), OLD_AddF(qubits,reg,over,v,w,true), "AddF(controlled)") && all_ok;
+			all_ok = cmp(AddF(qubits,reg,over,v,w,false,g), OLD_AddF(qubits,reg,over,v,w,false), "AddF") && all_ok;
+			all_ok = cmp(SubF(qubits,reg,over,v,w,true,g), OLD_SubF(qubits,reg,over,v,w,true), "SubF(controlled)") && all_ok;
+			all_ok = cmp(SubF(qubits,reg,over,v,w,false,g), OLD_SubF(qubits,reg,over,v,w,false), "SubF") && all_ok;
 			case_count += 4;
 		}
 	}

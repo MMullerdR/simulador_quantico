@@ -80,6 +80,10 @@ class DGM{
 public:
 	long total_op, dense, main_diag, sec_diag, c_dense, c_main_diag, c_sec_diag; //contadores de operações, ver CountOps()
 
+	// Cache de matrizes de porta desta execução — ver docs/03 e o
+	// comentário em gates.h. Vive e morre com a instância de DGM.
+	Gates gates;
+
 	vector <string> diag;
 	long max_qubits, max_pt, affected_qubit_count;
 

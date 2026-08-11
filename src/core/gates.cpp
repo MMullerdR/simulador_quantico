@@ -4,8 +4,6 @@
 
 using namespace std;
 
-map <string, float complex*> Gates::list;
-
 Gates::Gates(){
 	init();
 }
@@ -13,15 +11,16 @@ Gates::Gates(){
 Gates::~Gates(){}
 
 void Gates::init(){
-	if (Gates::list.size() == 0){
-		addGate("H", 1.0/sqrt(2), 1.0/sqrt(2), 1.0/sqrt(2), -1.0/sqrt(2));
-		addGate("X", 0.0, 1.0, 1.0, 0.0);
-		addGate("Z", 1.0, 0.0, 0.0, -1.0);
-		addGate("Y", 0.0, 1.0*I, -1.0*I, 0.0);
-		addGate("R1", 1.0, 0, 0.0, cpowf(M_E, M_PI*I));
-		addGate("R2", 1.0, 0, 0.0, cpowf(M_E, M_PI*I/2.0));
-		addGate("R3", 1.0, 0, 0.0, cpowf(M_E, M_PI*I/4.0));
-	}
+	// list não é mais estático (cada DGM tem a sua, ver gates.h) — uma
+	// instância recém-construída sempre começa vazia, sem precisar
+	// checar antes de popular.
+	addGate("H", 1.0/sqrt(2), 1.0/sqrt(2), 1.0/sqrt(2), -1.0/sqrt(2));
+	addGate("X", 0.0, 1.0, 1.0, 0.0);
+	addGate("Z", 1.0, 0.0, 0.0, -1.0);
+	addGate("Y", 0.0, 1.0*I, -1.0*I, 0.0);
+	addGate("R1", 1.0, 0, 0.0, cpowf(M_E, M_PI*I));
+	addGate("R2", 1.0, 0, 0.0, cpowf(M_E, M_PI*I/2.0));
+	addGate("R3", 1.0, 0, 0.0, cpowf(M_E, M_PI*I/4.0));
 }
 
 float complex* Gates::getMatrix(string gate_name){

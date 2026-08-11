@@ -7,6 +7,7 @@
 // definição de "complex" daqui contamina a inicialização do <complex.h>
 // do sistema quando ele for incluído depois (por common.h/dgm.h).
 #include <complex.h>
+#include "../core/gates.h"
 
 using namespace std;
 
@@ -21,27 +22,30 @@ void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coal
 
 //////////////////////////////////////////////////////////////////////////
 
-vector <string> QFT(int qubits, int reg, int over, int width);
-vector <string> QFT2(int qubits, int reg, int width);
-vector <string> RQFT(int qubits, int reg, int over, int width);
+// g: cache de portas da execução atual (DGM::gates) — os nomes das
+// portas geradas dinamicamente aqui (R/R'/ADD_/SUB_/Rot_) são chaves
+// nesse cache, ver gates.h.
+vector <string> QFT(int qubits, int reg, int over, int width, Gates &g);
+vector <string> QFT2(int qubits, int reg, int width, Gates &g);
+vector <string> RQFT(int qubits, int reg, int over, int width, Gates &g);
 vector <string> CSwapR(int qubits, int ctrl, int reg1, int reg2, int width);
 vector <string> SwapOver(int qubits, int reg, int width);
-string genRot(int qubits, int reg, long phase_bits);
+string genRot(int qubits, int reg, long phase_bits, Gates &g);
 
-vector <string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor);
-vector <string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor);
-vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor);
-vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor);
+vector <string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g);
+vector <string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g);
+vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g);
+vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g);
 
-string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_add, int width);
-string CAddF(int qubits, int ctrl1, int reg, int over, long value_to_add, int width);
-string AddF(int qubits, int reg, int over, long value_to_add, int width);
-vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled);
+string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_add, int width, Gates &g);
+string CAddF(int qubits, int ctrl1, int reg, int over, long value_to_add, int width, Gates &g);
+string AddF(int qubits, int reg, int over, long value_to_add, int width, Gates &g);
+vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled, Gates &g);
 
-string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_sub, int width);
-string CSubF(int qubits, int ctrl1, int reg, int over, long value_to_sub, int width);
-string SubF(int qubits, int reg, int over, long value_to_sub, int width);
-vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width, bool controlled);
+string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_sub, int width, Gates &g);
+string CSubF(int qubits, int ctrl1, int reg, int over, long value_to_sub, int width, Gates &g);
+string SubF(int qubits, int reg, int over, long value_to_sub, int width, Gates &g);
+vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width, bool controlled, Gates &g);
 
 //////////////////////////////////////////////////////////////////////////
 

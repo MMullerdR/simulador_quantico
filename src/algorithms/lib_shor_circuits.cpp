@@ -8,7 +8,7 @@
 
 using namespace std;
 
-string genRot(int qubits, int reg, long phase_bits){
+string genRot(int qubits, int reg, long phase_bits, Gates &g){
 	vector <string> step_ops(qubits, "ID");
 	string name;
 
@@ -31,7 +31,6 @@ string genRot(int qubits, int reg, long phase_bits){
 	}
 
 	if (rot != 1){
-		Gates g;
 		name = "Rot_" + int2str(phase_bits_orig);
 		g.addGate(name, 1.0, 0.0, 0.0, rot);
 		step_ops[reg] = name;
@@ -42,26 +41,15 @@ string genRot(int qubits, int reg, long phase_bits){
 	return "";
 }
 
-vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor){
-//        cout << "MULT" << endl;
-
+vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g){
 	int ctrl2;
-	vector <string> qft = QFT(qubits, reg2, over, width);
-//        cout << "MULT" << endl;
-
+	vector <string> qft = QFT(qubits, reg2, over, width, g);
 
 	string hadamard_step = Hadamard(qubits, reg2, width);
 
-//        cout << "MULT" << endl;
-
-	vector <string> rqft = RQFT(qubits, reg2, over, width);
-
-//        cout << "MULT" << endl;
+	vector <string> rqft = RQFT(qubits, reg2, over, width, g);
 
 	//////////////////////////////////////////////////////////////
-
-//        cout << "MULT" << endl;
-
 
 	vector <string> mult_mod;
 	vector <string> add_mod_steps;
@@ -70,16 +58,11 @@ vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int 
 
 	ctrl2 = reg1 + width - 1;
 	for (int bit_index = 0; bit_index < width; bit_index++){
-		add_mod_steps = C2AddMod(qubits, ctrl, ctrl2-bit_index, reg2, over, over_bool, width, base_value, number_to_factor);
-		//for (int j = 0; j < add_mod_steps.size(); j++) cout << add_mod_steps[j] << endl;
-		//exit(1);
+		add_mod_steps = C2AddMod(qubits, ctrl, ctrl2-bit_index, reg2, over, over_bool, width, base_value, number_to_factor, g);
 		mult_mod.insert(mult_mod.end(), add_mod_steps.begin(), add_mod_steps.end());
 
 		base_value = (base_value*2)%number_to_factor;
 	}
-
-//        cout << "MULT" << endl;
-
 
 	mult_mod.insert(mult_mod.end(), rqft.begin(), rqft.end());
 
@@ -87,10 +70,10 @@ vector<string> CMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int 
 
 }
 
-vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor){
+vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g){
 	int ctrl2;
-	vector <string> qft = QFT(qubits, reg2, over, width);
-	vector <string> rqft = RQFT(qubits, reg2, over, width);
+	vector <string> qft = QFT(qubits, reg2, over, width, g);
+	vector <string> rqft = RQFT(qubits, reg2, over, width, g);
 
 	//////////////////////////////////////////////////////////////
 
@@ -99,7 +82,7 @@ vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int
 
 	ctrl2 = reg1 + width - 1;
 	for (int bit_index = 0; bit_index < width; bit_index++){
-		sub_mod_steps = C2SubMod(qubits, ctrl, ctrl2-bit_index, reg2, over, over_bool, width, base_value, number_to_factor);
+		sub_mod_steps = C2SubMod(qubits, ctrl, ctrl2-bit_index, reg2, over, over_bool, width, base_value, number_to_factor, g);
 		mult_mod.insert(mult_mod.begin(), sub_mod_steps.begin(), sub_mod_steps.end());
 
 		base_value = (base_value*2)%number_to_factor;
@@ -111,15 +94,15 @@ vector<string> CRMultMod(int qubits, int ctrl, int reg1, int reg2, int over, int
 	return mult_mod;
 }
 
-vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor){
-	vector<string> qft = QFT(qubits, reg, over, width);
-	vector<string> rqft = RQFT(qubits, reg, over, width);
+vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g){
+	vector<string> qft = QFT(qubits, reg, over, width, g);
+	vector<string> rqft = RQFT(qubits, reg, over, width, g);
 
-	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
-	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
+	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, base_value, width, g);
+	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, base_value, width, g);
 
-	string sub_N = SubF(qubits, reg, over, number_to_factor, width);
-	string c_add_N = CAddF(qubits, over_bool, reg, over, number_to_factor, width);
+	string sub_N = SubF(qubits, reg, over, number_to_factor, width, g);
+	string c_add_N = CAddF(qubits, over_bool, reg, over, number_to_factor, width, g);
 
 	string n_over = Pauli_X(qubits, over, 1);
 	string c_over = CNot(qubits, over, over_bool);
@@ -143,16 +126,16 @@ vector <string> C2AddMod(int qubits, int ctrl1, int ctrl2, int reg, int over, in
 	return circuit_steps;
 }
 
-vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor){
-	vector <string> qft = QFT(qubits, reg, over, width);
-	vector <string> rqft = RQFT(qubits, reg, over, width);
+vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, int over_bool, int width, long base_value, long number_to_factor, Gates &g){
+	vector <string> qft = QFT(qubits, reg, over, width, g);
+	vector <string> rqft = RQFT(qubits, reg, over, width, g);
 
-	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
-	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, base_value, width);
+	string c2_add_a = C2AddF(qubits, ctrl1, ctrl2, reg, over, base_value, width, g);
+	string c2_sub_a = C2SubF(qubits, ctrl1, ctrl2, reg, over, base_value, width, g);
 
-	string add_N = AddF(qubits, reg, over, number_to_factor, width);
-	string c_add_N = CAddF(qubits, over_bool, reg, over, number_to_factor, width);
-	string c_sub_N = CSubF(qubits, over_bool, reg, over, number_to_factor, width);
+	string add_N = AddF(qubits, reg, over, number_to_factor, width, g);
+	string c_add_N = CAddF(qubits, over_bool, reg, over, number_to_factor, width, g);
+	string c_sub_N = CSubF(qubits, over_bool, reg, over, number_to_factor, width, g);
 
 	string n_over = Pauli_X(qubits, over, 1);
 	string c_over = CNot(qubits, over, over_bool);
@@ -179,8 +162,8 @@ vector <string> C2SubMod(int qubits, int ctrl1, int ctrl2, int reg, int over, in
 //////////////////////////////////////////////////////////////////////////
 
 
-string CAddF(int qubits, int ctrl1, int reg, int over, long value_to_add, int width){
-	vector <string> step_ops = AddF(qubits, reg, over, value_to_add, width, true);
+string CAddF(int qubits, int ctrl1, int reg, int over, long value_to_add, int width, Gates &g){
+	vector <string> step_ops = AddF(qubits, reg, over, value_to_add, width, true, g);
 
 	step_ops[ctrl1] = "Control1(1)";
 
@@ -188,8 +171,8 @@ string CAddF(int qubits, int ctrl1, int reg, int over, long value_to_add, int wi
 }
 
 
-string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_add, int width){
-	vector <string> step_ops = AddF(qubits, reg, over, value_to_add, width, true);
+string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_add, int width, Gates &g){
+	vector <string> step_ops = AddF(qubits, reg, over, value_to_add, width, true, g);
 
 	step_ops[ctrl1] = "Control1(1)";
 	step_ops[ctrl2] = "Control1(1)";
@@ -200,13 +183,11 @@ string C2AddF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to
 // AddF e SubF são espelhos exatos (mesma lógica de decompor 'value' em
 // rotações de fase), diferindo só no sinal da fase e no prefixo do nome
 // da porta ("ADD_" vs "SUB_" — precisa ser diferente pelo mesmo motivo
-// do QFT/RQFT acima: nomes são chaves no Gates::list estático).
-vector <string> AddSubF_impl(int qubits, int reg, int over, long value, int width, bool controlled, bool subtract){
+// do QFT/RQFT acima: nomes são chaves no cache de portas da execução).
+vector <string> AddSubF_impl(int qubits, int reg, int over, long value, int width, bool controlled, bool subtract, Gates &g){
 	int digit_count = width+1;
 	vector <float complex> rot (digit_count, 1);
 	float complex  identity;
-
-	Gates g;
 
 	long remaining_value = value;
 
@@ -242,24 +223,24 @@ vector <string> AddSubF_impl(int qubits, int reg, int over, long value, int widt
 	return step_ops;
 }
 
-string AddF(int qubits, int reg, int over, long value_to_add, int width){
-	return concatena(AddF(qubits, reg, over, value_to_add, width, false), qubits);
+string AddF(int qubits, int reg, int over, long value_to_add, int width, Gates &g){
+	return concatena(AddF(qubits, reg, over, value_to_add, width, false, g), qubits);
 }
 
-vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled){
-	return AddSubF_impl(qubits, reg, over, value_to_add, width, controlled, false);
+vector <string> AddF(int qubits, int reg, int over, long value_to_add, int width, bool controlled, Gates &g){
+	return AddSubF_impl(qubits, reg, over, value_to_add, width, controlled, false, g);
 }
 
-string CSubF(int qubits, int ctrl1, int reg, int over, long value_to_sub, int width){
-	vector <string> step_ops = SubF(qubits, reg, over, value_to_sub, width, true);
+string CSubF(int qubits, int ctrl1, int reg, int over, long value_to_sub, int width, Gates &g){
+	vector <string> step_ops = SubF(qubits, reg, over, value_to_sub, width, true, g);
 
 	step_ops[ctrl1] = "Control1(1)";
 
 	return concatena(step_ops, qubits);
 }
 
-string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_sub, int width){
-	vector <string> step_ops = SubF(qubits, reg, over, value_to_sub, width, true);
+string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to_sub, int width, Gates &g){
+	vector <string> step_ops = SubF(qubits, reg, over, value_to_sub, width, true, g);
 
 	step_ops[ctrl1] = "Control1(1)";
 	step_ops[ctrl2] = "Control1(1)";
@@ -267,27 +248,26 @@ string C2SubF(int qubits, int ctrl1, int ctrl2, int reg, int over, long value_to
 	return concatena(step_ops, qubits);
 }
 
-string SubF(int qubits, int reg, int over, long value_to_sub, int width){
-	return concatena(SubF(qubits, reg, over, value_to_sub, width, false), qubits);
+string SubF(int qubits, int reg, int over, long value_to_sub, int width, Gates &g){
+	return concatena(SubF(qubits, reg, over, value_to_sub, width, false, g), qubits);
 }
 
-vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width, bool controlled){
-	return AddSubF_impl(qubits, reg, over, value_to_sub, width, controlled, true);
+vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width, bool controlled, Gates &g){
+	return AddSubF_impl(qubits, reg, over, value_to_sub, width, controlled, true, g);
 }
 
 
 // QFT e RQFT são espelhos exatos um do outro (mesma estrutura de dois
 // laços de rotações controladas), diferindo só no sinal da fase, no
 // prefixo do nome da porta ("R" vs "R'" — precisa ser diferente porque
-// os nomes viram chaves no Gates::list estático, e addGate não
+// os nomes viram chaves no cache de portas da execução, e addGate não
 // sobrescreve, ver docs/07 item 1) e no reverse() final do inverso.
-vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse){
+vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse, Gates &g){
 	string joined_step, name;
 	vector <string> steps;
 	string prefix = inverse ? "R'" : "R";
 	float phase_sign = inverse ? -1.0 : 1.0;
 
-	Gates g;
 	float complex euler_e = M_E;
 	float complex rotation_value;
 	for (int level = 1; level <= width+1; level++){
@@ -329,15 +309,14 @@ vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse)
 	return steps;
 }
 
-vector <string> QFT(int qubits, int reg, int over, int width){
-	return QFT_impl(qubits, reg, over, width, false);
+vector <string> QFT(int qubits, int reg, int over, int width, Gates &g){
+	return QFT_impl(qubits, reg, over, width, false, g);
 }
 
-vector <string> QFT2(int qubits, int reg, int width){
+vector <string> QFT2(int qubits, int reg, int width, Gates &g){
 	string joined_step;
 	vector <string> qft;
 
-	Gates g;
 	float complex rotation_value;
 	for (int level = 1; level <= width+1; level++){
 		rotation_value = M_E;
@@ -367,8 +346,8 @@ vector <string> QFT2(int qubits, int reg, int width){
 	return qft;
 }
 
-vector <string> RQFT(int qubits, int reg, int over, int width){
-	return QFT_impl(qubits, reg, over, width, true);
+vector <string> RQFT(int qubits, int reg, int over, int width, Gates &g){
+	return QFT_impl(qubits, reg, over, width, true, g);
 }
 
 vector <string> CSwapR(int qubits, int ctrl, int reg1, int reg2, int width){
