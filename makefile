@@ -107,8 +107,8 @@ $(OUT):
 
 # tests/ não entra no VPATH de propósito (é só um arquivo, e mistura-lo
 # na busca de src/core:src/algorithms:src/cli não ganha nada) — regra
-# explícita em vez disso. Ver tests/test_qft_addf.cpp e
-# tests/smoke_test.sh.
+# explícita em vez disso. Ver tests/test_qft_addf.cpp, tests/test_gates.cpp
+# e tests/smoke_test.sh.
 TEST_OBJS = $(addprefix $(OUT)/, gates.o lib_shor_number_theory.o lib_shor_circuits.o)
 
 $(OUT)/test_qft_addf.o: tests/test_qft_addf.cpp | $(OUT)
@@ -117,8 +117,23 @@ $(OUT)/test_qft_addf.o: tests/test_qft_addf.cpp | $(OUT)
 $(OUT)/test_qft_addf.out: $(OUT)/test_qft_addf.o $(TEST_OBJS)
 	$(CXX) -o $@ $^
 
-test: all $(OUT)/test_qft_addf.out
+# test_gates.cpp roda circuitos de verdade via DGM::execute() (t_CPU) --
+# só usa o backend t_CPU, mas DGM::execute() tem um switch cobrindo os 4
+# backends num mesmo corpo de função, então o linker exige símbolos de
+# todos eles (PCpuExecution1/HybridExecution de dgm_par_exec.cpp,
+# GpuExecutionWrapper de kernel.o/kernel_stub.o) mesmo sem alcançar esses
+# caminhos em runtime.
+TEST_GATES_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o)
+
+$(OUT)/test_gates.o: tests/test_gates.cpp | $(OUT)
+	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@
+
+$(OUT)/test_gates.out: $(OUT)/test_gates.o $(TEST_GATES_OBJS) $(GPU_OBJS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
+
+test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out
 	$(OUT)/test_qft_addf.out
+	$(OUT)/test_gates.out
 	bash tests/smoke_test.sh
 
 clean:

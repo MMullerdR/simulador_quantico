@@ -39,7 +39,9 @@ src/
  ├─ core/           motor de simulação: common.cpp, dgm_*.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
  └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
-tests/               regressão (tests/test_qft_addf.cpp) e smoke test fim a fim (tests/smoke_test.sh)
+tests/               regressão de string (test_qft_addf.cpp), regressão de
+                     execução via DGM (test_gates.cpp), smoke test fim a fim
+                     (smoke_test.sh)
 outputs/            gerado pelo build (.o e .out) — não versionado
 docs/                documentação
 makefile
