@@ -483,6 +483,39 @@ e no WSL com GPU real (`GPU=real`, `KERNEL_OPT=-O3`), sem regressão.
 
 ---
 
+## 12. [CORRIGIDO] `Grover()` media o resultado certo e descartava — `grover.out` nunca dizia se a busca funcionou
+
+**Onde:** [lib_grover.cpp](../src/algorithms/lib_grover.cpp),
+[grover.cpp](../src/cli/grover.cpp).
+
+**O bug:** `Grover()` montava `result` a partir de `dgm.measure()` pra
+cada qubit do registrador de busca (exatamente como
+[docs/05-algoritmo-grover.md](05-algoritmo-grover.md) descreve), mas a
+função só retornava `float elapsed` — `result` nunca saía da função.
+`grover.cpp` só imprimia o tempo decorrido. Ou seja, das duas
+implementações de algoritmo "de bandeira" do projeto (Grover e Shor),
+só o Shor de fato reportava se tinha encontrado a resposta certa —
+rodar `grover.out` nunca dizia nada além de "não crashou", mesmo o
+programa já tendo calculado a resposta internamente.
+
+**Correção aplicada (2026-08-11):** `Grover()` agora retorna `long
+result` em vez de `float elapsed` — o timing, que antes era medido
+dentro da própria função, migrou pra `grover.cpp` (mesmo padrão que
+`Shor()`/`shor.cpp` já usavam, ver
+[lib_shor.h](../include/algorithms/lib_shor.h)). `grover.cpp` agora
+imprime `"Found value: N"` ou `"Failed to find value (...)"` comparando
+`result` contra `search_value`.
+
+**Verificado:** 30/30 execuções bem-sucedidas em testes manuais
+(`t_CPU`/`t_GPU`/`t_HYBRID`, 10 e 12 qubits, no WSL com GPU real e no
+Windows); `make test` (66/66 + smoke test) sem regressão nos dois
+ambientes. `tests/smoke_test.sh` continua conferindo só "sem crash" pra
+`grover.out` (não um resultado exato) — apesar da taxa de sucesso alta
+observada, Grover continua sendo probabilístico por natureza, mesmo
+raciocínio já aplicado a `shor.out`.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
 2026-08-11 durante a rodada de arquitetura, a passada de comentários e um

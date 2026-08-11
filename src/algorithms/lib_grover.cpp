@@ -12,7 +12,7 @@ using namespace std;
 // Monta e executa o circuito completo do Grover (preparação + oráculo +
 // difusor repetidos ~sqrt(2^(qubits-1)) vezes) e mede o registrador de
 // busca — ver docs/05-algoritmo-grover.md.
-float Grover(long qubits, long search_value, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
+long Grover(long qubits, long search_value, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
 	DGM dgm;
 	dgm.qubits = qubits;
 	dgm.exec_type = type;
@@ -56,23 +56,15 @@ float Grover(long qubits, long search_value, int type, int thread_count, int cpu
 	dgm.setFunction(hadamard_step);
 	dgm.setFunction(grover_step, iteration_count, false);
 
-
-	struct timeval timev, tvBegin, tvEnd;
-	gettimeofday(&tvBegin, NULL);
-
 	dgm.execute(1);
 
 	for (int qubit_index = 1; qubit_index < qubits; qubit_index++) {
 		result = (result << 1) | dgm.measure(qubit_index);
 	}
 
-	gettimeofday(&tvEnd, NULL);
-	timeval_subtract(&timev, &tvEnd, &tvBegin);
-	float elapsed = timev.tv_sec + (timev.tv_usec / 1000000.0);
-
 	dgm.freeMemory();
 
-	return elapsed;
+	return result;
 }
 
 string Oracle1(long qubits, long search_value){

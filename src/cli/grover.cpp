@@ -42,8 +42,23 @@ int main(int argc, char **argv){
 
 	int search_value = 10;
 
-	float elapsed = Grover(qubits, search_value, exec_type, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
+	struct timeval timev, tvBegin, tvEnd;
+	float elapsed;
 
-  cout << elapsed << endl;
+	gettimeofday(&tvBegin, NULL);
+	long result = Grover(qubits, search_value, exec_type, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
+	gettimeofday(&tvEnd, NULL);
+	timeval_subtract(&timev, &tvEnd, &tvBegin);
+	elapsed = timev.tv_sec + (timev.tv_usec / 1000000.0);
 
+	cout << elapsed << endl;
+
+	if (result == search_value) {
+		cout << "Found value: " << result << endl;
+	}
+	else {
+		cout << "Failed to find value (measured " << result << ", expected " << search_value << ")" << endl;
+	}
+
+	return 0;
 }

@@ -83,3 +83,21 @@ for (i = 1; i < qubits; i++)
 Mede cada qubit do registrador de busca (não o qubit ancilla 0) e monta o
 inteiro `result` — que, com alta probabilidade após `num_of_it` iterações
 corretas, é igual a `value`.
+
+**Bug histórico (corrigido 2026-08-11):** até essa data, `Grover()`
+calculava `result` mas nunca o expunha pra fora da função — só devolvia
+o tempo decorrido (`float elapsed`), e `grover.cpp` só imprimia esse
+tempo. Ou seja, o programa media a resposta certa e simplesmente a
+descartava; não havia nenhum jeito de saber, rodando `grover.out`, se a
+busca tinha de fato encontrado `search_value` ou não (só "não crashou").
+Corrigido: `Grover()` agora retorna `long result` (o timing, que antes
+era medido dentro da própria função, migrou pra `grover.cpp` — mesmo
+padrão que `Shor()`/`shor.cpp` já usavam), e `grover.cpp` imprime "Found
+value: N" ou "Failed to find value (...)" comparando contra
+`search_value`. Verificado: 30/30 execuções bem-sucedidas em testes
+manuais (`t_CPU`/`t_GPU`/`t_HYBRID`, 10 e 12 qubits) — com o número de
+iterações escolhido próximo do ótimo (`M_PI/4*sqrt(N)`), Grover é bem
+mais confiável que Shor nesse quesito; ainda assim, permanece
+probabilístico por natureza, então `tests/smoke_test.sh` continua só
+conferindo "sem crash" pra `grover.out`, não um resultado exato — mesmo
+motivo que já vale pra `shor.out`.
