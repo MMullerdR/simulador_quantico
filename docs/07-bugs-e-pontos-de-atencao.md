@@ -671,68 +671,111 @@ variância estatística mesmo com sementes já independentes.
 
 ---
 
-## 17. [INVESTIGAR] `t_HYBRID` não bate CPU nem GPU de forma consistente — duas hipóteses, não confirmadas com hardware real
+## 17. [PARCIALMENTE CONFIRMADO] `t_HYBRID` não bate CPU nem GPU de forma consistente — hipótese A confirmada, hipótese B refinada
 
 **Onde:** `DGM::HybridExecution` em
-[dgm_par_exec.cpp:258-454](../src/core/dgm_par_exec.cpp#L258).
+[dgm_par_exec.cpp:258-472](../src/core/dgm_par_exec.cpp#L258) — agora com
+instrumentação opt-in (`HYBRID_DEBUG=1` no ambiente, silenciosa por
+padrão) que imprime, por região "global" processada, se foi CPU ou GPU.
 
-Motivado pelos números de [docs/08-performance.md](08-performance.md)
-(primeira medição real de GPU do projeto): `HYBRID(4)` não fica
-consistentemente entre CPU e GPU como seria de se esperar — às vezes
-fica pior que a melhor configuração de CPU sozinha (ex: 22 qubits,
-0.2530s contra 0.0582s de `PAR_CPU(16)`). Lido o código (sem GPU real
-disponível nesta máquina pra confirmar em runtime), duas causas
-estruturais concretas, ainda **não confirmadas por observação real**:
+Item aberto por uma sessão anterior (lendo o código, sem GPU real
+disponível lá) a partir dos números de
+[docs/08-performance.md](08-performance.md). Duas hipóteses propostas,
+agora testadas com a instrumentação nesta máquina (GPU real):
 
-**Hipótese A — abaixo de `qubits_limit` (20, fixo em
-[dgm_par_exec.cpp:260](../src/core/dgm_par_exec.cpp#L260), nunca
-parametrizado via `TuningDefaults`), HYBRID não paraleliza nada de
-verdade.** `global_region_bits` é clampado contra `qubits`
-([dgm_par_exec.cpp:272](../src/core/dgm_par_exec.cpp#L272)) — pra
-qualquer `qubits <= 20`, `global_region_bits == qubits`, e
-`compute_region` produz **uma única região cobrindo o vetor de estado
-inteiro**. Como o desempate de quem processa cada região é uma corrida
-(`#pragma omp critical`, linhas 300 e 363) entre a thread 0 (GPU) e as
-N-1 threads de CPU disputando a mesma fila, e só existe 1 região real
-pra disputar, o thread que vencer a corrida faz **100% do trabalho
-sozinho** — os outros ficam ociosos. Os números de `docs/08` batem com
-isso: `HYBRID(4)` em 10 qubits (0.000288s) fica perto de `PAR_CPU(4)`
-(0.000255s), não da GPU (0.235s) — sugerindo que a CPU vence a corrida
-quase sempre nesses tamanhos.
+**Hipótese A — confirmada.** `general.out 10 3 4` (10 qubits, abaixo de
+`qubits_limit=20`): log mostra **exatamente 1 região no total**, ganha
+por uma thread de CPU, **0 regiões pra GPU**. Bate exatamente com a
+hipótese: abaixo do limite fixo, `global_region_bits == qubits` sempre,
+então só existe uma região pra disputar, e quem ganha a corrida
+(`#pragma omp critical`) faz 100% do trabalho sozinho.
 
-**Hipótese B — acima de 20 qubits, quando existem múltiplas regiões, a
-distribuição é round-robin ingênuo entre workers de capacidade muito
-diferente.** A thread GPU e cada thread de CPU competem pela mesma fila
-de regiões de **tamanho igual** (`global_region_bits` idêntico pros dois
-lados) — nenhum ajuste pelo fato de que 1 lançamento de kernel GPU custa
-~0.2s fixos (medido em `docs/08`) enquanto uma região de CPU processa
-muito mais rápido nesses tamanhos. Se a thread GPU pegar só 1 região
-"cara" enquanto as CPUs terminam o resto rápido, o tempo total fica
-refém desse único lançamento de GPU.
+**Hipótese B — parcialmente confirmada, mais nuançada que a formulação
+original.** `general.out 24 3 4` (24 qubits, acima do limite): log
+mostra **62 regiões CPU e 34 regiões GPU** — a GPU processou uma fatia
+razoável (35%) do trabalho, não "só 1 região" como a hipótese original
+especulava. O problema não é falta de regiões pra GPU; é que **cada
+região processada pela GPU paga o overhead fixo de lançamento de kernel
+inteiro** (~0.2s medido em `docs/08-performance.md` pra um único
+lançamento cobrindo o estado inteiro) — 34 lançamentos fragmentados
+custam mais overhead acumulado que teria custado 1 lançamento grande
+cobrindo tudo de uma vez. A fila round-robin distribui **número de
+regiões** igualmente entre CPU e GPU, não tempo esperado — daí o
+desbalanceamento.
 
-**Como confirmar (precisa de GPU real):** instrumentação opt-in barata
-— imprimir em `stderr`, por região global processada, se foi CPU ou GPU
-e o id (`gpu_proj_id`/`cpu_proj_id`), sem tocar em nada do cálculo. Se a
-hipótese A estiver certa, `qubits<=20` deve mostrar só 1 linha de log
-(um único vencedor); se a B estiver certa, `qubits>20` deve mostrar a
-thread GPU pegando poucas regiões mas dominando o tempo total.
+**Ainda não implementada nenhuma correção** — as duas causas de raiz
+seguem as mesmas do item original (`qubits_limit`/`global_coalesced_bits`
+fixos, tamanho de região igual pra CPU e GPU na fila), agora com dados
+reais em vez de só leitura de código. Próximo passo natural: medir se
+deixar a GPU reivindicar regiões maiores por vez (menos lançamentos,
+mais trabalho por lançamento) melhora `HYBRID` de fato — não tentado
+ainda nesta sessão.
 
-**Possíveis correções, nenhuma implementada ainda** (dependem de
-confirmar as hipóteses primeiro):
-- Tornar `qubits_limit`/`global_coalesced_bits` tunáveis de verdade (via
-  `TuningDefaults`) em vez de fixos em 20/15 — não resolve o caso
-  degenerado abaixo do limite (mais regiões pra um problema pequeno só
-  piora, dado o overhead fixo por lançamento), mas torna o
-  comportamento visível/configurável em vez de uma surpresa silenciosa.
-- Deixar o tamanho de região que a thread GPU reivindica por rodada ser
-  independente do tamanho usado pelas threads de CPU (hoje é o mesmo
-  `global_region_bits` pros dois) — a GPU poderia reivindicar regiões
-  maiores por vez, amortizando melhor o overhead fixo de lançamento.
+---
 
-**Não investigado além disso nesta sessão** — decidido continuar a
-investigação (instrumentação + confirmação + correção) inteiramente na
-máquina com GPU real, onde dá pra observar e verificar em runtime sem
-o vai-e-volta de handoff entre máquinas.
+## 18. [CORRIGIDO] `DGM::measure()` chamava `srand(time(NULL))` a cada medição — destruía a independência entre amostras, e pior ainda no Windows/MinGW
+
+**Onde:** `src/core/dgm_core.cpp` (`DGM::measure`), `src/algorithms/lib_shor.cpp`
+(escolha de `base_value`), `src/cli/grover.cpp`/`shor.cpp`,
+`include/core/common.h` + `src/core/common.cpp` (`g_rng`/`seed_rng`, novos).
+
+**Como foi achado:** continuando a investigação do item 17 (instrumentação
+`HYBRID_DEBUG`, ver abaixo), rodei `shor.out 15 0` (`t_CPU`, sem nenhuma
+GPU envolvida) 20-30 vezes seguidas nesta máquina Windows e deu **0/20,
+depois 0/30** — não 25-75% como já documentado (item 7). Isolado com
+`git worktree` num commit de **antes de qualquer mudança desta sessão**
+(`6953fb7`): também 0/20 lá. Ou seja, não era regressão de hoje — o
+Windows/MinGW já vinha assim.
+
+**Duas causas, uma pior que a outra:**
+
+1. **`DGM::measure()` chamava `srand(time(NULL))` toda vez que era
+   invocada** — não só uma vez no início do processo. Cada rodada da
+   estimação de fase semiclássica do Shor mede 1 qubit
+   (`dgm.measure(qft_qb)`), e várias rodadas rodam dentro do mesmo
+   segundo de relógio (o circuito de 15 qubits é rápido). Cada chamada
+   **resetava** a semente pro mesmo valor, fazendo `rand()` devolver
+   essencialmente a mesma saída inicial repetidas vezes dentro daquele
+   segundo — destruindo a independência entre as amostras que a
+   estimação de fase depende pra funcionar. Grover também mede vários
+   qubits em sequência (`for` em `lib_grover.cpp`), mas sua taxa de
+   sucesso alta (item 12) mascarava o efeito.
+
+2. **`rand()`/`RAND_MAX` do MinGW (Windows) são muito mais fracos que os
+   da glibc (Linux):** `RAND_MAX = 32767` (2^15-1) contra `2147483647`
+   (2^31-1) — 65536x menos granularidade — e a implementação (LCG
+   clássica) tem bits baixos de qualidade ruim, exatamente os bits mais
+   usados por `rand() % number_to_factor` (viés de módulo, agravado pela
+   fraqueza dos bits baixos) e por `rand()/RAND_MAX` (amostra de
+   medição). Isso explica por que o mesmo bug (1) se manifestava como
+   "taxa historicamente baixa e variável" no WSL/Linux (ainda ruim, mas
+   não zerado) e como falha praticamente total no Windows.
+
+**Correção aplicada (2026-08-11):** `std::mt19937` (`g_rng`, declarado em
+`common.h`, definido em `common.cpp`) no lugar de `rand()`/`srand()` em
+todo o projeto — qualidade consistente entre plataformas, e
+`std::uniform_int_distribution`/`uniform_real_distribution` evitam o
+viés de módulo de brinde. Seedado **uma única vez**, no início de
+`grover.cpp`/`shor.cpp` (`seed_rng(time(NULL) ^ getpid())`, mesmo
+raciocínio do item 16), não mais a cada medição.
+
+**Verificado:**
+- **Windows/MinGW**, `shor.out 15 0` × 30: **0/30 antes** (confirmado
+  também no commit `6953fb7`, anterior a qualquer mudança de hoje) →
+  **29/30 depois**.
+- **WSL/Linux com GPU real**, `shor.out 15` × 16 cada: `t_CPU` **16/16**,
+  `t_GPU` **16/16**, `t_HYBRID` **14/16** — bem acima da faixa
+  historicamente registrada no item 7 (25-75%), confirmando que o bug (1)
+  também prejudicava o Linux, só que mascarado pela qualidade melhor do
+  `rand()` da glibc.
+- `make test` (66/66 + 32/32 + smoke test) sem regressão no Windows
+  (`GPU=stub`) e no WSL com GPU real (`GPU=real`).
+
+**Nota:** isso não invalida a documentação anterior do item 7 sobre Shor
+ser "probabilístico por natureza" — a estimação de fase semiclássica
+continua genuinamente probabilística mesmo com amostragem correta
+(`std::mt19937`), só que agora a taxa de sucesso reflete o algoritmo de
+verdade, não um gerador de números aleatórios quebrado por cima dele.
 
 ---
 

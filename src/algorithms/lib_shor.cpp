@@ -56,8 +56,13 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 	over = bit_width+1;
 	over_bool = qubits - 1;
 
+	// g_rng em vez de rand()%number_to_factor -- ver common.h/dgm_core.cpp
+	// e docs/07-bugs-e-pontos-de-atencao.md item 18 (rand() do MinGW tem
+	// qualidade ruim nos bits baixos, justamente os que "% number_to_factor"
+	// mais usa, além do viés de módulo clássico).
+	std::uniform_int_distribution<long> base_dist(0, number_to_factor - 1);
 	while((quantum_gcd(number_to_factor, base_value) > 1) || (base_value < 2)){
-		base_value = rand() % number_to_factor;
+		base_value = base_dist(g_rng);
 	}
 
 	string x_step0 = Pauli_X(qubits, 0, 1);

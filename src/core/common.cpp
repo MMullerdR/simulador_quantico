@@ -3,6 +3,16 @@
 
 float round_precision = 0.000000001;
 
+// Sem seed_rng() explícito, std::mt19937 default-constrói com uma seed
+// fixa (determinístico) -- aceitável pros testes (test_gates.cpp não
+// precisa de aleatoriedade de verdade), mas os CLIs de fato (grover.cpp/
+// shor.cpp) sempre chamam seed_rng() no início.
+std::mt19937 g_rng;
+
+void seed_rng(unsigned long seed){
+	g_rng.seed(seed);
+}
+
 PT::PT(){
 	matrix = NULL;
 	control_bit_positions = control_rest = NULL;

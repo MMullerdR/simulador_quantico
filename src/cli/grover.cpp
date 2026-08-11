@@ -14,12 +14,13 @@ using namespace std;
 int main(int argc, char **argv){
 	// time(NULL) sozinho repete a mesma semente pra processos lançados
 	// dentro do mesmo segundo (comum em scripts/testes chamando o binário
-	// várias vezes seguidas) -- DGM::measure() usa rand() pra amostrar a
+	// várias vezes seguidas) -- DGM::measure() usa g_rng pra amostrar a
 	// medição, então duas execuções nesse caso reproduziriam exatamente a
 	// mesma sequência "aleatória". getpid() garante seeds diferentes entre
 	// processos concorrentes mesmo no mesmo segundo (ver mesmo fix em
-	// shor.cpp).
-	srand(time(NULL) ^ getpid());
+	// shor.cpp). seed_rng() em vez de srand(): ver g_rng em
+	// common.h/common.cpp e item 18 em docs/07-bugs-e-pontos-de-atencao.md.
+	seed_rng(time(NULL) ^ getpid());
 
 	int exec_type = t_CPU;
 	TuningDefaults tuning;

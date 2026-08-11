@@ -84,13 +84,19 @@ int DGM::measure(int qubit_pos){
 	}
 
 	long measured_bit;
-	srand (time(NULL));
 	count_one = 0;
 	count_zero = 0;
 	sample_count = 1;
 
+	// g_rng é seedado uma vez só, no início do processo (ver
+	// seed_rng()/common.h) -- srand(time(NULL)) chamado aqui dentro
+	// resetava a semente a cada medição, e várias medições rodam dentro
+	// do mesmo segundo de relógio (ex: cada rodada da estimação de fase
+	// do Shor mede um qubit) -- destruía a independência entre amostras.
+	// Ver docs/07-bugs-e-pontos-de-atencao.md item 18.
+	std::uniform_real_distribution<double> sample_dist(0.0, 1.0);
 	for (int sample_index = 0; sample_index < sample_count; sample_index++){
-		random_sample = (double) rand() / RAND_MAX;
+		random_sample = sample_dist(g_rng);
 		if (zero > random_sample) count_zero++;
 		else count_one++;
 	}

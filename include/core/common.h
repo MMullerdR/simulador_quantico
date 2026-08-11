@@ -5,8 +5,25 @@
 #include <stdlib.h>
 #include <complex.h>
 #include <sys/time.h>
+#include <random>
 
 #define complex __complex__
+
+// Gerador de números aleatórios compartilhado (DGM::measure em
+// dgm_core.cpp, escolha de base_value em lib_shor.cpp) -- std::mt19937
+// em vez de rand()/RAND_MAX. rand() do MinGW (Windows) tem RAND_MAX =
+// 32767 (2^15-1, contra 2^31-1 da glibc no Linux) E é uma LCG de baixa
+// qualidade nos bits baixos -- exatamente os bits que "rand() % N" (base
+// value do Shor) e "rand()/RAND_MAX" (amostra de medição) mais dependem.
+// Resultado observado: shor.out 15 0 rodou 0/50 nesta máquina (build
+// Windows/MinGW) contra 25-75% de sucesso no WSL/Linux com o mesmo
+// código-fonte -- ver docs/07-bugs-e-pontos-de-atencao.md item 18.
+// std::mt19937 tem qualidade consistente entre plataformas e ainda de
+// brinde evita o viés de módulo clássico de "rand() % N".
+extern std::mt19937 g_rng;
+// Chamada uma vez no início de cada CLI (grover.cpp/shor.cpp), no lugar
+// de srand().
+void seed_rng(unsigned long seed);
 
 #define CHUNCK_SIZE 262144
 

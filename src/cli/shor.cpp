@@ -26,11 +26,13 @@ int main(int argc, char** argv){
 
 	// time(NULL) sozinho repete a mesma semente pra processos lançados
 	// dentro do mesmo segundo (comum em scripts/testes chamando o binário
-	// várias vezes seguidas) — Shor() escolhe base_value via rand(), então
+	// várias vezes seguidas) — Shor() escolhe base_value via g_rng, então
 	// duas execuções "aleatórias" nesse caso reproduziriam exatamente a
 	// mesma sequência de tentativas. getpid() garante seeds diferentes
-	// entre processos concorrentes mesmo no mesmo segundo.
-	srand(time(NULL) ^ getpid());
+	// entre processos concorrentes mesmo no mesmo segundo. seed_rng() em
+	// vez de srand(): ver g_rng em common.h/common.cpp e item 18 em
+	// docs/07-bugs-e-pontos-de-atencao.md.
+	seed_rng(time(NULL) ^ getpid());
 
 	struct timeval timev, tvBegin, tvEnd;
 	float elapsed;

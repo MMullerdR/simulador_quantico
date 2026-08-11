@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <unistd.h>
 #include <cstdio>
+#include <cstdlib>
 #include <iterator>
 
 // Resultado de compute_region: uma "região" (ver docs/01-arquitetura-geral.md,
@@ -256,6 +257,13 @@ void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start,
 // regiões em CPU ao mesmo tempo, região "global" por região "global" —
 // ver docs/01-arquitetura-geral.md e docs/04-gpu-cuda.md.
 void DGM::HybridExecution(PT **pts){
+	// Instrumentação opt-in (item 17 em docs/07-bugs-e-pontos-de-atencao.md)
+	// -- ligada com HYBRID_DEBUG=1 no ambiente, silenciosa por padrão. Só
+	// imprime quem processou cada região "global" (CPU de qual thread, ou
+	// GPU) e quantas cada lado pegou no total; não muda nada do cálculo.
+	static bool hybrid_debug = (getenv("HYBRID_DEBUG") != NULL);
+	long debug_cpu_regions = 0, debug_gpu_regions = 0;
+
 	long mem_size = 1L << qubits;
 	long qubits_limit = 20;
 	// Fixo em 15 (em vez de derivado de cpu_coalesced_bits/gpu_coalesced_bits)
@@ -307,6 +315,11 @@ void DGM::HybridExecution(PT **pts){
 				}
 
 				while (cpu_proj_id != -1){
+					if (hybrid_debug){
+						#pragma omp atomic
+						debug_cpu_regions++;
+						fprintf(stderr, "[HYBRID] CPU (thread %d) global_region=%ld qubits=%d global_region_bits=%ld\n", omp_get_thread_num(), cpu_proj_id, qubits, global_region_bits);
+					}
 					long cpu_op_start = global_op_start;
 
 					while (cpu_op_start < global_op_end){
@@ -370,6 +383,11 @@ void DGM::HybridExecution(PT **pts){
 				}
 
 				while (gpu_proj_id != -1){
+					if (hybrid_debug){
+						#pragma omp atomic
+						debug_gpu_regions++;
+						fprintf(stderr, "[HYBRID] GPU global_region=%ld qubits=%d global_region_bits=%ld\n", gpu_proj_id, qubits, global_region_bits);
+					}
 					// Reconstrói, só pra essa região, uma lista de PT com
 					// qubits renumerados (0..region_bits-1) — a GPU só
 					// enxerga a fatia projetada, não o registrador inteiro.
@@ -450,5 +468,9 @@ void DGM::HybridExecution(PT **pts){
 		}
 
 		op_index = global_op_end;
+	}
+
+	if (hybrid_debug){
+		fprintf(stderr, "[HYBRID] total: %ld região(ões) CPU, %ld região(ões) GPU\n", debug_cpu_regions, debug_gpu_regions);
 	}
 }
