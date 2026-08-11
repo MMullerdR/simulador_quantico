@@ -25,7 +25,8 @@ int main(int argc, char** argv){
 	float elapsed;
 	vector <float> samples;
 
-	int exec_type = t_CPU, thread_count = 1, cpu_region_bits = 14, cpu_coalesced_bits = 11, gpu_count = 1, gpu_region_bits = 8, gpu_coalesced_bits = 4, block_size = 64, repeat_count = 2;
+	int exec_type = t_CPU;
+	TuningDefaults tuning;
 
 	if (argc < 2){
 		cout << "You need to define the execution parameters" << endl;
@@ -47,14 +48,14 @@ int main(int argc, char** argv){
 		return 0;
 	}
 
-	parse_backend_arg(argc, argv, exec_type, thread_count, gpu_count);
+	parse_backend_arg(argc, argv, exec_type, tuning);
 
 	vector<int> factors;
 
 	cout << "Executing Shor: " << qubits << " qubits" << endl;
 
 	gettimeofday(&tvBegin, NULL);
-	factors = Shor(factor_target_by_qubit_count[qubits], t_CPU, thread_count, cpu_region_bits, cpu_coalesced_bits, gpu_count, gpu_region_bits, gpu_coalesced_bits, block_size, repeat_count);
+	factors = Shor(factor_target_by_qubit_count[qubits], t_CPU, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
 	gettimeofday(&tvEnd, NULL);
 	timeval_subtract(&timev, &tvEnd, &tvBegin);
 	elapsed = timev.tv_sec + (timev.tv_usec / 1000000.0);

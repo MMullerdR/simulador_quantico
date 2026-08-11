@@ -195,7 +195,20 @@ void DGM::executeFunction(string function, int iterations){
 }
 
 
+void DGM::validateTuning(){
+	// Sem isso, pedir uma região maior que os próprios qubits faz
+	// "1 << (qubits - region_bits)" deslocar por um expoente negativo em
+	// PCpuExecution1/HybridExecution — já causou dois segfaults distintos
+	// (docs/07-bugs-e-pontos-de-atencao.md, item 6). Antes, cada backend
+	// fazia esse clamp por conta própria; agora é garantido aqui, uma vez,
+	// antes de qualquer um deles rodar.
+	if (cpu_region_bits > qubits) cpu_region_bits = qubits;
+	if (gpu_region_bits > qubits) gpu_region_bits = qubits;
+}
+
 float complex* DGM::execute(int iterations){
+	validateTuning();
+
 	float complex* result = state;
 
 	switch (exec_type){

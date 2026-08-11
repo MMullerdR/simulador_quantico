@@ -75,15 +75,10 @@ static RegionPlan compute_region(PT **pts, long op_start, long op_search_end, lo
 	return plan;
 }
 
+// region_bits já chega clampado contra qubits — garantido por
+// DGM::validateTuning(), chamado no início de DGM::execute() antes de
+// despachar pra cá (ver docs/07-bugs-e-pontos-de-atencao.md, item 6).
 void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations){
-	// Sem isso, pedir uma região maior que o próprio número de qubits
-	// (ex: o cpu_region_bits=14 padrão dos CLIs com menos de 14 qubits)
-	// faz "1 << (qubits - region_bits)" mais abaixo deslocar por um
-	// expoente negativo — comportamento indefinido que na prática vira
-	// um reg_count gigante e escreve fora do vetor de estado (segfault
-	// confirmado; ver docs/07-bugs-e-pontos-de-atencao.md, item 6).
-	if (region_bits > qubits) region_bits = qubits;
-
 	long op_index = 0;
 	while (pts[op_index] != NULL){
 		long pts_start = op_index;

@@ -2,11 +2,11 @@
 #include "../../include/core/dgm.h"
 #include <cstdlib>
 
-void parse_backend_arg(int argc, char **argv, int exec_type, int &thread_count, int &gpu_count){
+void parse_backend_arg(int argc, char **argv, int exec_type, TuningDefaults &tuning){
 	if (exec_type == t_PAR_CPU || exec_type == t_HYBRID) {
-		if (argc > 3) thread_count = atoi(argv[3]);
+		if (argc > 3) tuning.thread_count = atoi(argv[3]);
 	}
 	else if (exec_type == t_GPU) {
-		if (argc > 3) gpu_count = atoi(argv[3]);
+		if (argc > 3) tuning.gpu_count = atoi(argv[3]);
 	}
 }

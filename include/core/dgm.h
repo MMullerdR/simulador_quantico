@@ -138,6 +138,12 @@ public:
 
 	void CountOps(int iterations = 1);
 
+	// Clampa os parâmetros de região contra qubits antes do despacho —
+	// centraliza uma validação que antes só existia (e só foi corrigida)
+	// dentro de cada backend separadamente, ver
+	// docs/07-bugs-e-pontos-de-atencao.md, item 6.
+	void validateTuning();
+
 	void executeFunction(string function, int iterations = 1);
 	void executeFunction(vector<string> steps, int iterations = 1);
 	float complex* execute(int iterations);
