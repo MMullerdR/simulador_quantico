@@ -731,35 +731,75 @@ problema de fundo.
 
 **Tentativa 2 — GPU reserva estaticamente um bloco de regiões
 consecutivas (mescladas numa única chamada maior), CPU disputa
-dinamicamente o resto: implementada, testada, revertida por segfault.**
-Design: antes da seção paralela, calcular quantas regiões "normais"
-(`gpu_slots = 2^gpu_batch_bits`) cabem reservadas só pra GPU, estender
-`global_region_mask` com esse tanto de bits livres extras (seguro,
-confirmado por leitura de `compute_region`: bits fora do mask original
-não são tocados por nenhum operador do lote atual, por construção), e
-fazer a GPU processar esse bloco maior numa única chamada
-`ProjectState`/`GpuExecutionWrapper`/`GetState`, enquanto CPU continua
-disputando 1 região por vez a partir do restante. Implementado e testado
-com GPU real: **segfault em `general.out 24 3 4`** (24 qubits), e a
-instrumentação `HYBRID_DEBUG` em 22 qubits mostrou `0 região(ões) CPU`
-quando o esperado (pela conta de `region_count - gpu_slots`) era sobrar
-1 região pra CPU. Causa provável: `RegionPlan::region_count` (retornado
-por `compute_region`) tem um `+1` (`plan.region_count = (1 <<
-(outer_bound_bits - region_bits)) + 1`) cujo papel exato não está claro
-— parece ser uma margem de segurança do laço de reivindicação
-decremento-até-zero original, não uma contagem literal de regiões
-distintas disponíveis. Minha reserva estática assumiu que
-`region_count` era essa contagem literal, e não era — a região "extra"
-que eu contava como sobra pra CPU na verdade não existia, causando a
-GPU e a CPU disputarem (e escreverem em) memória sobreposta.
+dinamicamente o resto: implementada, corrigida, verificada correta —
+mas revertida por não melhorar a performance (ao contrário, piora).**
 
-**Revertido nesta sessão** (não corrigido) — entender o `+1` de verdade
-antes de tentar de novo essa abordagem. Mudar a lógica de indexação de
-região é exatamente a classe de mudança que já causou bugs de memória
-neste projeto antes (itens 3, 3.1, 6); um segfault reproduzível é sinal
-de parar e não de ajustar às cegas. Instrumentação `HYBRID_DEBUG` (a
-única parte desta investigação que ficou) continua no código, sem
-custo quando desligada.
+Primeira rodada desta tentativa deu **segfault** em `general.out 24 3 4`.
+Investigando o porquê antes de tentar de novo (em vez de ajustar às
+cegas): o `+1` de `RegionPlan::region_count` (`plan.region_count = (1 <<
+(outer_bound_bits - region_bits)) + 1`) **não é ambíguo, é uma margem de
+segurança correta e bem definida** — o laço de reivindicação atribui
+`region_id` **antes** de decrementar/checar o contador
+(`dgm_par_exec.cpp`, `#pragma omp critical`), então a última região
+válida sempre seria descartada por engano sem essa margem extra pra
+absorver o descarte. Confirmado por simulação numérica:
+`região_count_de_verdade = region_count - 1`, sempre.
+
+O bug real da primeira tentativa era outro, mais sutil: pra "pular"
+`gpu_slots` posições da fila compartilhada, a fórmula usada foi
+`next_proj_id = gpu_slots * (global_region_mask + 1)` — só válida se
+`global_region_mask` for uma faixa de bits baixa **contígua**. Simulação
+numérica confirmou que **não é sempre** (ex: 2º lote do Hadamard em 24
+qubits, depois que o 1º já consumiu os qubits 0-19: o preenchimento de
+`compute_region` deixa um buraco nos bits 16-19), e nesse caso a
+multiplicação produzia um `proj_id` **maior que o vetor de estado
+inteiro** (`63.176.704` contra `2^24 = 16.777.216`) — acesso de memória
+fora dos limites, daí o segfault.
+
+**Corrigido** trocando a multiplicação por um laço aplicando o mesmo
+incremento por acarreio que o resto do código já usa
+(`(id + mask+1) & ~mask`), `gpu_slots` vezes em sequência — funciona pra
+`region_mask` de qualquer formato — e ajustando o limiar de
+`use_gpu_batch` pra usar a contagem de verdade (`region_count - 1`, não
+`region_count`). **Verificado com GPU real:** amplitude exata correta em
+18-30 qubits, `general.out 24 3 4` repetido 5× sem falha nenhuma,
+`HYBRID_DEBUG` mostrando múltiplos lotes (inclusive o 2º, o que
+segfaultava antes) processados corretamente. `make test` completo sem
+regressão.
+
+**Mas a comparação A/B direta (com merge vs sem merge, mesma sessão,
+`general.out <q> 3 4`) mostrou que mesclar regiões piora a performance,
+não melhora:**
+
+| qubits | sem merge | com merge |
+|---|---|---|
+| 22 | ~0.25s | ~0.28s |
+| 24 | ~0.37s | ~0.50s |
+| 26 | ~1.24s | **~2.60s** (mais que o dobro!) |
+
+Isso invalida a premissa da hipótese B: **o custo de ~0.2s por chamada
+de GPU provavelmente não é overhead fixo de lançamento de kernel** (que
+seria da ordem de microssegundos, não décimos de segundo) — é mais
+provável que seja dominado pelo `cudaMemcpy` dentro de
+`ProjectState`/`GetState` ([kernel.cu](../src/core/kernel.cu)),
+proporcional ao tamanho dos dados copiados, não uma constante por
+chamada. Mesclar 4 regiões numa só não elimina esse custo (a mesma
+quantidade de dados precisa atravessar host↔device de qualquer jeito) —
+e pode até piorar, se o `coalesced_bits` calculado por `ProjectState` a
+partir do mask mesclado (que pode ficar menos contíguo que o mask
+original) resultar em mais `portions`/chamadas de `cudaMemcpy` menores
+em vez de menos. Não confirmado a fundo (exigiria instrumentar
+`ProjectState` também), mas é a explicação mais consistente com os
+números.
+
+**Revertida nesta sessão** — o mecanismo (agora corrigido e verificado)
+não resolve o problema que motivou tentar. Só a instrumentação
+`HYBRID_DEBUG` ficou no código. Próximo passo, se alguém retomar isso:
+investigar o custo real de `ProjectState`/`GetState` diretamente (não
+mais o de `ApplyValuesC01`) antes de propor uma terceira tentativa —
+qualquer correção de "menos lançamentos, mais trabalho por lançamento"
+só vale a pena se o gargalo for mesmo lançamento de kernel, e os dados
+desta sessão sugerem que não é.
 
 ---
 
