@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <chrono>
 #include "../../include/core/common.h"
 
 #define M_RANGE 512
@@ -300,7 +301,16 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 // valores agora fluem direto como parâmetros de runtime, sem
 // recompilar/reinstanciar nada por combinação.
 extern "C" float* GpuExecutionWrapper(float* state, PT **pts, int qubits, int coalesced_bits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int iterations){
+	static bool hybrid_debug = (getenv("HYBRID_DEBUG") != NULL);
+	std::chrono::steady_clock::time_point t_start;
+	if (hybrid_debug) t_start = std::chrono::steady_clock::now();
+
 	GpuExecution01(state, pts, qubits, gpu_region_bits, gpu_count, block_size, repeat_count, coalesced_bits, iterations);
+
+	if (hybrid_debug){
+		double elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_start).count();
+		fprintf(stderr, "[GPUEXEC]   qubits=%d elapsed_ms=%.3f\n", qubits, elapsed_ms);
+	}
 
 	return state;
 }
@@ -309,6 +319,14 @@ extern "C" float* GpuExecutionWrapper(float* state, PT **pts, int qubits, int co
 // region_mask) do host pra GPU — usado pelo modo híbrido pra mandar só
 // a parte que a GPU vai processar naquela rodada, não o vetor inteiro.
 extern "C" bool ProjectState(float* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
+	// Instrumentação opt-in (item 17 em docs/07-bugs-e-pontos-de-atencao.md,
+	// investigando se o custo de ProjectState/GetState é dominado pelo
+	// número de cudaMemcpy (mem_portions pequenos e não-contíguos) ou pelo
+	// volume de dados. Mesmo HYBRID_DEBUG=1 usado em dgm_par_exec.cpp.
+	static bool hybrid_debug = (getenv("HYBRID_DEBUG") != NULL);
+	std::chrono::steady_clock::time_point t_start;
+	if (hybrid_debug) t_start = std::chrono::steady_clock::now();
+
 	int coalesced_bits = 0;
 	for (int bit_index = 0; bit_index < qubits; bit_index++){
 		if ((region_mask >> bit_index) & 1)
@@ -323,16 +341,23 @@ extern "C" bool ProjectState(float* state, int qubits, int region_size, long reg
 	float malloc_size = (1 << region_size)/gpu_count * sizeof(float)*2;
 	long inc = ~(region_mask >> coalesced_bits);
 
+	double malloc_ms = 0, memcpy_ms = 0;
+	std::chrono::steady_clock::time_point t_phase;
+
 	long dev_pos, pos, base = 0;
 	for (int device_index = 0; device_index < gpu_count; device_index++){
 		cudaSetDevice(device_index);
+		if (hybrid_debug) t_phase = std::chrono::steady_clock::now();
 		cudaMalloc(&gpu_mem[device_index], malloc_size); error();
+		if (hybrid_debug) malloc_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_phase).count();
 
 		dev_pos = 0;
 		for (int portion_index = mem_portions/gpu_count*device_index; portion_index < mem_portions/gpu_count*(device_index+1); portion_index++){
 			pos = (base << coalesced_bits) | region_id;
 
+			if (hybrid_debug) t_phase = std::chrono::steady_clock::now();
 			cudaMemcpy(gpu_mem[device_index]+dev_pos, state + pos*2, portion_size*2*sizeof(float), cudaMemcpyHostToDevice);
+			if (hybrid_debug) memcpy_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_phase).count();
 
 			base = (base + inc + 1) & ~inc;
 			dev_pos += portion_size;
@@ -346,12 +371,21 @@ extern "C" bool ProjectState(float* state, int qubits, int region_size, long reg
 		cudaMemcpyToSymbol(gpu_pointer, gpu_mem, gpu_count*sizeof(cuFloatComplex*)); error();
 	}
 
+	if (hybrid_debug){
+		double elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_start).count();
+		fprintf(stderr, "[PROJSTATE] region_size=%d coalesced_bits=%d mem_portions=%d portion_size=%d malloc_ms=%.3f memcpy_ms=%.3f elapsed_ms=%.3f\n", region_size, coalesced_bits, mem_portions, portion_size, malloc_ms, memcpy_ms, elapsed_ms);
+	}
+
 	return true;
 }
 
 // Inverso de ProjectState: copia a fatia processada de volta da GPU pro
 // vetor de estado no host.
 extern "C" bool GetState(float* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
+	static bool hybrid_debug = (getenv("HYBRID_DEBUG") != NULL);
+	std::chrono::steady_clock::time_point t_start;
+	if (hybrid_debug) t_start = std::chrono::steady_clock::now();
+
 	int coalesced_bits = 0;
 	for (int bit_index = 0; bit_index < qubits; bit_index++){
 		if ((region_mask >> bit_index) & 1)
@@ -365,6 +399,9 @@ extern "C" bool GetState(float* state, int qubits, int region_size, long region_
 
 	long inc = ~(region_mask >> coalesced_bits);
 
+	double memcpy_ms = 0, free_ms = 0;
+	std::chrono::steady_clock::time_point t_phase;
+
 	long dev_pos, pos, base = 0;
 	for (int device_index = 0; device_index < gpu_count; device_index++){
 		cudaSetDevice(device_index);
@@ -373,8 +410,10 @@ extern "C" bool GetState(float* state, int qubits, int region_size, long region_
 		for (int portion_index = mem_portions/gpu_count*device_index; portion_index < mem_portions/gpu_count*(device_index+1); portion_index++){
 			pos = (base << coalesced_bits) | region_id;
 
+			if (hybrid_debug) t_phase = std::chrono::steady_clock::now();
 			cudaMemcpy(state + pos*2, gpu_mem[device_index] + dev_pos, portion_size*2*sizeof(float), cudaMemcpyDeviceToHost); error();
 			cudaDeviceSynchronize(); error();
+			if (hybrid_debug) memcpy_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_phase).count();
 
 			base = (base + inc + 1) & ~inc;
 			dev_pos += portion_size;
@@ -382,7 +421,14 @@ extern "C" bool GetState(float* state, int qubits, int region_size, long region_
 	}
 
 	for (int device_index = 0; device_index < gpu_count; device_index++){
+		if (hybrid_debug) t_phase = std::chrono::steady_clock::now();
 		cudaFree(gpu_mem[device_index]); error();
+		if (hybrid_debug) free_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_phase).count();
+	}
+
+	if (hybrid_debug){
+		double elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_start).count();
+		fprintf(stderr, "[GETSTATE]  region_size=%d coalesced_bits=%d mem_portions=%d portion_size=%d memcpy_ms=%.3f free_ms=%.3f elapsed_ms=%.3f\n", region_size, coalesced_bits, mem_portions, portion_size, memcpy_ms, free_ms, elapsed_ms);
 	}
 
 	return true;
