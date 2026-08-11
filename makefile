@@ -7,17 +7,31 @@ CXX  = g++
 OPS_BLOCK = 300
 INCLUDES  = -Iinclude
 
-# kernel.cu instancia ~260 versões do mesmo kernel via template (uma por
-# combinação de tam_block/rept/coalesc — ver docs/04-gpu-cuda.md). Em -O3
-# (padrão do nvcc) isso pode fazer o back-end (cicc/ptxas) travar por
-# muito tempo numa única instanciação mais pesada de otimizar. KERNEL_OPT
-# fica em -O0 por padrão pra manter o ciclo de compilar/verificar rápido;
-# pra um build de produção de verdade (com performance real), rode
-# "make KERNEL_OPT=-O3 kernel.o" (ou "make clean && make KERNEL_OPT=-O3").
-KERNEL_OPT = -O0
+# Histórico: kernel.cu chegou a ter ~260 instanciações de template (uma
+# por combinação de block_size/repeat_count/coalesced_bits — ver item 06
+# em docs/07-bugs-e-pontos-de-atencao.md), e compilar isso em -O3 travava
+# por horas numa máquina sem GPU (nvcc/cicc anormalmente lento nela, causa
+# nunca diagnosticada). KERNEL_OPT ficava em -O0 por causa disso.
+#
+# Os templates foram removidos (kernel.cu não instancia mais nada — um
+# único kernel, parâmetros de runtime). Com uma GPU NVIDIA real
+# disponível, -O3 foi medido (2026-08-11): build em ~6.3s (vs ~6.5s em
+# -O0, sem diferença real) e nenhuma diferença mensurável de performance
+# de execução no benchmark testado (general.out 22 qubits, t_GPU) — a
+# suspeita de lentidão nunca foi sobre volume de templates nem nível de
+# otimização nesta máquina. -O3 virou o default. Numa máquina onde o
+# `nvcc` for anormalmente lento por qualquer outro motivo (ver item 7 do
+# mesmo doc), use "make KERNEL_OPT=-O0" pra manter o ciclo de
+# compilar/verificar rápido enquanto investiga.
+KERNEL_OPT = -O3
 
-CXXFLAGS  = $(INCLUDES)
-NVCCFLAGS = $(INCLUDES)
+# -MMD -MP: gera um outputs/<arquivo>.d por .o compilado, listando os
+# headers que ele incluiu, no formato que o -include no fim deste arquivo
+# entende. Sem isso, "make"/"make test" não recompilava nada quando só um
+# .h mudava (make dizia "Nothing to be done") -- um jeito fácil de testar
+# um binário desatualizado sem perceber.
+CXXFLAGS  = $(INCLUDES) -MMD -MP
+NVCCFLAGS = $(INCLUDES) -MMD -MP
 LDFLAGS   = -Xcompiler "-fopenmp"
 
 SRC = src
@@ -109,3 +123,8 @@ test: all $(OUT)/test_qft_addf.out
 
 clean:
 	rm -rf $(OUT)
+
+# Puxa os .d gerados por -MMD -MP (silenciosamente ignorado se ainda não
+# existirem, ex: build do zero) -- precisa vir depois de todo o resto pra
+# adicionar aos pré-requisitos das regras já definidas, não substituí-las.
+-include $(wildcard $(OUT)/*.d)

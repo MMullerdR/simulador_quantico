@@ -212,7 +212,7 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 		op_index = 0;
 
 		while (pts[op_index]!= NULL){
-			int region_start_bit, is_peer, max_end, op_count = 0; //, qbs_block_id
+			int region_start_bit, is_peer, op_count = 0;
 			is_peer = 0;
 
 			while (pts[op_index+op_count] != NULL &&
@@ -221,8 +221,6 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 			{
 				op_count++;
 			}
-
-			max_end = coalesced_bits;
 
 			int max_target_bit, min_target_bit = coalesced_bits;
 
