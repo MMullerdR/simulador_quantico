@@ -44,6 +44,9 @@ funciona por dentro, não apenas listar o que cada arquivo faz. Ordem sugerida d
    QFT, somador em Fourier, estimação de fase semi-clássica, pós-processamento clássico.
 7. [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md) — lista viva de bugs,
    código morto e pontos frágeis encontrados durante a leitura (útil antes de mexer em algo).
+8. [08-performance.md](08-performance.md) — números de tempo de execução
+   medidos com GPU real, por backend e número de qubits — quando cada
+   backend vale a pena, e até onde `QB_LIMIT` aguenta na prática.
 
 ## Mapa mental rápido
 
