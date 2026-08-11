@@ -18,8 +18,6 @@ using namespace std;
 // thread_count - número de threads usadas na execução paralela em CPU
 vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count);
 
-void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coalesced_bits, int block_size, int repeat_count);
-
 //////////////////////////////////////////////////////////////////////////
 
 // g: cache de portas da execução atual (DGM::gates) — os nomes das
@@ -27,9 +25,7 @@ void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coal
 // nesse cache, ver gates.h.
 // QFT/RQFT (Fourier direta/inversa, com registrador auxiliar "over")
 // compartilham a mesma implementação interna, só o sinal da fase muda.
-// QFT2 é uma variante sem "over", usada isolada em ApplyQFT.
 vector <string> QFT(int qubits, int reg, int over, int width, Gates &g);
-vector <string> QFT2(int qubits, int reg, int width, Gates &g);
 vector <string> RQFT(int qubits, int reg, int over, int width, Gates &g);
 // Troca reg1<->reg2 (width qubits), controlada por "ctrl", via 3 CNOTs.
 vector <string> CSwapR(int qubits, int ctrl, int reg1, int reg2, int width);

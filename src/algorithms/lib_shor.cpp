@@ -8,27 +8,6 @@
 
 using namespace std;
 
-// Roda só a QFT (QFT2) isolada sobre o estado |0>, sem o resto do
-// circuito do Shor — usado como teste/benchmark independente.
-void ApplyQFT(int qubits, int type, int gpu_count, int gpu_region_bits, int coalesced_bits, int block_size, int repeat_count){
-	DGM dgm;
-	dgm.exec_type = type;
-	dgm.gpu_count = gpu_count;
-
-	dgm.cpu_region_bits = gpu_region_bits;
-	dgm.cpu_coalesced_bits = coalesced_bits;
-	dgm.block_size = block_size;
-	dgm.repeat_count = repeat_count;
-
-	dgm.qubits = qubits;
-	dgm.allocateMemory();
-	dgm.setMemoryValue(0);
-
-	vector<string> qft = QFT2(qubits,0,qubits,dgm.gates);
-
-	dgm.executeFunction(qft);
-}
-
 //////////////////////////////////////////////////////
 
 // Fatora "number_to_factor" pelo algoritmo de Shor com estimação de fase

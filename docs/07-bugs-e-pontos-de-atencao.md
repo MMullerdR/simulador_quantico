@@ -571,6 +571,32 @@ e no WSL com GPU real (`GPU=real`), sem regressão.
 
 ---
 
+## 14. [REMOVIDO] `ApplyQFT`/`QFT2` — código morto que o próprio comentário dizia estar em uso
+
+**Onde:** `src/algorithms/lib_shor.cpp`, `src/algorithms/lib_shor_circuits.cpp`,
+`include/algorithms/lib_shor.h`.
+
+`ApplyQFT` tinha um comentário dizendo "usado como teste/benchmark
+independente" — mas `grep` em todo o repositório (`src/`, `include/`,
+`tests/`) não achou nenhum chamador. `QFT2` (a variante da QFT sem
+registrador `over`) só era chamada por `ApplyQFT`, então ficou órfã
+junto. O teste de regressão (`tests/test_qft_addf.cpp`) exercita `QFT`/
+`RQFT` (as variantes com `over`, as que o Shor de verdade usa), não
+`QFT2`.
+
+De quebra, `ApplyQFT` tinha um bug interno que nunca seria pego por
+ninguém rodando: atribuía os parâmetros `gpu_region_bits`/`coalesced_bits`
+recebidos aos campos `dgm.cpu_region_bits`/`dgm.cpu_coalesced_bits` (nomes
+trocados) e nunca setava `dgm.gpu_region_bits`/`dgm.gpu_coalesced_bits` —
+que ficariam com o valor não-inicializado do construtor de `DGM` se
+alguém chamasse com `type=t_GPU`. Como a função é código morto, o bug é
+moot — removida em vez de corrigida.
+
+**Verificado:** `make test` (66/66 + smoke test) no Windows (`GPU=stub`)
+e no WSL com GPU real (`GPU=real`), sem regressão.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
 2026-08-11 durante a rodada de arquitetura, a passada de comentários e um

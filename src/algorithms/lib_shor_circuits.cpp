@@ -313,39 +313,6 @@ vector <string> QFT(int qubits, int reg, int over, int width, Gates &g){
 	return QFT_impl(qubits, reg, over, width, false, g);
 }
 
-vector <string> QFT2(int qubits, int reg, int width, Gates &g){
-	string joined_step;
-	vector <string> qft;
-
-	float complex rotation_value;
-	for (int level = 1; level <= width+1; level++){
-		rotation_value = M_E;
-		rotation_value = cpowf(rotation_value, 2*M_PI*I/pow(2.0, level));
-		g.addGate("R-" + int2str(level), 1.0, 0.0, 0.0, rotation_value);
-	}
-
-	vector <string> step_ops (qubits, "ID");
-
-	for (int target_qubit_index = 0; target_qubit_index < width; target_qubit_index++){
-		step_ops[target_qubit_index+reg] = "H";
-		joined_step = concatena(step_ops, qubits);
-		qft.push_back(joined_step);
-
-		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
-			step_ops[control_qubit_index+reg] = "Control1(1)";
-			step_ops[target_qubit_index+reg] = "Target1(R-" + int2str(control_qubit_index-target_qubit_index+1) + ")";
-
-			joined_step = concatena(step_ops, qubits);
-			qft.push_back(joined_step);
-
-			step_ops[control_qubit_index+reg] = "ID";
-		}
-		step_ops[target_qubit_index+reg] = "ID";
-	}
-
-	return qft;
-}
-
 vector <string> RQFT(int qubits, int reg, int over, int width, Gates &g){
 	return QFT_impl(qubits, reg, over, width, true, g);
 }
