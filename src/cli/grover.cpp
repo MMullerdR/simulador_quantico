@@ -20,7 +20,12 @@ int main(int argc, char **argv){
 	}
 
 	int qubits = atoi(argv[1]);
-
+	// Sem isso, um qubits absurdo (ou negativo) tenta alocar 2^qubits
+	// complexos sem aviso nenhum — mesmo problema de general.cpp/shor.cpp.
+	if (qubits < 1 || qubits > QB_LIMIT){
+		cout << "Invalid qubit count: " << qubits << " (precisa estar entre 1 e " << QB_LIMIT << ")" << endl;
+		return 0;
+	}
 
   if (argc > 2) {
     exec_type = atoi(argv[2]);

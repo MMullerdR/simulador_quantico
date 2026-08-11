@@ -18,6 +18,14 @@ int main(int argc, char **argv){
 	}
 
 	int qubits = atoi(argv[1]);
+	// Sem isso, um qubits absurdo (ou negativo, por um argv malformado)
+	// tenta alocar 2^qubits complexos sem aviso nenhum — QB_LIMIT (30)
+	// já existia como campo DGM::max_qubits, mas nunca era checado contra
+	// o valor pedido de verdade.
+	if (qubits < 1 || qubits > QB_LIMIT){
+		cout << "Invalid qubit count: " << qubits << " (precisa estar entre 1 e " << QB_LIMIT << ")" << endl;
+		return 0;
+	}
 
 	int exec_type = atoi(argv[2]);
 	if (exec_type < t_PAR_CPU || exec_type > t_HYBRID){

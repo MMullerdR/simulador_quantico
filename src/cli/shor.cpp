@@ -37,6 +37,9 @@ int main(int argc, char** argv){
 	}
 
 	int qubits = atoi(argv[1]);
+	// Já implicitamente limitado a valores seguros (15-27, todos < QB_LIMIT)
+	// pelo map acima — diferente de general.cpp/grover.cpp, não precisa
+	// de uma checagem de QB_LIMIT separada.
 	if (factor_target_by_qubit_count.count(qubits) == 0){
 		cout << "The amount of qubits does not map to a valid number to be factored: " << qubits << endl;
 		return 0;
