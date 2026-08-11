@@ -1,5 +1,5 @@
 # Build tools
-ARCH = -arch=sm_52
+ARCH = -arch=sm_89
 NVCC = nvcc $(ARCH)
 CXX  = g++
 

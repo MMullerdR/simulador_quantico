@@ -213,6 +213,27 @@ void DGM::validateTuning(){
 	// antes de qualquer um deles rodar.
 	if (cpu_region_bits > qubits) cpu_region_bits = qubits;
 	if (gpu_region_bits > qubits) gpu_region_bits = qubits;
+
+	// ApplyValuesC01 (kernel.cu) copia 2*block_size*repeat_count amplitudes
+	// pra shared memory por bloco CUDA, e o endereçamento global
+	// (OPEN_SPACE com region_start_bit/extra_region_bits, derivados de
+	// gpu_region_bits) assume que cada bloco cobre exatamente 2^gpu_region_bits
+	// amplitudes -- as duas contas precisam bater, ou o kernel lê/escreve
+	// fora da região que o índice global espera (illegal memory access).
+	// Antes do item 06 do design de arquitetura isso nunca podia ser
+	// violado -- só existia uma combinação de block_size/repeat_count/
+	// gpu_region_bits selecionável (a default, já consistente por
+	// construção). Virou possível violar depois que GpuExecutionWrapper
+	// passou a aceitar qualquer combinação em tempo de execução (ver
+	// docs/04-gpu-cuda.md e docs/07-bugs-e-pontos-de-atencao.md item 7).
+	if ((exec_type == t_GPU || exec_type == t_HYBRID) &&
+		(2L * block_size * repeat_count != (1L << gpu_region_bits)))
+	{
+		cout << "Erro de tuning: 2*block_size*repeat_count (" << (2L * block_size * repeat_count)
+			<< ") precisa ser igual a 2^gpu_region_bits (" << (1L << gpu_region_bits)
+			<< ") -- ver docs/04-gpu-cuda.md." << endl;
+		exit(1);
+	}
 }
 
 float complex* DGM::execute(int iterations){

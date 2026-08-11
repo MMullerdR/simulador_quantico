@@ -75,30 +75,38 @@ __device__ long OPEN_SPACE(long value, int from_bit, int bit_count){
 // shared memory, aplica até op_count portas seguidas ali (evitando idas
 // e vindas à memória global a cada porta — o "coalescimento" do
 // projeto), e escreve o resultado de volta. Ver docs/04-gpu-cuda.md.
-template <int t_block_size, int t_repeat_count, int t_coalesced_bits>
-__global__ void ApplyValuesC01(int const region_start_bit, int const extra_region_bits, int const op_count, int const rept_bits, int const gpu_slice_size, int const block_offset){
+//
+// block_size/repeat_count/coalesced_bits eram parâmetros de template
+// (cada combinação exigia uma instanciação própria do kernel inteiro,
+// ~260 no total — item 06 do design de arquitetura de 2026-08-10, ver
+// docs/07-bugs-e-pontos-de-atencao.md item 7). Viraram parâmetros comuns
+// de runtime; a shared memory, que antes precisava de
+// t_repeat_count*t_block_size conhecido em tempo de compilação pra ter
+// tamanho fixo, agora é alocada dinamicamente (extern __shared__, tamanho
+// vem do terceiro argumento do <<<...>>> em GpuExecution01).
+__global__ void ApplyValuesC01(int const block_size, int const repeat_count, int const coalesced_bits, int const region_start_bit, int const extra_region_bits, int const op_count, int const rept_bits, int const gpu_slice_size, int const block_offset){
 	long local_pos, global_index0, global_index1, block = (blockIdx.x + block_offset);
 
 	int rep_index, op_index, thread_id = threadIdx.x;
 
-	__shared__ cuFloatComplex shared_amplitudes[t_repeat_count*t_block_size*2];
+	extern __shared__ cuFloatComplex shared_amplitudes[];
 
 	long block_base;
 
-	block_base = block << t_coalesced_bits;
+	block_base = block << coalesced_bits;
 	block_base = OPEN_SPACE(block_base, region_start_bit, extra_region_bits);
 
 	long pair_offset_mask = (1 << (region_start_bit+extra_region_bits-rept_bits-1));
 
 	// copy amplitudes from global memory to shared memory
-	for (rep_index = 0; rep_index < t_repeat_count; rep_index++){
-		local_pos = thread_id + rep_index*t_block_size*2; //another start
+	for (rep_index = 0; rep_index < repeat_count; rep_index++){
+		local_pos = thread_id + rep_index*block_size*2; //another start
 
-		global_index0 = block_base | ((local_pos >> t_coalesced_bits) << region_start_bit) | (local_pos & ((1 << t_coalesced_bits)-1));
+		global_index0 = block_base | ((local_pos >> coalesced_bits) << region_start_bit) | (local_pos & ((1 << coalesced_bits)-1));
 		global_index1 = global_index0 | pair_offset_mask;
 
 		shared_amplitudes[local_pos] = gpu_pointer[global_index0/gpu_slice_size][global_index0%gpu_slice_size];
-		shared_amplitudes[local_pos+t_block_size] = gpu_pointer[global_index1/gpu_slice_size][global_index1%gpu_slice_size];
+		shared_amplitudes[local_pos+block_size] = gpu_pointer[global_index1/gpu_slice_size][global_index1%gpu_slice_size];
 	}
 
 	int pos0, pos1, target_bit_mask;
@@ -111,8 +119,8 @@ __global__ void ApplyValuesC01(int const region_start_bit, int const extra_regio
 		target_bit_mask = 1 << op[op_index].arg[SHIFT];
 
 		if (((block_base & op[op_index].arg[CTRL_MASK]) == op[op_index].arg[CTRL_VALUE])){
-			for (rep_index = 0; rep_index < t_repeat_count; rep_index++){
-				local_pos = thread_id + rep_index*t_block_size;
+			for (rep_index = 0; rep_index < repeat_count; rep_index++){
+				local_pos = thread_id + rep_index*block_size;
 
 				pos0 = (local_pos * 2) - (local_pos & (target_bit_mask - 1));
 				pos1 = pos0 | target_bit_mask;
@@ -127,20 +135,19 @@ __global__ void ApplyValuesC01(int const region_start_bit, int const extra_regio
 	__syncthreads();
 
 	// copy results from shared memory to global memory
-	for (rep_index = 0; rep_index < t_repeat_count; rep_index++){
-		local_pos = thread_id + rep_index*t_block_size*2; //another start
+	for (rep_index = 0; rep_index < repeat_count; rep_index++){
+		local_pos = thread_id + rep_index*block_size*2; //another start
 
-		global_index0 = block_base | ((local_pos >> t_coalesced_bits) << region_start_bit) | (local_pos & ((1 << t_coalesced_bits)-1));
+		global_index0 = block_base | ((local_pos >> coalesced_bits) << region_start_bit) | (local_pos & ((1 << coalesced_bits)-1));
 		global_index1 = global_index0 | pair_offset_mask;
 
 		gpu_pointer[global_index0/gpu_slice_size][global_index0%gpu_slice_size] = shared_amplitudes[local_pos];
-		gpu_pointer[global_index1/gpu_slice_size][global_index1%gpu_slice_size] = shared_amplitudes[local_pos+t_block_size];
+		gpu_pointer[global_index1/gpu_slice_size][global_index1%gpu_slice_size] = shared_amplitudes[local_pos+block_size];
 	}
 }
 
 //Kernel para execução com múltiplas GPUs se comunicando usando DMA (Direct Memory Access)
-template <int t_block_size, int t_repeat_count, int t_coalesced_bits>
-void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int gpu_count, int iterations){
+void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int coalesced_bits, int iterations){
 	DEV_OP operators[OPS_BLOCK];
 
 	error_check_count = 0;
@@ -150,14 +157,20 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 	long mem_size = pow(2.0, qubits);
 	long gpu_slice_size = mem_size/gpu_count;
 
-	int rept_bits = log2(t_repeat_count);
+	int rept_bits = log2(repeat_count);
 
-	long thread_total = mem_size/gpu_count/t_repeat_count/2;	// /2 porque cada thread fica responsável por duas posições & /2 pelas 2 GPUS
+	long thread_total = mem_size/gpu_count/repeat_count/2;	// /2 porque cada thread fica responsável por duas posições & /2 pelas 2 GPUS
 
 	long malloc_size = (mem_size * (sizeof(float complex)))/gpu_count;
 
+	// tamanho da shared memory dinâmica de ApplyValuesC01 (ver comentário
+	// acima da função) — precisa ser setado por device antes do primeiro
+	// launch, via cudaFuncSetAttribute, porque o default da CUDA runtime
+	// pra shared memory dinâmica (48KB) pode ser menor que isso dependendo
+	// da combinação de block_size/repeat_count.
+	size_t shared_mem_bytes = (size_t)repeat_count * block_size * 2 * sizeof(cuFloatComplex);
 
-	block.x = t_block_size;
+	block.x = block_size;
 	(thread_total > block.x)? grid.x = thread_total/block.x : block.x = thread_total;
 
 	int block_region_size = gpu_region_bits;
@@ -165,6 +178,11 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 	if (block_region_size < gpu_region_bits){
 		printf("ERRO: Região do bloco menor que a região de qubits\n");
 		exit(1);
+	}
+
+	for (int device_index = 0; device_index < gpu_count; device_index++){
+		cudaSetDevice(device_index);
+		cudaFuncSetAttribute(ApplyValuesC01, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) shared_mem_bytes); error();
 	}
 
 	if (gpu_count > 1){
@@ -198,17 +216,17 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 			is_peer = 0;
 
 			while (pts[op_index+op_count] != NULL &&
-				pts[op_index+op_count]->target_bit < t_coalesced_bits &&
+				pts[op_index+op_count]->target_bit < coalesced_bits &&
 				op_count < OPS_BLOCK)
 			{
 				op_count++;
 			}
 
-			max_end = t_coalesced_bits;
+			max_end = coalesced_bits;
 
-			int max_target_bit, min_target_bit = t_coalesced_bits;
+			int max_target_bit, min_target_bit = coalesced_bits;
 
-			int extra_region_bits = (block_region_size - t_coalesced_bits);
+			int extra_region_bits = (block_region_size - coalesced_bits);
 
 			if (pts[op_index+op_count] != NULL &&
 				op_count < OPS_BLOCK)
@@ -218,7 +236,7 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 				do
 				{
 					int op_target_bit = pts[op_index+op_count]->target_bit;
-					if (op_target_bit < t_coalesced_bits){
+					if (op_target_bit < coalesced_bits){
 					}
 					else if ((op_target_bit >= min_target_bit) && ((op_target_bit - min_target_bit) < extra_region_bits)){
 						max_target_bit = max(max_target_bit, op_target_bit);
@@ -235,13 +253,13 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 				while (pts[op_index+op_count] != NULL &&
 					op_count < OPS_BLOCK);
 			}
-			region_start_bit = max(t_coalesced_bits, max_target_bit - extra_region_bits+1);
+			region_start_bit = max(coalesced_bits, max_target_bit - extra_region_bits+1);
 
-			is_peer = ((region_start_bit + (block_region_size - t_coalesced_bits)) > (qubits-gpu_count+1));
+			is_peer = ((region_start_bit + (block_region_size - coalesced_bits)) > (qubits-gpu_count+1));
 
 			for (int batch_index = 0; batch_index < op_count; batch_index++){
 				memcpy(operators[batch_index].matrix, pts[op_index+batch_index]->matrix, 4*sizeof(float complex)); error();
-				pts[op_index+batch_index]->setArgsGPU(operators[batch_index].arg, region_start_bit, block_region_size, t_coalesced_bits);
+				pts[op_index+batch_index]->setArgsGPU(operators[batch_index].arg, region_start_bit, block_region_size, coalesced_bits);
 			}
 
 			if (is_peer){
@@ -258,7 +276,7 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 
 			for (int device_index = 0; device_index < gpu_count; device_index++){
 				cudaSetDevice(device_index); error();
-				ApplyValuesC01<t_block_size, t_repeat_count, t_coalesced_bits> <<<grid,block>>> (region_start_bit, extra_region_bits, op_count, rept_bits, gpu_slice_size, grid.x*device_index); error();
+				ApplyValuesC01<<<grid,block,shared_mem_bytes>>> (block_size, repeat_count, coalesced_bits, region_start_bit, extra_region_bits, op_count, rept_bits, gpu_slice_size, grid.x*device_index); error();
 			}
 			cudaDeviceSynchronize(); error();
 
@@ -284,47 +302,17 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 }
 
 
-//Segundo Wrapper -- tamanho de bloco e número de projeções por bloco
-//
-// ATENÇÃO: esse switch normalmente cobre block_size em {32,64,128,256,512,1024}
-// com vários valores de repeat_count cada (~26 combinações), e GpuExecutionWrapper
-// (abaixo) cobre coalesced_bits de 0 a 9 — total de ~260 instanciações do kernel
-// ApplyValuesC01. Compilar tudo isso de uma vez em -O3 estava levando horas
-// nesta máquina (ver docs/04-gpu-cuda.md e a discussão de build). Reduzido
-// temporariamente pra um subconjunto pequeno (inclui o combo default usado
-// em lib_grover.cpp/lib_shor.cpp/lib_general.cpp: block_size=64, repeat_count=2,
-// coalesced_bits=4) só pra manter o ciclo de compilar/verificar rápido durante o
-// trabalho de renomeação. Pra restaurar o conjunto completo antes de um
-// build de produção de verdade, é só devolver os cases removidos (mesmo
-// padrão dos que sobraram, só repetindo pra cada block_size/repeat_count/coalesced_bits).
-template <int t_coalesced_bits>
-void GEWrapper2(float* state, PT **pts, int qubits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int iterations){
-	switch(block_size){
-		case 64:
-			switch(repeat_count){
-				case 2:
-					GpuExecution01<64, 2, t_coalesced_bits>(state, pts, qubits, gpu_region_bits, gpu_count, iterations);
-					break;
-				default:
-					printf("Invalid REPT");
-			}
-			break;
-		default:
-			printf("Invalid TAM_BLOCK");
-	}
-}
-
-
-//Primeiro Wrapper -- Coalescimento (reduzido a 1 única instanciação como
-//teste de diagnóstico — ver comentário acima de GEWrapper2)
+// Ponte extern "C" chamada por dgm_core.cpp/dgm_par_exec.cpp (assinatura
+// fixa em include/core/dgm.h — não mexer aqui sem atualizar os dois
+// lados, kernel_stub.cpp incluso). Antes havia duas camadas de `switch`
+// aqui (GEWrapper2 + este wrapper) despachando pra uma das ~260
+// instanciações possíveis de template de GpuExecution01/ApplyValuesC01 —
+// eliminadas junto com os templates (ver comentário acima de
+// ApplyValuesC01, item 06 do design de arquitetura de 2026-08-10): os
+// valores agora fluem direto como parâmetros de runtime, sem
+// recompilar/reinstanciar nada por combinação.
 extern "C" float* GpuExecutionWrapper(float* state, PT **pts, int qubits, int coalesced_bits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int iterations){
-	switch(coalesced_bits){
-		case 4:
-			GEWrapper2<4>(state, pts, qubits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
-			break;
-		default:
-			printf("Invalid COALESC");
-	}
+	GpuExecution01(state, pts, qubits, gpu_region_bits, gpu_count, block_size, repeat_count, coalesced_bits, iterations);
 
 	return state;
 }

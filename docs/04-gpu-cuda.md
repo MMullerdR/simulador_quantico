@@ -68,26 +68,61 @@ respeitando `t_coalesced_bits`), monta o array `operators[]` (até
 ...)`, e só então dispara o kernel para aquele lote. Isso se repete até
 esgotar a lista de `PT`s.
 
-## 4. `GpuExecutionWrapper` / `GEWrapper2` — por que tantos `switch`
+## 4. `GpuExecutionWrapper` — dispatch em runtime, sem `switch`
 
-CUDA templates precisam que os parâmetros (`t_block_size`, `t_repeat_count`,
-`t_coalesced_bits`) sejam conhecidos em **tempo de compilação**. Como os
-valores reais (`block_size`, `repeat_count`, `coalesced_bits`) só são
-conhecidos em tempo de execução (vêm de linha de comando/tuning), o código
-faz uma cascata de `switch` (`GEWrapper2`,
-[kernel.cu:283](../src/core/kernel.cu#L283), e `GpuExecutionWrapper`,
-[kernel.cu:302](../src/core/kernel.cu#L302)) que, para cada combinação
-suportada de valores, chama a instanciação certa do template. É verboso,
-mas é a forma padrão de "despachar" para templates CUDA a partir de
-parâmetros dinâmicos.
+**Histórico (até 2026-08-11):** `ApplyValuesC01`/`GpuExecution01` eram
+`template <int t_block_size, int t_repeat_count, int t_coalesced_bits>`.
+CUDA templates precisam que esses parâmetros sejam conhecidos em **tempo
+de compilação**, mas os valores reais só são conhecidos em tempo de
+execução (vêm da configuração de tuning) — então o código fazia uma
+cascata de `switch` (`GEWrapper2` + `GpuExecutionWrapper`) que, para cada
+combinação suportada, despachava pra instanciação certa do template.
+Cobrir todas as combinações plausíveis de `block_size`/`repeat_count`/
+`coalesced_bits` gerava ~260 instanciações do kernel — build que chegou a
+travar por horas numa máquina sem GPU (ver
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md), item 7).
 
-Hoje esse `switch` cobre **uma única combinação** (`coalesced_bits=4,
-block_size=64, repeat_count=2` — o combo usado por padrão em
-`lib_grover.cpp`/`lib_shor.cpp`/`lib_general.cpp`), reduzida de ~260
-instanciações como diagnóstico para a lentidão de build do `nvcc` nesta
-máquina (ver [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md),
-item 7). Restaurar o conjunto completo é só devolver os `case`s removidos,
-seguindo o mesmo padrão dos que restaram.
+**Desde 2026-08-11 (item 06 do design de arquitetura, implementado com GPU
+NVIDIA real disponível pela primeira vez):** os templates foram removidos.
+`block_size`/`repeat_count`/`coalesced_bits` viraram parâmetros comuns de
+`ApplyValuesC01`/`GpuExecution01`, passados em runtime sem recompilar
+nada. A shared memory do kernel, que dependia do tamanho ser conhecido em
+tempo de compilação (`__shared__ cuFloatComplex shared_amplitudes[t_repeat_count*t_block_size*2]`),
+virou dinâmica (`extern __shared__ cuFloatComplex shared_amplitudes[]`,
+tamanho passado no terceiro argumento do `<<<grid,block,shared_mem_bytes>>>`
+em `GpuExecution01`) — e como o *default* de shared memory dinâmica da
+CUDA runtime é só 48KB, cada chamada registra o tamanho de verdade via
+`cudaFuncSetAttribute(ApplyValuesC01, cudaFuncAttributeMaxDynamicSharedMemorySize, ...)`
+antes do primeiro launch daquele device.
+
+`GpuExecutionWrapper` (ponte `extern "C"`, assinatura fixa em
+[dgm.h](../include/core/dgm.h)) hoje só repassa os parâmetros direto pra
+`GpuExecution01` — nenhum `switch`, `GEWrapper2` foi removida.
+
+**Invariante que passou a precisar de validação explícita:** o
+endereçamento global do kernel (`OPEN_SPACE` com `region_start_bit`/
+`extra_region_bits`, derivados de `gpu_region_bits`) assume que cada bloco
+CUDA cobre exatamente `2^gpu_region_bits` amplitudes — e isso só é
+verdade se `2*block_size*repeat_count == 2^gpu_region_bits`. Antes do item
+06 isso nunca podia ser violado (só existia uma combinação selecionável,
+já consistente por construção). Agora que qualquer combinação é aceita em
+runtime, uma combinação inconsistente causa acesso ilegal de memória na
+GPU — por isso `DGM::validateTuning()` ([dgm_core.cpp](../src/core/dgm_core.cpp))
+verifica essa igualdade pra `t_GPU`/`t_HYBRID` e aborta com mensagem clara
+em vez de deixar o kernel corromper memória.
+
+**Verificado com GPU real (RTX 4070, CUDA 13.3):** combo default
+(`coalesced_bits=4, block_size=64, repeat_count=2, gpu_region_bits=8`)
+continua reproduzindo a amplitude exata esperada; um combo **novo**, nunca
+antes alcançável sem adicionar `case` e recompilar
+(`block_size=128, repeat_count=2, gpu_region_bits=9`), também reproduziu a
+amplitude correta; um combo inconsistente
+(`coalesced_bits=6, block_size=128, repeat_count=4, gpu_region_bits=8`,
+onde `2*128*4=1024 ≠ 2^8=256`) passou a falhar com a mensagem de
+`validateTuning()` em vez de `illegal memory access`. `make test` completo
+(66/66 + smoke test) e comparação de taxa de sucesso do `shor.out 15` em
+`t_GPU` (6/8 numa rodada de 8) seguem dentro da variação probabilística já
+documentada, sem regressão.
 
 ## 5. Múltiplas GPUs
 

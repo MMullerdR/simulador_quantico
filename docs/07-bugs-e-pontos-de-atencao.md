@@ -273,6 +273,44 @@ instanciação isolada; testar com o Windows Defender desligado
 temporariamente pra pasta do projeto; testar uma versão do CUDA Toolkit
 diferente.
 
+**Atualização (2026-08-11, máquina nova com GPU NVIDIA real):** nesta
+segunda máquina (RTX 4070, Ada Lovelace) foi possível, pela primeira vez,
+testar `kernel.cu` com hardware de verdade — WSL2 (Ubuntu 24.04) + CUDA
+Toolkit 13.3.1 instalado via `apt` (repo `wsl-ubuntu`, sem instalar driver
+Linux — o WSL usa o driver do Windows por baixo), repositório clonado
+dentro do filesystem nativo do WSL (`~/projetos/simulador_quantico`, não
+`/mnt/c/...`).
+
+Primeiro build com `make GPU=real` revelou um bug real, não relacionado à
+lentidão: o `makefile` (`ARCH = -arch=sm_52`, linha 2) mirava em Maxwell
+(`sm_52`) — arquitetura que o CUDA 13.x **nem compila mais**
+(`nvcc fatal: Unsupported gpu architecture 'sm_52'`), e que já estaria
+errada pra qualquer GPU atual de qualquer forma. Corrigido pra
+`-arch=sm_89` (Ada Lovelace, a arquitetura da RTX 4070 — quem usar outra
+geração de GPU precisa ajustar esse valor pra sua própria compute
+capability).
+
+Com o fix de arquitetura, `make GPU=real` (as ~260 instanciações de
+template intactas, sem nenhuma das reduções do item 06 aplicadas) rodou em
+**~2.5s**, não horas. Ou seja: a lentidão documentada acima não é
+inerente ao volume de templates do `kernel.cu` — é específica de alguma
+característica do ambiente da máquina anterior (mais provável: acesso via
+`/mnt/c/`, já que essa é a única variável que mudou junto com a
+arquitetura corrigida aqui; não dá pra descartar antivírus ou a instalação
+do `nvcc` daquela máquina especificamente, já que nenhuma delas foi
+reproduzida/testada aqui). O item 06 (reduzir templates) segue sendo uma
+proposta válida por outros motivos (simplicidade, tempo de build em
+máquinas mais fracas), mas deixou de ser urgente **nesta máquina**
+especificamente — vale reavaliar com o usuário antes de implementar
+qualquer uma das três opções.
+
+**Verificado nesta máquina:** `general.out 10 2 1` (`t_GPU`) e
+`general.out 10 3 2` (`t_HYBRID`) reproduzem a amplitude uniforme exata
+`0.03125`, confirmando que o kernel real está calculando certo (não só
+"não crasha"). `shor.out 15 2 1` (`t_GPU`) rodado 8×: 5/8 sucesso, contra
+2/8 do `t_CPU` nas mesmas 8 rodadas — dentro da variação probabilística já
+documentada do algoritmo, sem indício de bug específico de GPU.
+
 **Pendente (item 6 do design de arquitetura de 2026-08-11, ver
 [artefato de design](https://claude.ai/code/artifact/6c5e1ac0-7f89-46e0-a884-fa7d34539c7f)):**
 três direções propostas pra reduzir a explosão de templates, nenhuma
@@ -328,6 +366,59 @@ está sendo chamado de verdade, o que não acontecia antes); `shor.out 15
 
 Encontrado durante uma passada de comentários no código (2026-08-11),
 corrigido logo em seguida na mesma data.
+
+## 9. [CORRIGIDO] `makefile` mirava em `-arch=sm_52`, arquitetura que o CUDA 13.x nem compila mais
+
+**Onde:** [makefile:2](../makefile#L2).
+
+Descoberto ao testar `make GPU=real` pela primeira vez com uma GPU NVIDIA
+de verdade (RTX 4070, ver item 7 acima). `nvcc fatal: Unsupported gpu
+architecture 'sm_52'` — Maxwell, arquitetura antiga demais pro CUDA 13.
+Corrigido pra `-arch=sm_89` (Ada Lovelace, compute capability real da RTX
+4070). **Quem usar outra geração de GPU precisa ajustar esse valor pra sua
+própria compute capability** — não há detecção automática.
+
+## 10. [CORRIGIDO] Item 06 do design de arquitetura implementado — templates de `kernel.cu` viraram parâmetros de runtime
+
+**Onde:** [kernel.cu](../src/core/kernel.cu),
+[dgm_core.cpp:207](../src/core/dgm_core.cpp#L207). Detalhes completos em
+[04-gpu-cuda.md](04-gpu-cuda.md) seção 4.
+
+`ApplyValuesC01`/`GpuExecution01` eram `template <int t_block_size, int
+t_repeat_count, int t_coalesced_bits>` — item 06 do design de arquitetura
+de 2026-08-10 propunha eliminar isso (opção "c": dispatch em runtime).
+Implementado em 2026-08-11 assim que uma GPU NVIDIA real ficou disponível
+pra testar de verdade: os três viraram parâmetros comuns, a shared memory
+do kernel virou dinâmica (`extern __shared__`, com
+`cudaFuncSetAttribute(..., cudaFuncAttributeMaxDynamicSharedMemorySize,
+...)` pra liberar mais que os 48KB padrão), e as duas camadas de `switch`
+(`GEWrapper2` + `GpuExecutionWrapper`) foram removidas — os valores fluem
+direto como argumentos, sem recompilar nada por combinação.
+
+**Bug exposto pela mudança (não introduzido por ela):** o endereçamento
+global do kernel assume que cada bloco CUDA cobre exatamente
+`2^gpu_region_bits` amplitudes, o que só é verdade se
+`2*block_size*repeat_count == 2^gpu_region_bits`. Antes do item 06 essa
+invariante nunca podia ser violada (só existia uma combinação
+selecionável, a default, já consistente por construção). Com qualquer
+combinação aceita em runtime, uma combinação inconsistente (testado:
+`coalesced_bits=6, block_size=128, repeat_count=4, gpu_region_bits=8`,
+onde `2*128*4=1024 ≠ 2^8=256`) causava `illegal memory access` na GPU.
+Corrigido adicionando a validação em `DGM::validateTuning()`, que agora
+aborta com mensagem clara em vez de deixar o kernel corromper memória.
+
+**Verificado com GPU real (RTX 4070, CUDA Toolkit 13.3.1, WSL2 Ubuntu
+24.04):** `make clean && make GPU=real` compila em ~2.5-7s (não mais
+horas — ver item 7); combo default (`coalesced_bits=4, block_size=64,
+repeat_count=2, gpu_region_bits=8`) segue reproduzindo a amplitude exata
+`0.03125` em `t_GPU`/`t_HYBRID`; um combo **novo**, nunca antes alcançável
+sem adicionar `case` e recompilar (`block_size=128, repeat_count=2,
+gpu_region_bits=9`), também reproduziu a amplitude correta em 10 e 16
+qubits; o combo inconsistente citado acima passou a falhar com a mensagem
+de `validateTuning()` em vez de crashar; `make test` completo (66/66 +
+smoke test) sem regressão; `shor.out 15` em `t_GPU` rodado 8× (6/8
+sucesso) dentro da variação probabilística já documentada, sem indício de
+bug específico de GPU.
 
 ---
 
