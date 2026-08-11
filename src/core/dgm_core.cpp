@@ -7,43 +7,6 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-// Monta uma DGM, aponta pro "state" recebido (sem copiar), roda o
-// circuito e devolve o estado final.
-float complex* GenericExecute(float complex *state, string function, int qubits, int type, int threads, int factor = 0){
-	DGM dgm;
-	dgm.exec_type = type;
-	dgm.thread_count = threads;
-	dgm.qubits = qubits;
-	dgm.factor = factor;
-
-	dgm.setMemory(state);
-
-	dgm.executeFunction(function);
-
-	state = dgm.state;
-
-	dgm.state = NULL;
-
-	return state;
-}
-
-float complex* GenericExecute(float complex *state, vector<string> function, int qubits, int type, int threads, int factor = 0){
-	DGM dgm;
-	dgm.exec_type = type;
-	dgm.thread_count = threads;
-	dgm.qubits = qubits;
-	dgm.factor = factor;
-	dgm.setMemory(state);
-
-	dgm.executeFunction(function);
-
-	dgm.state = NULL;
-
-	return state;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-
 DGM::DGM(){
 	max_qubits = QB_LIMIT;
 	max_pt = PT_TAM;

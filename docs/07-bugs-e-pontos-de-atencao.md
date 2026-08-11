@@ -125,14 +125,40 @@ bug — agora estruturalmente impossível de esquecer.
 confirmado `general.out 10 3 4` (`t_HYBRID`, o cenário que crashava)
 sem crash.
 
-## 4. `DGM::freeMemory()` chamado sobre estado que não foi alocado por `DGM`
+## 4. [REMOVIDO] Código morto: `GenericExecute` e `GpuExecution`/`GpuExecution2`/`GpuExecution3`
 
-**Onde:** `GenericExecute` ([dgm_core.cpp:28](../src/core/dgm_core.cpp#L28)) usa
-`dgm.setMemory(state)` (que não copia, só aponta `state` para o ponteiro
-recebido). Se o chamador espera manter posse desse ponteiro depois, é
-preciso ter cuidado: `DGM::freeMemory()`/o destrutor da `DGM` chamam
-`free(state)` sobre esse mesmo ponteiro. Vale revisar caso a caso quem é
-"dono" do buffer antes de usar essas funções em código novo.
+**Onde:** `GenericExecute` (duas sobrecargas, antes em
+[dgm_core.cpp](../src/core/dgm_core.cpp) e declaradas em
+[dgm.h](../include/core/dgm.h)) e as declarações `extern "C"`
+`GpuExecution`/`GpuExecution2`/`GpuExecution3` em `dgm.h`.
+
+Originalmente este item documentava um risco de posse ambígua de memória:
+`GenericExecute` chamava `dgm.setMemory(state)` (que não copia, só aponta
+`state` pro ponteiro recebido), e quem chamasse `GenericExecute` precisava
+ter cuidado pra não deixar `DGM::freeMemory()`/o destrutor da `DGM`
+liberarem um ponteiro que não era dela. Investigando pra corrigir isso
+(2026-08-11): `grep` em `src/`, `include/` e `tests/` não achou **nenhum
+chamador** de `GenericExecute` em lugar nenhum do projeto — é código
+morto, mesmo padrão do item 2 acima. O comentário que a introduzia já
+sinalizava isso ("usada por código de teste/benchmark fora dos CLIs" — que
+não existe mais neste repositório, se é que já existiu).
+
+Investigando o arquivo por perto, `GpuExecution`/`GpuExecution2`/
+`GpuExecution3` (declaradas em `dgm.h`, mesmo bloco de
+`GpuExecutionWrapper`) eram uma categoria ainda mais morta: nunca tiveram
+implementação em lugar nenhum (nem `kernel.cu`, nem `kernel_stub.cpp`) —
+só a declaração, já com um comentário reconhecendo isso ("sem
+implementação atual"). `GpuExecutionWrapper` é a única realmente usada por
+`DGM::execute()`.
+
+**Removidas (2026-08-11)** as duas sobrecargas de `GenericExecute` de
+`dgm_core.cpp`/`dgm.h`, e as três declarações `GpuExecution`/
+`GpuExecution2`/`GpuExecution3` de `dgm.h`. O risco de posse ambígua que
+motivava o item original deixou de existir junto com o código que o
+causava.
+
+**Verificado:** `make test` (66/66 + smoke test) local (Windows,
+`GPU=stub`) e no WSL com GPU real (`GPU=real`), sem regressão.
 
 ## 5. [CORRIGIDO] `Gates::list` era `static` (compartilhado entre todas as instâncias)
 

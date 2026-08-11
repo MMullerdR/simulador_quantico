@@ -19,28 +19,15 @@
 
 using namespace std;
 
-// Atalho que monta uma DGM, roda um circuito do início ao fim e devolve
-// o estado final — usado por código de teste/benchmark fora dos CLIs.
-float complex* GenericExecute(float complex *state, string function, int qubits, int type, int threads, int factor);
-float complex*  GenericExecute(float complex *state, vector<string> function, int qubits, int type, int threads, int factor);
-
 // Inicializa a GPU escolhida (implementado em kernel.cu/kernel_stub.cpp).
 extern "C" bool setDevice(int device_id = 0);
 
-// Wrappers de execução em GPU (implementados em kernel.cu). GpuExecutionWrapper
-// é o único efetivamente usado por DGM::execute(); os demais (GpuExecution,
-// GpuExecution2, GpuExecution3) são assinaturas de versões alternativas sem
-// implementação atual — mantidas como estão.
-// Atenção: a ordem dos parâmetros aqui precisa bater com a definição
-// real em kernel.cu (state, pts, qubits, coalesced_bits, gpu_region_bits,
-// gpu_count, block_size, repeat_count, iterations) — a declaração antiga
-// tinha os nomes multi_gpu/coalesc/qbs_region fora de ordem (inofensivo
-// em C/extern "C", já que só a posição importa para o linker, mas
-// enganoso para quem lê).
+// Wrapper de execução em GPU (implementado em kernel.cu) — o único
+// efetivamente usado por DGM::execute(). Atenção: a ordem dos parâmetros
+// aqui precisa bater com a definição real em kernel.cu (state, pts,
+// qubits, coalesced_bits, gpu_region_bits, gpu_count, block_size,
+// repeat_count, iterations).
 extern "C" float complex* GpuExecutionWrapper(float complex* read_memory, PT **pts, int qubits, int coalesced_bits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int iterations);
-extern "C" float complex* GpuExecution(float complex* read_memory, float complex* write_memory, PT **pts, int qubits, float *total_time, long max_pt, long max_qubits, int iterations);
-extern "C" float complex* GpuExecution2(float complex* read_memory, PT **pts, int pts_size, int qubits, long max_pt, int iterations);
-extern "C" float complex* GpuExecution3(float complex* read_memory, float complex* write_memory, int sub_size, int shift_write, PT *pt, int qubits, long max_pt, long max_qubits, int iterations);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 
