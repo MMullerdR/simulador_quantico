@@ -20,4 +20,11 @@ struct TuningDefaults{
 // (CPU paralela ou híbrida) ou gpu_count (GPU).
 void parse_backend_arg(int argc, char **argv, int exec_type, TuningDefaults &tuning);
 
+// argv[4]/[5]/[6] opcionais — block_size/repeat_count/gpu_region_bits, só
+// fazem sentido pra t_GPU/t_HYBRID (ignorados, mas inofensivos, nos outros
+// exec_type). DGM::validateTuning() valida a combinação (item 06 do design
+// de arquitetura, ver docs/04-gpu-cuda.md) antes de qualquer execução —
+// não precisa repetir a validação aqui.
+void parse_gpu_tuning_args(int argc, char **argv, TuningDefaults &tuning);
+
 #endif

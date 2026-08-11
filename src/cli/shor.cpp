@@ -8,9 +8,10 @@
 
 using namespace std;
 
-// Fatoração de Shor: outputs/shor.out <qubits> [exec_type] [threads|gpus]
+// Fatoração de Shor: outputs/shor.out <qubits> [exec_type] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 // qubits precisa ser um dos valores mapeados abaixo (determina o número
-// a ser fatorado).
+// a ser fatorado). block_size/repeat_count/gpu_region_bits só valem pra
+// t_GPU/t_HYBRID.
 int main(int argc, char** argv){
 	map <int, int> factor_target_by_qubit_count;
 	factor_target_by_qubit_count[15] = 57;
@@ -55,6 +56,7 @@ int main(int argc, char** argv){
 	}
 
 	parse_backend_arg(argc, argv, exec_type, tuning);
+	parse_gpu_tuning_args(argc, argv, tuning);
 
 	vector<int> factors;
 

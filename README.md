@@ -75,16 +75,29 @@ Tipos de execução (`enum` em `include/core/dgm.h`): `0=t_CPU, 1=t_PAR_CPU,
 2=t_GPU, 3=t_HYBRID`.
 
 ```bash
-# outputs/general.out <qubits> <tipo_execução> [threads|gpus]
+# outputs/general.out <qubits> <tipo_execução> [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 outputs/general.out 20 1 4        # benchmark de Hadamard, 20 qubits, CPU paralela, 4 threads
 
-# outputs/grover.out <qubits> [tipo_execução] [threads|gpus]
+# outputs/grover.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 outputs/grover.out 10 0            # busca de Grover, 10 qubits, CPU serial
 
-# outputs/shor.out <qubits> [tipo_execução] [threads|gpus]
+# outputs/shor.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 # qubits precisa ser um dos valores mapeados internamente:
 # 15->57, 17->119, 19->253, 21->485, 23->1017, 25->2045, 27->2863
 outputs/shor.out 15 0
+```
+
+`block_size`/`repeat_count`/`gpu_region_bits` só valem pra `t_GPU`/`t_HYBRID`
+(exec_type 2/3) — ajustam o tuning de execução em GPU (ver
+[docs/04-gpu-cuda.md](docs/04-gpu-cuda.md)). Precisam satisfazer
+`2*block_size*repeat_count == 2^gpu_region_bits` e `repeat_count` ser
+potência de 2 — `DGM::validateTuning()` recusa a combinação com uma
+mensagem clara em vez de deixar a GPU acessar memória fora dos limites.
+Exemplo explorando um tuning diferente do default
+(`gpu_coalesced_bits=4, block_size=64, repeat_count=2, gpu_region_bits=8`):
+
+```bash
+outputs/general.out 16 2 1 128 2 9   # t_GPU, block_size=128, repeat_count=2, gpu_region_bits=9
 ```
 
 Veja [docs/05-algoritmo-grover.md](docs/05-algoritmo-grover.md) e

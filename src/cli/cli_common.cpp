@@ -12,3 +12,14 @@ void parse_backend_arg(int argc, char **argv, int exec_type, TuningDefaults &tun
 		if (argc > 3) tuning.gpu_count = atoi(argv[3]);
 	}
 }
+
+// block_size/repeat_count/gpu_region_bits eram fixos em TuningDefaults
+// (item 06 do design de arquitetura removeu a limitação de kernel.cu que
+// só permitia essa única combinação em tempo de execução — ver
+// docs/04-gpu-cuda.md). Expostos aqui pra quem quiser explorar tuning de
+// GPU por linha de comando.
+void parse_gpu_tuning_args(int argc, char **argv, TuningDefaults &tuning){
+	if (argc > 4) tuning.block_size = atoi(argv[4]);
+	if (argc > 5) tuning.repeat_count = atoi(argv[5]);
+	if (argc > 6) tuning.gpu_region_bits = atoi(argv[6]);
+}

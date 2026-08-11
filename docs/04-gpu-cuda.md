@@ -99,17 +99,37 @@ antes do primeiro launch daquele device.
 [dgm.h](../include/core/dgm.h)) hoje só repassa os parâmetros direto pra
 `GpuExecution01` — nenhum `switch`, `GEWrapper2` foi removida.
 
-**Invariante que passou a precisar de validação explícita:** o
-endereçamento global do kernel (`OPEN_SPACE` com `region_start_bit`/
-`extra_region_bits`, derivados de `gpu_region_bits`) assume que cada bloco
-CUDA cobre exatamente `2^gpu_region_bits` amplitudes — e isso só é
-verdade se `2*block_size*repeat_count == 2^gpu_region_bits`. Antes do item
-06 isso nunca podia ser violado (só existia uma combinação selecionável,
-já consistente por construção). Agora que qualquer combinação é aceita em
-runtime, uma combinação inconsistente causa acesso ilegal de memória na
-GPU — por isso `DGM::validateTuning()` ([dgm_core.cpp](../src/core/dgm_core.cpp))
-verifica essa igualdade pra `t_GPU`/`t_HYBRID` e aborta com mensagem clara
-em vez de deixar o kernel corromper memória.
+**Invariantes que passaram a precisar de validação explícita** (todas em
+`DGM::validateTuning()`, [dgm_core.cpp](../src/core/dgm_core.cpp), pra
+`t_GPU`/`t_HYBRID`) — antes do item 06 nenhuma delas podia ser violada (só
+existia uma combinação selecionável, já consistente por construção);
+agora que qualquer combinação é aceita em runtime, uma inconsistente pode
+corromper memória em vez de simplesmente falhar ao compilar:
+
+- **`2*block_size*repeat_count == 2^gpu_region_bits`** — o endereçamento
+  global do kernel (`OPEN_SPACE` com `region_start_bit`/`extra_region_bits`,
+  derivados de `gpu_region_bits`) assume que cada bloco CUDA cobre
+  exatamente `2^gpu_region_bits` amplitudes. Violar isso causa acesso
+  ilegal de memória na GPU. Por fatoração única, essa igualdade já garante
+  sozinha que `block_size`/`repeat_count` são potências de 2 positivas —
+  não precisa de uma checagem separada pra isso (`rept_bits` em
+  `GpuExecution01` vem de `log2(repeat_count)`, usado como expoente de um
+  deslocamento de bit; só faz sentido pra potências de 2, e essa igualdade
+  já exclui qualquer outro caso).
+- **`gpu_region_bits >= gpu_coalesced_bits`** — `extra_region_bits =
+  gpu_region_bits - gpu_coalesced_bits` precisa ser não-negativo.
+
+### CLI: `block_size`/`repeat_count`/`gpu_region_bits` expostos (2026-08-11)
+
+Antes fixos em `TuningDefaults` ([cli_common.h](../include/cli/cli_common.h)),
+esses três agora são argumentos opcionais dos três CLIs
+(`general.out`/`grover.out`/`shor.out <qubits> <exec_type> [threads|gpus]
+[block_size] [repeat_count] [gpu_region_bits]` — só valem pra
+`t_GPU`/`t_HYBRID`, ver [README.md](../README.md)). `gpu_coalesced_bits`
+continua fixo (não exposto). As três invariantes acima são o que torna
+essa exposição segura — sem elas, um usuário passando uma combinação
+inválida por linha de comando teria o mesmo resultado do combo de teste
+que motivou a validação em primeiro lugar (`illegal memory access`).
 
 **Verificado com GPU real (RTX 4070, CUDA 13.3):** combo default
 (`coalesced_bits=4, block_size=64, repeat_count=2, gpu_region_bits=8`)

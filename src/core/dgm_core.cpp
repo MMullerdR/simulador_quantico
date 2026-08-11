@@ -189,13 +189,31 @@ void DGM::validateTuning(){
 	// construção). Virou possível violar depois que GpuExecutionWrapper
 	// passou a aceitar qualquer combinação em tempo de execução (ver
 	// docs/04-gpu-cuda.md e docs/07-bugs-e-pontos-de-atencao.md item 7).
-	if ((exec_type == t_GPU || exec_type == t_HYBRID) &&
-		(2L * block_size * repeat_count != (1L << gpu_region_bits)))
-	{
-		cout << "Erro de tuning: 2*block_size*repeat_count (" << (2L * block_size * repeat_count)
-			<< ") precisa ser igual a 2^gpu_region_bits (" << (1L << gpu_region_bits)
-			<< ") -- ver docs/04-gpu-cuda.md." << endl;
-		exit(1);
+	if (exec_type == t_GPU || exec_type == t_HYBRID){
+		// (2*block_size*repeat_count == 2^gpu_region_bits, verificado abaixo,
+		// já garante por fatoração única que block_size e repeat_count são
+		// ambos potências de 2 positivas -- não precisa de uma checagem
+		// separada pra isso: rept_bits em GpuExecution01, que vem de
+		// log2(repeat_count) e é usado como expoente de um deslocamento de
+		// bit, nunca recebe um repeat_count que não seja potência de 2 se
+		// esta checagem já passou.)
+		if (2L * block_size * repeat_count != (1L << gpu_region_bits)){
+			cout << "Erro de tuning: 2*block_size*repeat_count (" << (2L * block_size * repeat_count)
+				<< ") precisa ser igual a 2^gpu_region_bits (" << (1L << gpu_region_bits)
+				<< ") -- ver docs/04-gpu-cuda.md." << endl;
+			exit(1);
+		}
+
+		// extra_region_bits (GpuExecution01) = gpu_region_bits - gpu_coalesced_bits
+		// precisa ser >= 0, ou o agrupamento de portas em região (e o
+		// OPEN_SPACE que depende dele) fica com um "tamanho negativo" de
+		// bits extras.
+		if (gpu_region_bits < gpu_coalesced_bits){
+			cout << "Erro de tuning: gpu_region_bits (" << gpu_region_bits
+				<< ") precisa ser >= gpu_coalesced_bits (" << gpu_coalesced_bits
+				<< ") -- ver docs/04-gpu-cuda.md." << endl;
+			exit(1);
+		}
 	}
 }
 

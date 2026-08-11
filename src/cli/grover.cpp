@@ -7,7 +7,8 @@
 
 using namespace std;
 
-// Busca de Grover: outputs/grover.out <qubits> [exec_type] [threads|gpus]
+// Busca de Grover: outputs/grover.out <qubits> [exec_type] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
+// block_size/repeat_count/gpu_region_bits só valem pra t_GPU/t_HYBRID.
 int main(int argc, char **argv){
 	srand(time(NULL));
 
@@ -37,6 +38,7 @@ int main(int argc, char **argv){
 	}
 
 	parse_backend_arg(argc, argv, exec_type, tuning);
+	parse_gpu_tuning_args(argc, argv, tuning);
 
 	int search_value = 10;
 

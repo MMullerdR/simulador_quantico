@@ -7,8 +7,9 @@
 
 using namespace std;
 
-// Benchmark de Hadamard: outputs/general.out <qubits> <exec_type> [threads|gpus]
+// Benchmark de Hadamard: outputs/general.out <qubits> <exec_type> [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 // exec_type aqui exige t_PAR_CPU/t_GPU/t_HYBRID (t_CPU não é aceito).
+// block_size/repeat_count/gpu_region_bits só valem pra t_GPU/t_HYBRID.
 int main(int argc, char **argv){
 	TuningDefaults tuning;
 
@@ -34,6 +35,7 @@ int main(int argc, char **argv){
 	}
 
 	parse_backend_arg(argc, argv, exec_type, tuning);
+	parse_gpu_tuning_args(argc, argv, tuning);
 
 	vector <float> samples;
 
