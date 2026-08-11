@@ -1,0 +1,24 @@
+name: build-and-test
+
+# GPU=stub (padrão do makefile) -- runners do GitHub Actions não têm GPU
+# NVIDIA, então kernel_stub.cpp (compilado com g++, sem nvcc) cobre os
+# backends de CPU (t_CPU/t_PAR_CPU). t_GPU/t_HYBRID rodam o stub também
+# (só "não crasha", ver tests/smoke_test.sh) -- não substitui rodar
+# "make GPU=real test" numa máquina com GPU real antes de mudanças em
+# kernel.cu, mas pega regressão de lógica/paralelismo em todo push/PR
+# sem precisar de ninguém lembrar de rodar localmente.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: make GPU=stub test
+        run: make GPU=stub test
