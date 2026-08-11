@@ -214,6 +214,22 @@ void DGM::validateTuning(){
 				<< ") -- ver docs/04-gpu-cuda.md." << endl;
 			exit(1);
 		}
+
+		// gpu_mem[4]/gpu_pointer[4] (kernel.cu) são arrays de tamanho fixo 4
+		// -- gpu_count > 4 escreveria fora dos limites deles (undefined
+		// behavior do lado host, não pego por cudaGetLastError()). Nesta
+		// máquina (1 GPU física) qualquer gpu_count > 1 já falha limpo via
+		// cudaSetDevice antes de chegar nesses arrays, mas isso só protege
+		// quem tem menos GPUs reais que o pedido -- numa máquina com 5+ GPUs
+		// de verdade, gpu_count=5 chegaria até o array e estouraria. Nunca
+		// testado com hardware real (nenhuma sessão deste projeto teve
+		// acesso a mais de 1 GPU), então validado aqui como defesa, não
+		// como algo empiricamente verificado.
+		if (gpu_count > 4){
+			cout << "Erro de tuning: gpu_count (" << gpu_count
+				<< ") precisa ser <= 4 (gpu_mem/gpu_pointer em kernel.cu têm esse tamanho fixo)." << endl;
+			exit(1);
+		}
 	}
 }
 

@@ -516,6 +516,61 @@ raciocínio já aplicado a `shor.out`.
 
 ---
 
+## 13. Multi-GPU (`gpu_count > 1`): nunca testado com hardware real — um bug corrigido, um suspeito documentado
+
+**Onde:** `src/core/kernel.cu` (`GpuExecution01`),
+`src/core/dgm_core.cpp` (`DGM::validateTuning()`).
+
+Nenhuma sessão deste projeto (nem nesta máquina, nem no notebook) teve
+acesso a mais de 1 GPU NVIDIA real — todo o caminho de código pra
+`gpu_count > 1` (acesso peer-to-peer entre GPUs, sincronização quando uma
+operação cruza a fronteira entre fatias de GPUs diferentes) nunca foi
+exercitado de verdade, só lido.
+
+**[CORRIGIDO] `gpu_mem[4]`/`gpu_pointer[4]` (kernel.cu) são arrays de
+tamanho fixo 4, sem validação de `gpu_count` contra esse limite.**
+`gpu_count > 4` faria `GpuExecution01` escrever fora dos limites desses
+arrays (`cudaMalloc(&gpu_mem[4], ...)` pra `device_index=4` já é o quinto
+elemento de um array de 4) — undefined behavior do lado host, silencioso,
+não pego por `cudaGetLastError()`. Em qualquer máquina com menos GPUs
+físicas que o `gpu_count` pedido (inclusive esta, com só 1), isso já
+falha limpo antes de chegar lá — `cudaSetDevice()` do device inexistente
+falha, e o `error()` adicionado no item 06 aborta o processo antes do
+array ser tocado. Mas numa máquina hipotética com 5+ GPUs reais, o
+`cudaSetDevice` teria sucesso e o overflow aconteceria de verdade.
+**Corrigido (2026-08-11)** com uma validação explícita em
+`DGM::validateTuning()` (`gpu_count > 4` recusado com mensagem clara) —
+essa parte **é** testável sem hardware extra, já que só depende do
+inteiro que chega via CLI, não de quantas GPUs reais existem. Verificado:
+`gpu_count=5` cai na mensagem nova; `gpu_count=2` nesta máquina (só 1 GPU
+real) continua caindo no erro de dispositivo CUDA de sempre, sem
+regressão; `gpu_count=1` com tuning válido continua funcionando.
+
+**[SUSPEITO, NÃO CORRIGIDO] `is_peer` em `GpuExecution01`
+([kernel.cu](../src/core/kernel.cu), comentário no local) provavelmente
+calcula errado pra `gpu_count > 2`.** A fórmula
+`qubits - gpu_count + 1` trata `gpu_count` como se fosse diretamente o
+número de bits que separam as fatias entre GPUs — mas o número de bits
+certo é `log2(gpu_count)` (é esse valor que decide em qual fatia/GPU um
+índice cai, via `global_index/gpu_slice_size` no kernel). As duas contas
+só coincidem pra `gpu_count <= 2` (`log2(2) = 1 = 2-1`); pra
+`gpu_count = 4`, por exemplo, a conta usada dá `qubits-3` onde deveria
+dar `qubits-2`. Pela direção do erro (o limiar calculado fica menor que
+o correto), a suspeita é que isso torna `is_peer` **mais fácil** de dar
+verdadeiro do que deveria — ou seja, provavelmente causa sincronização
+extra desnecessária (bug de performance) em vez de sincronização faltando
+(bug de corretude/race condition), mas isso é dedução por matemática, não
+verificação empírica. **Não corrigido nesta sessão** — um ajuste às cegas
+numa fórmula de sincronização de GPU sem poder testar contra hardware
+real (o mínimo seria 3+ GPUs físicas, já que `gpu_count=2` é justamente o
+caso em que a fórmula atual está certa) é mais arriscado que documentar e
+esperar acesso a uma máquina com múltiplas GPUs de verdade.
+
+**Verificado:** `make test` (66/66 + smoke test) no Windows (`GPU=stub`)
+e no WSL com GPU real (`GPU=real`), sem regressão.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
 2026-08-11 durante a rodada de arquitetura, a passada de comentários e um

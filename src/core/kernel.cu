@@ -233,6 +233,16 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 			}
 			region_start_bit = max(coalesced_bits, max_target_bit - extra_region_bits+1);
 
+			// SUSPEITO (não verificado, ver docs/07-bugs-e-pontos-de-atencao.md
+			// item 13): "qubits-gpu_count+1" trata gpu_count como se fosse
+			// diretamente o número de bits que separam as fatias entre GPUs,
+			// mas o número de bits certo é log2(gpu_count) (é esse valor que
+			// determina em qual fatia/GPU um índice cai, via
+			// global_index/gpu_slice_size). As duas contas só coincidem pra
+			// gpu_count<=2 (log2(2)=1=2-1); pra gpu_count=4, por exemplo,
+			// devia ser "qubits-2" e não "qubits-3". Nunca testado com
+			// hardware real (nenhuma sessão deste projeto teve acesso a mais
+			// de 1 GPU) — não corrigido às cegas.
 			is_peer = ((region_start_bit + (block_region_size - coalesced_bits)) > (qubits-gpu_count+1));
 
 			for (int batch_index = 0; batch_index < op_count; batch_index++){

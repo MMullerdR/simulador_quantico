@@ -155,6 +155,14 @@ calculado a partir de `region_start_bit` e do número de GPUs) — nesse caso,
 todas as GPUs são sincronizadas antes de rodar o kernel para evitar
 condição de corrida entre elas.
 
+**Atenção:** este caminho (`gpu_count > 1`) nunca foi exercitado com
+hardware real em nenhuma sessão deste projeto — só existiu acesso a 1 GPU
+NVIDIA de cada vez. `gpu_count > 4` é validado e recusado (limite dos
+arrays `gpu_mem`/`gpu_pointer` em `kernel.cu`), mas a fórmula de
+`is_peer` é suspeita de estar incorreta pra `gpu_count > 2` (documentado,
+não corrigido às cegas) — ver
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md) item 13.
+
 ## 6. `ProjectState` / `GetState` — a ponte para o modo híbrido
 
 [kernel.cu:315](../src/core/kernel.cu#L315) e
