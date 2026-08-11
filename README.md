@@ -78,8 +78,9 @@ Tipos de execução (`enum` em `include/core/dgm.h`): `0=t_CPU, 1=t_PAR_CPU,
 # outputs/general.out <qubits> <tipo_execução> [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 outputs/general.out 20 1 4        # benchmark de Hadamard, 20 qubits, CPU paralela, 4 threads
 
-# outputs/grover.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
-outputs/grover.out 10 0            # busca de Grover, 10 qubits, CPU serial
+# outputs/grover.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits] [search_value]
+outputs/grover.out 10 0            # busca de Grover, 10 qubits, CPU serial, procurando o valor 10 (default)
+outputs/grover.out 10 0 1 1 1 1 42 # mesma busca, procurando o valor 42 em vez do default
 
 # outputs/shor.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
 # qubits precisa ser um dos valores mapeados internamente:

@@ -7,8 +7,9 @@
 
 using namespace std;
 
-// Busca de Grover: outputs/grover.out <qubits> [exec_type] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
+// Busca de Grover: outputs/grover.out <qubits> [exec_type] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits] [search_value]
 // block_size/repeat_count/gpu_region_bits só valem pra t_GPU/t_HYBRID.
+// search_value precisa caber no registrador de busca (qubits-1 bits).
 int main(int argc, char **argv){
 	srand(time(NULL));
 
@@ -41,6 +42,18 @@ int main(int argc, char **argv){
 	parse_gpu_tuning_args(argc, argv, tuning);
 
 	int search_value = 10;
+	if (argc > 7) search_value = atoi(argv[7]);
+
+	// O oráculo (Oracle1) só olha os qubits-1 bits do registrador de
+	// busca — um search_value fora desse alcance é silenciosamente
+	// truncado (bits altos ignorados), então a busca "funcionaria" mas
+	// pra um valor diferente do pedido, sem aviso nenhum. Melhor recusar
+	// de cara.
+	long search_space = 1L << (qubits - 1);
+	if (search_value < 0 || search_value >= search_space){
+		cout << "Invalid search_value: " << search_value << " (precisa estar entre 0 e " << (search_space - 1) << " pra " << qubits << " qubits)" << endl;
+		return 0;
+	}
 
 	struct timeval timev, tvBegin, tvEnd;
 	float elapsed;
