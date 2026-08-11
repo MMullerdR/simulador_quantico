@@ -1,0 +1,4 @@
+# Scripts precisam rodar via bash no WSL/Linux — CRLF quebra o shebang e
+# vários trechos do script (heredocs, comparações). Força LF independente
+# de core.autocrlf no lado Windows.
+*.sh text eol=lf

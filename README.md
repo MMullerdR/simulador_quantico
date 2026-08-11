@@ -39,6 +39,7 @@ src/
  ├─ core/           motor de simulação: common.cpp, dgm_*.cpp, gates.cpp, kernel.cu
  ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
  └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
+tests/               regressão (tests/test_qft_addf.cpp) e smoke test fim a fim (tests/smoke_test.sh)
 outputs/            gerado pelo build (.o e .out) — não versionado
 docs/                documentação
 makefile
@@ -59,6 +60,7 @@ make shor       # só o shor.out
 make grover     # só o grover.out
 make general    # só o general.out
 make clean      # remove outputs/
+make test       # builda tudo, roda a regressão de circuito e o smoke test fim a fim
 ```
 
 Os binários e objetos vão para `outputs/` (ex: `outputs/shor.out`).

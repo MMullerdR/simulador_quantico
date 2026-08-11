@@ -52,7 +52,7 @@ endif
 # do algoritmo em si.
 CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o cli_common.o)
 
-.PHONY: all clean shor grover general
+.PHONY: all clean shor grover general test
 
 all: shor grover general
 
@@ -90,6 +90,22 @@ $(OUT)/%.o: %.cu | $(OUT)
 
 $(OUT):
 	mkdir -p $(OUT)
+
+# tests/ não entra no VPATH de propósito (é só um arquivo, e mistura-lo
+# na busca de src/core:src/algorithms:src/cli não ganha nada) — regra
+# explícita em vez disso. Ver tests/test_qft_addf.cpp e
+# tests/smoke_test.sh.
+TEST_OBJS = $(addprefix $(OUT)/, gates.o lib_shor_number_theory.o lib_shor_circuits.o)
+
+$(OUT)/test_qft_addf.o: tests/test_qft_addf.cpp | $(OUT)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OUT)/test_qft_addf.out: $(OUT)/test_qft_addf.o $(TEST_OBJS)
+	$(CXX) -o $@ $^
+
+test: all $(OUT)/test_qft_addf.out
+	$(OUT)/test_qft_addf.out
+	bash tests/smoke_test.sh
 
 clean:
 	rm -rf $(OUT)
