@@ -58,11 +58,7 @@ int main(int argc, char** argv){
 	cout << "Executing Shor: " << qubits << " qubits" << endl;
 
 	gettimeofday(&tvBegin, NULL);
-	// ATENÇÃO: mesma inconsistência de grover.cpp — passa t_CPU fixo em
-	// vez de "exec_type" (parseado/validado acima). Pedir t_PAR_CPU/
-	// t_GPU/t_HYBRID na linha de comando não muda o backend realmente
-	// usado por Shor(), só os parâmetros de tuning.
-	factors = Shor(factor_target_by_qubit_count[qubits], t_CPU, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
+	factors = Shor(factor_target_by_qubit_count[qubits], exec_type, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
 	gettimeofday(&tvEnd, NULL);
 	timeval_subtract(&timev, &tvEnd, &tvBegin);
 	elapsed = timev.tv_sec + (timev.tv_usec / 1000000.0);

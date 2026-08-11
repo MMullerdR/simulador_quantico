@@ -35,14 +35,7 @@ int main(int argc, char **argv){
 
 	int search_value = 10;
 
-	// ATENÇÃO: passa t_CPU fixo aqui, não "exec_type" (que foi parseado e
-	// validado acima, e que já determinou thread_count/gpu_count via
-	// parse_backend_arg) — parece um bug: pedir t_PAR_CPU/t_GPU/t_HYBRID
-	// na linha de comando não muda o backend realmente usado, só os
-	// parâmetros de tuning. general.cpp faz isso corretamente (passa
-	// exec_type de verdade); grover.cpp e shor.cpp têm essa mesma
-	// inconsistência.
-	float elapsed = Grover(qubits, search_value, t_CPU, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
+	float elapsed = Grover(qubits, search_value, exec_type, tuning.thread_count, tuning.cpu_region_bits, tuning.cpu_coalesced_bits, tuning.gpu_count, tuning.gpu_region_bits, tuning.gpu_coalesced_bits, tuning.block_size, tuning.repeat_count);
 
   cout << elapsed << endl;
 

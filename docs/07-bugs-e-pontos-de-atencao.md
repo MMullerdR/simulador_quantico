@@ -292,33 +292,42 @@ Fica pra quando houver acesso a uma máquina com GPU NVIDIA de verdade —
 sem isso, qualquer mudança em `kernel.cu` não tem como ser testada além
 de "compila" (e nem isso, dado o problema acima).
 
-## 8. `grover.cpp`/`shor.cpp` ignoram `exec_type` na hora de chamar o algoritmo
+## 8. [CORRIGIDO] `grover.cpp`/`shor.cpp` ignoravam `exec_type` na hora de chamar o algoritmo
 
-**Onde:** [grover.cpp:37](../src/cli/grover.cpp#L37),
-[shor.cpp:58](../src/cli/shor.cpp#L58).
+**Onde:** [grover.cpp:38](../src/cli/grover.cpp#L38),
+[shor.cpp:61](../src/cli/shor.cpp#L61).
 
-**O problema:** os dois CLIs fazem o parsing e a validação de
-`exec_type` a partir de `argv[2]` normalmente, e usam esse valor pra
-decidir se `argv[3]` é `thread_count` ou `gpu_count` (via
-`parse_backend_arg`) — mas na hora de chamar `Grover(...)`/`Shor(...)`,
-passam o literal `t_CPU` no lugar da variável `exec_type`. Ou seja,
-pedir `t_PAR_CPU`/`t_GPU`/`t_HYBRID` na linha de comando (ex:
-`shor.out 15 3 4`) faz o programa aceitar e validar o pedido, ajustar
-`thread_count`, e depois **rodar em `t_CPU` (serial) mesmo assim** — os
-outros backends nunca são exercitados por esses dois CLIs.
+**O bug:** os dois CLIs faziam o parsing e a validação de `exec_type` a
+partir de `argv[2]` normalmente, e usavam esse valor pra decidir se
+`argv[3]` era `thread_count` ou `gpu_count` (via `parse_backend_arg`) —
+mas na hora de chamar `Grover(...)`/`Shor(...)`, passavam o literal
+`t_CPU` no lugar da variável `exec_type`. Ou seja, pedir `t_PAR_CPU`/
+`t_GPU`/`t_HYBRID` na linha de comando (ex: `shor.out 15 3 4`) fazia o
+programa aceitar e validar o pedido, ajustar `thread_count`, e depois
+**rodar em `t_CPU` (serial) mesmo assim** — os outros backends nunca
+eram exercitados por esses dois CLIs.
 
-`general.cpp` não tem esse problema — passa `exec_type` corretamente pra
-`HadamardNQubits(...)`.
+`general.cpp` nunca teve esse problema — sempre passou `exec_type`
+corretamente pra `HadamardNQubits(...)`.
 
-**Impacto no que já foi testado nesta sessão:** os testes de `t_HYBRID`
-feitos com `grover.out`/`shor.out` ao longo desta sessão (incluindo no
-`tests/smoke_test.sh`) na prática rodaram em `t_CPU`, não exercitaram
-`HybridExecution` de verdade. Os testes de `t_HYBRID` feitos com
-`general.out` continuam válidos (esse CLI não tem o bug).
+**Impacto no que já tinha sido testado nesta sessão antes da correção:**
+os testes de `t_HYBRID` feitos com `grover.out`/`shor.out` ao longo
+desta sessão (incluindo em `tests/smoke_test.sh`) na prática rodaram em
+`t_CPU`, não exercitaram `HybridExecution` de verdade. Os testes de
+`t_HYBRID` feitos com `general.out` continuam válidos (esse CLI nunca
+teve o bug).
 
-**Não corrigido ainda** — encontrado durante uma passada de comentários
-no código (2026-08-11), fora do escopo dessa tarefa; fica registrado
-aqui pra decisão em uma rodada própria.
+**Correção aplicada (2026-08-11):** trocado o `t_CPU` literal por
+`exec_type` nas duas chamadas.
+
+**Verificado:** `grover.out 10 2 1`/`shor.out 15 2 1` (`t_GPU`) agora
+imprimem o aviso do `kernel_stub.cpp` (prova de que `GpuExecutionWrapper`
+está sendo chamado de verdade, o que não acontecia antes); `shor.out 15
+0` (`t_CPU`) continua achando os fatores certos; `make test` (66/66 +
+8/8) local e no WSL.
+
+Encontrado durante uma passada de comentários no código (2026-08-11),
+corrigido logo em seguida na mesma data.
 
 ---
 
