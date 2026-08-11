@@ -129,17 +129,12 @@ void DGM::genPTs(map<long, Group> &groups, vector <PT*> &step_pts){
 
 		for (int op_index = 0; op_index < op_count; op_index++){
 
-			term = (PT*) malloc(sizeof(PT));
-			// malloc() puro não chama PT::PT(), então control_bit_positions/
-			// control_rest não nascem NULL sozinhos (ficam com lixo de
-			// memória) — precisam ser inicializados aqui explicitamente,
-			// não só dentro do "if (group_control_count)" abaixo. Sem isso,
-			// PT::destructor() acaba chamando free() num ponteiro de lixo
-			// para toda porta sem controle (a maioria dos circuitos).
-			term->control_bit_positions = NULL;
-			term->control_rest = NULL;
-			term->control_rest_count = 0;
-
+			// new (não malloc) garante que PT::PT() roda e zera
+			// control_bit_positions/control_rest — antes disso, o malloc()
+			// puro deixava esses campos com lixo de memória pra toda porta
+			// sem controle, e o ~PT() acabava chamando free() nesse lixo
+			// (ver docs/07-bugs-e-pontos-de-atencao.md, item 3.1).
+			term = new PT();
 			term->affected = false;
 
 			term->qubits = 1;

@@ -8,7 +8,7 @@ PT::PT(){
 	control_bit_positions = control_rest = NULL;
 }
 
-void PT::destructor(){
+PT::~PT(){
 	// matrix é emprestado de Gates::list (cache estático de matrizes de
 	// porta, compartilhado entre PTs e entre execuções) — nunca é dono
 	// desse ponteiro, então nunca deve liberá-lo (ver docs/07, item 3).

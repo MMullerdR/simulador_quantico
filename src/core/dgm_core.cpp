@@ -71,8 +71,7 @@ void DGM::erase(){
 
 	long pt_index = 0;
 	while (pts[pt_index] != NULL){
-		pts[pt_index]->destructor();
-		free(pts[pt_index]);
+		delete pts[pt_index];
 		pt_index++;
 	}
 

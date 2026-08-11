@@ -5,6 +5,76 @@
 #include <cstdio>
 #include <iterator>
 
+// Resultado de compute_region: uma "região" (ver docs/01-arquitetura-geral.md,
+// seção 3) pronta pra ser processada por PCpuExecution1_0.
+struct RegionPlan{
+	long region_mask;
+	long region_bits;	// pode ser menor que o pedido, se a região não coube inteira
+	long region_count;
+	long pos_count;
+	long op_end;		// primeiro índice de pts[] fora desta região
+};
+
+// Agrupa PTs consecutivos, a partir de pts[op_start], numa região de até
+// region_bits qubits — a mesma conta que existia repetida (e, por causa
+// disso, com o mesmo bug corrigido em mais de um lugar) em PCpuExecution1
+// e duas vezes dentro de HybridExecution, ver
+// docs/07-bugs-e-pontos-de-atencao.md, item 6.
+//
+// op_search_end: limite exclusivo de busca em pts[]; -1 significa "sem
+// limite, para no NULL terminador" (caso de PCpuExecution1 e da passada
+// 'global' do HybridExecution). Usado quando a região precisa ficar
+// contida dentro de um lote já delimitado (o sub-lote de CPU dentro de
+// HybridExecution, delimitado por global_op_end).
+//
+// outer_bound_bits: teto usado pra calcular region_count/pos_count —
+// qubits pra uma região "solta", ou os bits da região-pai quando esta é
+// uma sub-região recortada de dentro de outra.
+//
+// parent_mask: -1 se a região pode crescer sobre qualquer bit ainda livre;
+// caso contrário, só bits dentro de parent_mask entram no preenchimento
+// final (caso do sub-lote de CPU, recortado de dentro de global_region_mask).
+static RegionPlan compute_region(PT **pts, long op_start, long op_search_end, long coalesced_bits, long region_bits, long outer_bound_bits, long parent_mask){
+	long region_qubit_count = coalesced_bits;
+	long region_mask = (coalesced_bits)? (1 << coalesced_bits) - 1 : 0;
+
+	long op_index = op_start;
+	while (region_qubit_count < region_bits && (op_search_end < 0 || op_index < op_search_end) && pts[op_index] != NULL){
+		if (!((region_mask >> pts[op_index]->target_bit) & 1)){
+			region_qubit_count++;
+		}
+
+		if (region_qubit_count <= region_bits)
+			region_mask = region_mask | (1 << pts[op_index]->target_bit);
+
+		op_index++;
+	}
+	while ((op_search_end < 0 || op_index < op_search_end) && pts[op_index] != NULL){
+		if (((region_mask >> pts[op_index]->target_bit) & 1))
+			op_index++;
+		else
+			break;
+	}
+
+	for (long bit_mask = 1; region_qubit_count < region_bits; bit_mask = bit_mask << 1){
+		if ((bit_mask & ~region_mask) && (parent_mask < 0 || (bit_mask & parent_mask))){
+			region_mask = region_mask | bit_mask;
+			region_qubit_count++;
+		}
+	}
+
+	if (region_qubit_count < region_bits)
+		region_bits = region_qubit_count;
+
+	RegionPlan plan;
+	plan.region_mask = region_mask;
+	plan.region_bits = region_bits;
+	plan.region_count = (1 << (outer_bound_bits - region_bits)) + 1;
+	plan.pos_count = 1 << (region_bits - 1);
+	plan.op_end = op_index;
+	return plan;
+}
+
 void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations){
 	// Sem isso, pedir uma região maior que o próprio número de qubits
 	// (ex: o cpu_region_bits=14 padrão dos CLIs com menos de 14 qubits)
@@ -14,51 +84,16 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 	// confirmado; ver docs/07-bugs-e-pontos-de-atencao.md, item 6).
 	if (region_bits > qubits) region_bits = qubits;
 
-	long op_index, pts_start, pts_end;
-	op_index = pts_start = 0;
+	long op_index = 0;
 	while (pts[op_index] != NULL){
-		long region_qubit_count = coalesced_bits;
-		long region_mask = (coalesced_bits)? (1 << coalesced_bits) - 1 : 0;
+		long pts_start = op_index;
 
-		//Pega os operadores que estão dentro da região coalescida (region_mask inicial),
-		//e acrescenta operadores em qubits fora dela até chegar ao limite da região (region_bits definida)
-		pts_start = op_index;
-		while (region_qubit_count < region_bits && pts[op_index] != NULL){					//Repete enquanto o número de qubits da região não atingir o limite (region_bits) e houver operadores
-			if (//pts[op_index]->matrixType() != DIAG_PRI &&					//O qubit de operadores de diagonal principal não importa para região (sempre podem ser acrescentados)
-				!((region_mask >> pts[op_index]->target_bit) & 1)){				//Se o qubit do operador estiver fora da região (region_mask), incrementa o contador de qubits da região
-				region_qubit_count++;
-			}
-
-			if (region_qubit_count <= region_bits)// && pts[op_index]->matrixType() != DIAG_PRI)
-				region_mask = region_mask | (1 << pts[op_index]->target_bit);			//Acrescenta o qubit do operador na região se ainda não tiver atingido o limite (region_bits)
-
-			op_index++;
-		}
-		//Segue acerscentado até encontrar um operador que não esteja dentro da região
-		while (pts[op_index] != NULL){
-			if (((region_mask >> pts[op_index]->target_bit) & 1))// || pts[op_index]->matrixType() == DIAG_PRI)
-				op_index++;
-			else
-				break;
-		}
-		pts_end = op_index;													//Executa até o operador na posiçao 'op_index' (exclusive) nesta iteração
-
-
-		//Se o número de qubits na região (region_qubit_count) não tiver atingido o limite (region_bits),
-		//acrescenta os ultimos qubits (final da mascara) à região até completar
-		//for (long bit_mask = 1<<(qubits-1); region_qubit_count < region_bits; bit_mask = bit_mask >> 1){
-		for (long bit_mask = 1; region_qubit_count < region_bits; bit_mask = bit_mask << 1){
-			if (bit_mask & ~region_mask){
-				region_mask = region_mask | bit_mask;
-				region_qubit_count++;
-			}
-		}
-
-		if (region_qubit_count < region_bits)
-			region_bits = region_qubit_count;
-
-		long region_count = (1 << (qubits - region_bits)) + 1; 				//Número de regiões 			-	 +1 para a condição de parada incluir todos
-		long pos_count = 1 << (region_bits - 1); 						//Número de posições na região 	-	 -1 porque são duas posições por iteração
+		RegionPlan plan = compute_region(pts, op_index, -1, coalesced_bits, region_bits, qubits, -1);
+		region_bits = plan.region_bits;	// ratchet: passadas seguintes partem do valor já reduzido
+		long pts_end = plan.op_end;
+		long region_mask = plan.region_mask;
+		long region_count = plan.region_count;
+		long pos_count = plan.pos_count;
 
 		omp_set_num_threads(thread_count);
 
@@ -79,9 +114,6 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 					region_id = -1;
 			}
 
-			int is_main_thread = (omp_get_thread_num()==0);
-
-
 			while (region_id != -1){
 				//Computa os operadores
 				PCpuExecution1_0(state, pts, qubits, pts_start, pts_end, pos_count, region_id, region_mask);
@@ -98,6 +130,8 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 			}
 
 		}
+
+		op_index = pts_end;
 	}
 }
 
@@ -239,53 +273,20 @@ void DGM::HybridExecution(PT **pts){
 	// (20), não só em casos extremos de linha de comando.
 	if (global_region_bits > qubits) global_region_bits = qubits;
 	long global_op_start, global_op_end;
-
-	long global_qubit_count, global_region_mask, global_region_count, global_pos_count, next_proj_id;
+	long next_proj_id;
 
 	omp_set_num_threads(thread_count);
 
 	int op_index = 0;
 	while (pts[op_index] != NULL){
-		global_qubit_count = global_coalesced_bits;
-		global_region_mask = (global_coalesced_bits)? (1 << global_coalesced_bits) - 1 : 0;
-
-		//Realiza a projeção dos operadores de acordo com o limite de qubits que podem ser executados
 		global_op_start = op_index;
-		while (global_qubit_count < global_region_bits && pts[op_index] != NULL){			//Repete enquanto o número de qubits da região não atingir o limite (region) e houver operadores
-			if (//pts[op_index]->matrixType() != DIAG_PRI &&					//O qubit de operadores de diagonal principal não importa para região (sempre podem ser acrescentados)
-			!((global_region_mask >> pts[op_index]->target_bit) & 1)){
-				global_qubit_count++;
-			}
 
-			if (global_qubit_count <= global_region_bits)// && pts[op_index]->matrixType() != DIAG_PRI)
-				global_region_mask = global_region_mask | (1 << pts[op_index]->target_bit);			//Acrescenta o qubit do operador na região se ainda não tiver atingido o limite (region)
-
-			op_index++;
-		}
-
-		while (pts[op_index] != NULL){
-			if (((global_region_mask >> pts[op_index]->target_bit) & 1))// || pts[op_index]->matrixType() == DIAG_PRI)
-				op_index++;
-			else
-				break;
-		}
-		global_op_end = op_index;
-
-		//Se o número de qubits na região (global_qubit_count) nãoo tiver atingido o limite (region),
-		//acrescenta os ultimos qubits (final da mascara) à região até completar
-		//for (long bit_mask = 1<<(qubits-1); global_qubit_count < global_region_bits; bit_mask = bit_mask >> 1){
-		for (long bit_mask = 1; global_qubit_count < global_region_bits; bit_mask = bit_mask << 1){
-			if (bit_mask & ~global_region_mask){
-				global_region_mask = global_region_mask | bit_mask;
-				global_qubit_count++;
-			}
-		}
-
-		if (global_qubit_count < global_region_bits)
-			global_region_bits = global_qubit_count;
-
-		global_region_count = (1 << (qubits - global_region_bits)) + 1; 				//Número de regiões	- +1 para a condição de parada incluir todos
-		global_pos_count = 1 << (global_region_bits - 1);
+		RegionPlan plan = compute_region(pts, op_index, -1, global_coalesced_bits, global_region_bits, qubits, -1);
+		global_region_bits = plan.region_bits;	// ratchet: passadas seguintes partem do valor já reduzido
+		global_op_end = plan.op_end;
+		long global_region_mask = plan.region_mask;
+		long global_region_count = plan.region_count;
+		long global_pos_count = plan.pos_count;
 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -308,11 +309,7 @@ void DGM::HybridExecution(PT **pts){
 				}
 
 				while (cpu_proj_id != -1){
-					long cpu_op_index, cpu_op_start, cpu_op_end;
-
-					cpu_op_start = global_op_start;
-
-					cpu_op_index = cpu_op_start;
+					long cpu_op_start = global_op_start;
 
 					while (cpu_op_start < global_op_end){
 						// Mesmo clamp de global_region_bits acima, aplicado à
@@ -323,38 +320,11 @@ void DGM::HybridExecution(PT **pts){
 						long local_cpu_region_bits = cpu_region_bits;
 						if (local_cpu_region_bits > global_region_bits) local_cpu_region_bits = global_region_bits;
 
-						long cpu_qubit_count = cpu_coalesced_bits;
-						long cpu_region_mask = (cpu_coalesced_bits)? (1 << cpu_coalesced_bits) - 1 : 0;
-
-						while ((cpu_qubit_count < local_cpu_region_bits) && (cpu_op_index < global_op_end)){	//Tem que pertencer a região 'global'
-							if (!((cpu_region_mask >> pts[cpu_op_index]->target_bit) & 1)){			//Se o qubit do operador estiver fora da região (region_mask), incrementa o contador de qubits da região
-								cpu_qubit_count++;
-							}
-
-							if (cpu_qubit_count <= local_cpu_region_bits)// && pts[op_index]->matrixType() != DIAG_PRI)
-								cpu_region_mask = cpu_region_mask | (1 << pts[cpu_op_index]->target_bit);	//Acrescenta o qubit do operador na região se ainda não tiver atingido o limite (region)
-
-							cpu_op_index++;
-						}
-
-						while (cpu_op_index < global_op_end){
-							if (((cpu_region_mask >> pts[cpu_op_index]->target_bit) & 1))// || pts[op_index]->matrixType() == DIAG_PRI)
-								cpu_op_index++;
-							else
-								break;
-						}
-						cpu_op_end = cpu_op_index;
-
-						for (long bit_mask = 1; cpu_qubit_count < local_cpu_region_bits; bit_mask = bit_mask << 1){
-							if ((bit_mask & global_region_mask) && (bit_mask & ~cpu_region_mask)){ //tem que não estar na região da cpu e estar na global
-								cpu_region_mask = cpu_region_mask | bit_mask;
-								cpu_qubit_count++;
-							}
-						}
-
-						long cpu_region_count = (1 << (global_region_bits - local_cpu_region_bits)) + 1; 		//Número de regiões 			      -	 +1 para a condição de parada incluir todos
-						long cpu_pos_count = 1 << (local_cpu_region_bits - 1); 						//Número de posições na região 	-	 -1 porque são duas posições por iteração
-
+						RegionPlan cpu_plan = compute_region(pts, cpu_op_start, global_op_end, cpu_coalesced_bits, local_cpu_region_bits, global_region_bits, global_region_mask);
+						long cpu_op_end = cpu_plan.op_end;
+						long cpu_region_mask = cpu_plan.region_mask;
+						long cpu_region_count = cpu_plan.region_count;
+						long cpu_pos_count = cpu_plan.pos_count;
 
 						long cpu_next_proj_id = 0;
 						long proj_id_increment = ~(cpu_region_mask ^ global_region_mask) & ((1 << qubits) - 1);
@@ -480,5 +450,7 @@ void DGM::HybridExecution(PT **pts){
 
 		//}
 		}
+
+		op_index = global_op_end;
 	}
 }

@@ -106,8 +106,17 @@ chamar `free()` em cima de um ponteiro de lixo toda vez que
 `control_rest_count = 0` logo após o `malloc()`, antes de qualquer uso —
 não só dentro do `if (group_control_count)`. O caminho equivalente em
 `HybridExecution` (`projected_term = new PT();`, em
-[dgm_par_exec.cpp:427](../src/core/dgm_par_exec.cpp#L427)) já usa `new
+[dgm_par_exec.cpp:397](../src/core/dgm_par_exec.cpp#L397)) já usa `new
 PT()` de verdade, então não tinha esse problema.
+
+**Superado em seguida (2026-08-11):** esse fix pontual foi substituído
+por uma correção estrutural — `genPTs` passou a usar `new PT()` (a
+mesma forma que `HybridExecution` já usava), e `PT` ganhou um `~PT()`
+de verdade no lugar do `destructor()` manual. Ver
+[dgm_parser.cpp:137](../src/core/dgm_parser.cpp#L137). Duas formas de
+alocação inconsistentes para o mesmo struct era, junto com o
+`destructor()` de chamada manual, a causa raiz dessa classe inteira de
+bug — agora estruturalmente impossível de esquecer.
 
 **Verificado no WSL (execução real, não só compilação):**
 `make clean && make && outputs/general.out 10 1 4 && outputs/grover.out
@@ -140,7 +149,7 @@ ou aceitar que o cache seja intencional quando o valor for de fato o mesmo).
 ## 6. [CORRIGIDO] Segfault em `t_PAR_CPU`/`t_HYBRID` quando `region_bits > qubits` disponíveis
 
 **Onde:** `src/cli/general.cpp` (defaults do `main()`) +
-`PCpuExecution1` em [dgm_par_exec.cpp:8](../src/core/dgm_par_exec.cpp#L8).
+`PCpuExecution1` em [dgm_par_exec.cpp:78](../src/core/dgm_par_exec.cpp#L78).
 
 **O bug:** `general.cpp` usa `cpu_region_bits = 14` fixo como valor
 padrão, independente de quantos qubits o usuário pedir na linha de
@@ -173,7 +182,7 @@ sem precisar mais do workaround de pedir mais qubits.
 `global_region_bits` (inicializado com o valor fixo `qubits_limit = 20`) e
 `cpu_region_bits` (mesmo default de 14 do `t_PAR_CPU`) — ambos usados como
 expoente de `1 << (... - region_bits)` do mesmo jeito que `PCpuExecution1`,
-em [dgm_par_exec.cpp:229](../src/core/dgm_par_exec.cpp#L229). Diferente do
+em [dgm_par_exec.cpp:263](../src/core/dgm_par_exec.cpp#L263). Diferente do
 bug do `t_PAR_CPU` (que só aparecia com uma combinação específica de
 argumentos de linha de comando), este dispara **sempre** que `qubits <
 qubits_limit` (ou seja, em praticamente qualquer circuito de teste, já que

@@ -120,7 +120,7 @@ código paralelo de CPU abaixo.
 
 ## 5. Execução paralela em CPU: `PCpuExecution1` — o conceito de "região"
 
-[dgm_par_exec.cpp:8](../src/core/dgm_par_exec.cpp#L8). Ideia: em vez de rodar
+[dgm_par_exec.cpp:78](../src/core/dgm_par_exec.cpp#L78). Ideia: em vez de rodar
 um `PT` de cada vez sobre o vetor inteiro, o vetor de `2^qubits` posições é
 dividido em **regiões** — blocos definidos por fixar um conjunto de bits do
 índice (`region_mask`) em um valor (`region_id`), variando o resto. Cada
@@ -130,8 +130,17 @@ toquem qubits dentro da região (por isso o código primeiro agrupa quantos
 `PT`s consecutivos "cabem" em uma região de tamanho `cpu_region_bits`,
 olhando os qubits que cada um afeta, antes de disparar as threads OpenMP).
 
+Essa conta de agrupamento é feita por `compute_region`
+([dgm_par_exec.cpp:37](../src/core/dgm_par_exec.cpp#L37)), um helper
+compartilhado — antes existiam três cópias quase idênticas dessa lógica
+(aqui e duas vezes dentro de `HybridExecution`), e foi exatamente por isso
+que o bug do deslocamento negativo (item 6 de
+[07](07-bugs-e-pontos-de-atencao.md)) precisou ser corrigido em mais de um
+lugar. `compute_region` também é usado pelas duas passagens de região do
+`HybridExecution` (ver [04-gpu-cuda.md](04-gpu-cuda.md)).
+
 Dentro da região, `PCpuExecution1_0`
-([dgm_par_exec.cpp:104](../src/core/dgm_par_exec.cpp#L104)) faz basicamente o
+([dgm_par_exec.cpp:138](../src/core/dgm_par_exec.cpp#L138)) faz basicamente o
 mesmo que `CpuExecution1_1/2/3`, mas usando `region_id`/`region_mask` no
 lugar de todo o índice — ou seja, a mesma lógica de pares `(pos0, pos1)` e
 tipos de matriz, só que restrita à fatia de memória daquela região/thread.

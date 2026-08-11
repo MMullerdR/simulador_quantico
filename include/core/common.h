@@ -68,8 +68,8 @@ struct PT{
 	long *control_rest, control_rest_count;
 
 	PT();
+	~PT();
 
-	void destructor();
 	long ctrlAffect(long qubit);
 	long matrixType();
 	void setArgs(long *arg, long up_to_bit);
