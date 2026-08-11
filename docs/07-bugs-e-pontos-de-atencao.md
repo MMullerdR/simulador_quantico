@@ -273,6 +273,25 @@ instanciação isolada; testar com o Windows Defender desligado
 temporariamente pra pasta do projeto; testar uma versão do CUDA Toolkit
 diferente.
 
+**Pendente (item 6 do design de arquitetura de 2026-08-11, ver
+[artefato de design](https://claude.ai/code/artifact/6c5e1ac0-7f89-46e0-a884-fa7d34539c7f)):**
+três direções propostas pra reduzir a explosão de templates, nenhuma
+verificável sem GPU NVIDIA real:
+- **(a)** reduzir deliberadamente o conjunto de combinações suportadas
+  de `block_size`/`repeat_count`/`coalesced_bits` — formalizar como
+  decisão permanente o que hoje é só o workaround temporário do
+  diagnóstico acima.
+- **(b)** shared memory de tamanho dinâmico (`extern __shared__`) em vez
+  de parâmetro de template, eliminando a necessidade de
+  `t_block_size`/`t_repeat_count` serem conhecidos em tempo de
+  compilação.
+- **(c)** dispatch em runtime (ponteiro de função/switch) sem
+  reinstanciar o kernel inteiro por combinação.
+
+Fica pra quando houver acesso a uma máquina com GPU NVIDIA de verdade —
+sem isso, qualquer mudança em `kernel.cu` não tem como ser testada além
+de "compila" (e nem isso, dado o problema acima).
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
