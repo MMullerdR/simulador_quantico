@@ -167,16 +167,3 @@ void DGM::genPTs(map<long, Group> &groups, vector <PT*> &step_pts){
 		}
 	}
 }
-
-void DGM::genMatrix(float complex* matrix, vector<float complex*> &matrices, long qubit_count, long current_qubit, long line, long column, float complex value){
-	if (value == 0.0) return;
-
-	if (current_qubit == qubit_count){ //percorreu até a ultima matriz
-		matrix[line*(1<<qubit_count) + column] = value;
-		return;
-	}
-
-	for (long row_bit = 0; row_bit < 2; row_bit++)
-		for (long col_bit = 0; col_bit < 2; col_bit++)
-			genMatrix(matrix, matrices, qubit_count, current_qubit+1, (line<<1)|row_bit, (column<<1)|col_bit, value * matrices[current_qubit][row_bit*2+col_bit]);
-}

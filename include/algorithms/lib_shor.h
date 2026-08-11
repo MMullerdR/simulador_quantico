@@ -72,9 +72,6 @@ long mul_inv(long value, long modulus);
 // Inverte a ordem dos bits de "value" (bit_count bits) — usado para
 // desfazer a ordem da QFT semiclássica na leitura da fase medida.
 int revert_bits(int value, int bit_count);
-// Potência inteira (base^exponent); sem uso no código atual.
-int quantum_ipow(int base, int exponent);
-
 /* Calculate the greatest common divisor with Euclid's algorithm */
 int quantum_gcd(int value1, int value2);
 // Aproxima numerator/denominator pela fração contínua mais simples com

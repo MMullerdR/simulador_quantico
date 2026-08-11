@@ -16,16 +16,6 @@ PT::~PT(){
 	if (control_rest) free(control_rest);
 }
 
-// Retorna quantos controles têm posição de bit menor que "qubit" — parte
-// de uma otimização de controle parcial nunca finalizada (ver setArgs).
-long PT::ctrlAffect(long qubit){
-	long control_index;
-	for (control_index = 0; control_index < control_count; control_index++)
-		if (control_bit_positions[control_index] < qubit) return control_index;
-
-	return control_count;
-}
-
 // Classifica a matriz 2x2 da porta pra escolher o caminho de execução
 // mais barato (ver enum DENSE/DIAG_PRI/DIAG_SEC em common.h).
 long PT::matrixType(){
@@ -33,24 +23,6 @@ long PT::matrixType(){
 	else if ((matrix[0] == 0.0) && (matrix[3] == 0.0)) return DIAG_SEC;
 
 	return DENSE;
-}
-
-// setArgs/setArgs_soft empacotam deslocamento (SHIFT) e máscara/valor de
-// controle (CTRL_MASK/CTRL_VALUE) no formato que o motor de CPU espera.
-// Hoje são idênticas na prática — a otimização de controle parcial que
-// as diferenciaria (usando ctrlAffect/CTRL_COUNT) nunca foi finalizada.
-void PT::setArgs(long *arg, long up_to_bit){
-	long affected_control_count = ctrlAffect(up_to_bit);
-
-	arg[SHIFT] = target_bit;
-	arg[CTRL_MASK] = control_mask;
-	arg[CTRL_VALUE] = control_value;
-}
-
-void PT::setArgs_soft(long *arg, long up_to_bit){
-	arg[SHIFT] = target_bit;
-	arg[CTRL_MASK] = control_mask;
-	arg[CTRL_VALUE] = control_value;
 }
 
 // Preenche "arg" com a máscara/valor de controle já separados em duas

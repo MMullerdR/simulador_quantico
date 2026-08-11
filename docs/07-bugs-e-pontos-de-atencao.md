@@ -448,8 +448,43 @@ bug específico de GPU.
 
 ---
 
+## 11. [REMOVIDO] Segunda leva de código morto: `enablePeerAccess`, `GET_BLOCK_ID`, `report_num_threads`, `quantum_ipow`, `HadamardNQubits_PAR_CPU`/`_GPU`, macros `ACUMM`/`SHIFT_READ`/`SHIFT_WRITE`/`MAT_START`/`MAT_SIZE`/`MAT_END`, `LINE`/`BASE`, `t_SPEC`, `DGM::genMatrix`, `PT::ctrlAffect`/`setArgs`/`setArgs_soft`
+
+**Onde:** `src/core/kernel.cu`, `src/core/dgm_par_exec.cpp`,
+`src/algorithms/lib_shor_number_theory.cpp` + `lib_shor.h`,
+`src/algorithms/lib_general.cpp` + `lib_general.h`, `include/core/common.h`
++ `src/core/common.cpp`, `include/core/dgm.h` + `src/core/dgm_parser.cpp`.
+
+Boa parte do código já vinha marcada com comentários "sem uso no código
+atual"/"nunca chegou a ser usado"/"não é chamada de lugar nenhum" desde a
+passada de comentários de 2026-08-11 (ver commit `ed00b97`) — mas ninguém
+tinha voltado pra de fato confirmar e remover. Confirmado por `grep` em
+todo o repositório (2026-08-11, mesma sessão dos itens 9/10): zero
+chamadores pra cada um dos símbolos acima. `PT::ctrlAffect`/`setArgs`/
+`setArgs_soft` eram um caso à parte, sem o comentário explícito de "sem
+uso" — parte de uma otimização de controle parcial nunca finalizada
+(`setArgs`/`setArgs_soft` eram idênticas na prática, `ctrlAffect` só era
+chamada por `setArgs`); o motor de CPU usa `target_bit`/`control_mask`/
+`control_value` do `PT` diretamente, nunca precisou do `arg[]` empacotado
+que essas três montavam (só o lado GPU precisa, via `setArgsGPU`, que
+**não** foi tocada).
+
+**Não removido, de propósito:** os campos de struct `PT::span_start_bit`
+e `PT::control_rest`/`control_rest_count` — também "sem uso", mas por um
+motivo diferente (documentado nos próprios comentários): são parte de
+features nunca finalizadas (portas multi-qubit e a mesma otimização de
+controle parcial acima) e foram deliberadamente **mantidos** como
+placeholder em vez de removidos, numa decisão já tomada antes desta
+sessão. Remover um campo de struct é uma decisão de design diferente de
+remover uma função órfã — não revertida aqui.
+
+**Verificado:** `make test` (66/66 + smoke test) no Windows (`GPU=stub`)
+e no WSL com GPU real (`GPU=real`, `KERNEL_OPT=-O3`), sem regressão.
+
+---
+
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
 2026-08-10 durante os testes de build da Fase 1 da renomeação e em
-2026-08-11 durante a rodada de arquitetura e a passada de comentários.
-Atualizar esta lista conforme novos pontos forem encontrados ou os
-existentes forem corrigidos.*
+2026-08-11 durante a rodada de arquitetura, a passada de comentários e um
+checkup geral do projeto. Atualizar esta lista conforme novos pontos
+forem encontrados ou os existentes forem corrigidos.*

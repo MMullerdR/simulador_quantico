@@ -21,17 +21,6 @@ int revert_bits(int value, int bit_count){
 	return reversed;
 }
 
-// Potência inteira (base^exponent); sem uso no código atual.
-int quantum_ipow(int base, int exponent)
-{
-	int exp_index;
-	int result=1;
-
-	for(exp_index=0; exp_index<exponent ;exp_index++)
-		result*=base;
-
-	return result;
-}
 
 /* Calculate the greatest common divisor with Euclid's algorithm */
 

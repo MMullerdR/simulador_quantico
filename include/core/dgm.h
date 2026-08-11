@@ -38,21 +38,12 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 // PCpuExecution1 e por DGM::HybridExecution (lado CPU do modo híbrido).
 void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start, int pts_end, int pos_count, int region_id, int region_mask);
 
-// Funções auxiliares de indexação de bit; sem uso no código atual.
-inline long LINE (long pos, long shift){
-	return ((pos >> shift) & 1) * 2;
-}
-inline long BASE (long pos, long shift){
-	return pos & (~(1 << shift));
-}
-
-// Backends de execução (DGM::exec_type); t_SPEC nunca chegou a ser usado.
+// Backends de execução (DGM::exec_type).
 enum {
 	t_CPU,
 	t_PAR_CPU,
 	t_GPU,
-	t_HYBRID,
-	t_SPEC
+	t_HYBRID
 };
 
 // Agrupa os controles e alvos de um mesmo grupo dentro de um step do
@@ -139,10 +130,6 @@ public:
 	void setFunction(vector<string> steps, int iterations = 1, bool reset = true);
 	map <long, Group> genGroups(string step);
 	void genPTs(map<long, Group> &groups, vector <PT*> &step_pts);
-	// Montaria a matriz combinada de um step via produto de Kronecker das
-	// matrizes individuais de cada qubit; não é chamada de lugar nenhum
-	// hoje (sem uso).
-	void genMatrix(float complex* matrix, vector<float complex*> &matrices, long qubit_count, long current_qubit, long line, long column, float complex value);
 
 	// Conta quantos PT de cada tipo (DENSE/DIAG_PRI/DIAG_SEC, com/sem
 	// controle) o circuito atual tem — só estatística, não afeta execução.

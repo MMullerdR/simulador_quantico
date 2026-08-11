@@ -31,20 +31,6 @@ extern "C" bool setDevice(int device_id = 0){
 	return cudaFree(0);
 }
 
-// Habilita acesso direto (DMA) entre as GPUs 0 e 1; sem uso no código
-// atual (GpuExecution01 habilita peer access por conta própria, abaixo).
-extern "C" bool enablePeerAccess(){
-	cudaSetDevice(0);
-	cudaDeviceEnablePeerAccess(1, 0);
-
-	cudaSetDevice(1);
-	cudaDeviceEnablePeerAccess(0, 0);
-
-	cudaGetLastError();
-
-	return true;
-}
-
 __constant__ long c_arg[1][1];
 __constant__ cuFloatComplex cmatrix[1][1];
 
@@ -53,12 +39,6 @@ __constant__ DEV_OP op[OPS_BLOCK];
 static cuFloatComplex *gpu_mem[4];
 __constant__ cuFloatComplex *gpu_pointer[4];
 
-
-// Em qual bloco de região cairia o qubit alvo de "term"; sem uso no
-// código atual.
-inline int GET_BLOCK_ID(PT *term, int coalesced_bits, int gpu_region_bits){
-	return (term->target_bit - coalesced_bits)/(gpu_region_bits-coalesced_bits);
-}
 
 // Insere "bit_count" bits 0 em "value" a partir do bit "from_bit" — usado
 // em ApplyValuesC01 pra mapear a posição de uma thread dentro do bloco

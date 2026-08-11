@@ -26,15 +26,6 @@
 #define CTRL_REG_MASK 3
 #define CTRL_REG_VALUE 4
 
-// Constantes de um esquema de indexação anterior, hoje sem uso (mantidas
-// sem alteração de comportamento).
-#define ACUMM 0
-#define SHIFT_READ 0
-#define SHIFT_WRITE 0
-#define MAT_START 0
-#define MAT_SIZE 0
-#define MAT_END 0
-
 // Classificação da matriz 2x2 de uma porta, usada para escolher o
 // caminho de execução mais barato (ver docs/03-motor-de-execucao-cpu.md).
 enum {
@@ -63,24 +54,18 @@ struct PT{
 	long control_value, control_mask;
 	long *control_bit_positions, control_count;
 
-	// Parte de uma otimização de controle parcial nunca finalizada
-	// (ver PT::ctrlAffect e o corpo comentado de setArgs) — mantida.
+	// Parte de uma otimização de controle parcial nunca finalizada —
+	// mantida sem uso, mesma razão de span_start_bit acima.
 	long *control_rest, control_rest_count;
 
 	PT();
 	~PT();
 
-	// Quantos controles têm posição de bit menor que "qubit" (parte de
-	// uma otimização de controle parcial nunca finalizada).
-	long ctrlAffect(long qubit);
 	// Classifica a matriz em DENSE/DIAG_PRI/DIAG_SEC (ver enum acima).
 	long matrixType();
 	// Empacota deslocamento/máscara/valor de controle em "arg" (formato
-	// usado pelo motor de CPU).
-	void setArgs(long *arg, long up_to_bit);
-	void setArgs_soft(long *arg, long up_to_bit);
-	// Mesma ideia de setArgs, mas separando a parte do controle que cai
-	// dentro da região coalescida da GPU do restante.
+	// usado pelo motor de GPU), separando a parte do controle que cai
+	// dentro da região coalescida do restante.
 	void setArgsGPU(long *arg, int region_start, int region_size, int coalesced_bits);
 	void print();
 	void printMatrix();

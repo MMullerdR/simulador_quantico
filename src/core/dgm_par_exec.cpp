@@ -251,15 +251,6 @@ void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start,
 	}
 }
 
-// Imprime quantas threads OpenMP estão ativas no nível atual; sem uso
-// no código atual.
-void report_num_threads(int level){
-	#pragma omp single
-	{
-		printf("Level %d: number of threads in the team - %d\n", level, omp_get_num_threads());
-	}
-}
-
 // Backend t_HYBRID: a thread OpenMP 0 comanda a GPU (projeta o estado,
 // dispara o kernel, recolhe o resultado) enquanto as demais processam
 // regiões em CPU ao mesmo tempo, região "global" por região "global" —

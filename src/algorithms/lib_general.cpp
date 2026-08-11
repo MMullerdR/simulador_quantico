@@ -41,12 +41,3 @@ float HadamardNQubits(long qubits, long iterations, int type, int thread_count, 
 
 	return 0;
 }
-
-
-float HadamardNQubits_PAR_CPU(long qubits, long iterations, int thread_count, int cpu_region_bits, int cpu_coalesced_bits){
-	return HadamardNQubits(qubits, iterations, t_PAR_CPU, thread_count, cpu_region_bits, cpu_coalesced_bits, 1, 1, 1, 1, 1);
-}
-
-float HadamardNQubits_GPU(long qubits, long iterations, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count){
-	return HadamardNQubits(qubits, iterations, t_GPU, 1, 1, 1, gpu_count, gpu_region_bits, gpu_coalesced_bits, block_size, repeat_count);
-}
