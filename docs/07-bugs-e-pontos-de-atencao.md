@@ -73,9 +73,48 @@ prática, corrigido por consistência) passaram a ser liberados corretamente.
 `matrix` foi deixado como estava, com um comentário explicando por que
 nunca deve ser liberado ali.
 
-**Verificado:** compila limpo; `shor.out`/`grover.out`/`general.out`
-rodados no WSL sem crash (bom teste de estresse, já que cada
-`setFunction(reset=true)` aloca e libera um lote de `PT`s).
+**Essa correção, sozinha, introduziu um bug novo e mais grave** — ver
+item abaixo. Na hora, só tínhamos "compila limpo" como verificação (o
+link local estava quebrado); o "verificado" que constava aqui antes
+estava errado, baseado em compilação, não em execução real. Lição:
+compilar não é o mesmo que rodar, principalmente quando o fix mexe em
+`free()`.
+
+## 3.1. [CORRIGIDO] `DGM::genPTs` aloca `PT` com `malloc()` sem inicializar `control_bit_positions`/`control_rest`
+
+**Onde:** [dgm_parser.cpp:132](../src/core/dgm_parser.cpp#L132)
+
+**O bug:** `genPTs` cria cada `PT` com `term = (PT*) malloc(sizeof(PT));`
+— `malloc()` puro, que **não chama** `PT::PT()`. Antes da correção do
+item 3, `control_bit_positions` só era atribuído dentro do
+`if (group_control_count){...}` (quando a porta tem controle). Pra toda
+porta **sem controle** — ou seja, praticamente todo `H`/`X` solto,
+virtualmente todo circuito de Grover e de Shor — `control_bit_positions`
+ficava com lixo de memória não inicializado, não `NULL`.
+
+Antes da correção do item 3, isso não importava: a condição invertida
+(`if (!control_bit_positions) free(...)`) quase nunca era verdadeira
+pra um ponteiro de lixo, então na prática nunca chamava `free()` nesse
+caso também — dois bugs se cancelando por acidente. Depois da correção
+do item 3 (`if (control_bit_positions) free(...)`), isso passou a
+chamar `free()` em cima de um ponteiro de lixo toda vez que
+`DGM::erase()` rodava — **`free(): invalid pointer`**, reproduzido com
+`general.out 10 3 4` (`t_HYBRID`).
+
+**Correção aplicada (2026-08-10):** inicializar explicitamente
+`control_bit_positions = NULL`, `control_rest = NULL` e
+`control_rest_count = 0` logo após o `malloc()`, antes de qualquer uso —
+não só dentro do `if (group_control_count)`. O caminho equivalente em
+`HybridExecution` (`projected_term = new PT();`, em
+[dgm_par_exec.cpp:427](../src/core/dgm_par_exec.cpp#L427)) já usa `new
+PT()` de verdade, então não tinha esse problema.
+
+**Verificado no WSL (execução real, não só compilação):**
+`make clean && make && outputs/general.out 10 1 4 && outputs/grover.out
+12 1 4 && outputs/shor.out 15 0` — os três rodam sem crash;
+`general.out` reproduz a amplitude uniforme `0.03125` esperada. Também
+confirmado `general.out 10 3 4` (`t_HYBRID`, o cenário que crashava)
+sem crash.
 
 ## 4. `DGM::freeMemory()` chamado sobre estado que não foi alocado por `DGM`
 
