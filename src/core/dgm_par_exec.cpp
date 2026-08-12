@@ -318,7 +318,7 @@ void DGM::HybridExecution(PT **pts){
 					if (hybrid_debug){
 						#pragma omp atomic
 						debug_cpu_regions++;
-						fprintf(stderr, "[HYBRID] CPU (thread %d) global_region=%ld qubits=%d global_region_bits=%ld\n", omp_get_thread_num(), cpu_proj_id, qubits, global_region_bits);
+						fprintf(stderr, "[HYBRID] CPU (thread %d) global_region=%ld qubits=%ld global_region_bits=%ld\n", omp_get_thread_num(), cpu_proj_id, qubits, global_region_bits);
 					}
 					long cpu_op_start = global_op_start;
 
@@ -386,7 +386,7 @@ void DGM::HybridExecution(PT **pts){
 					if (hybrid_debug){
 						#pragma omp atomic
 						debug_gpu_regions++;
-						fprintf(stderr, "[HYBRID] GPU global_region=%ld qubits=%d global_region_bits=%ld\n", gpu_proj_id, qubits, global_region_bits);
+						fprintf(stderr, "[HYBRID] GPU global_region=%ld qubits=%ld global_region_bits=%ld\n", gpu_proj_id, qubits, global_region_bits);
 					}
 					// Reconstrói, só pra essa região, uma lista de PT com
 					// qubits renumerados (0..region_bits-1) — a GPU só

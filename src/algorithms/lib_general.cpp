@@ -35,7 +35,13 @@ float HadamardNQubits(long qubits, long iterations, int type, int thread_count, 
 
 	dgm.execute(1);
 
-	printMem(dgm.state, 4);
+	// H em |0...0> em todos os qubits produz uma superposição uniforme --
+	// toda amplitude do vetor de estado vale 1/sqrt(2^qubits), inclusive a
+	// do estado 0. Imprime só essa (custo O(1), seguro em qualquer qubits)
+	// em vez do vetor inteiro (2^qubits linhas, inviável a partir de ~20
+	// qubits) -- é o suficiente pra tests/smoke_test.sh conferir a
+	// amplitude exata contra o valor esperado.
+	printf("%ld:\t%.6f %.6f\n", 0L, crealf(dgm.state[0]), cimagf(dgm.state[0]));
 
 	return 0;
 }
