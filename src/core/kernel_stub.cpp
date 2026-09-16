@@ -22,6 +22,16 @@ extern "C" float complex* GpuExecutionWrapper(float complex* read_memory, PT **p
 	return read_memory;
 }
 
+extern "C" bool AllocGpuState(int region_size, int gpu_count){
+	fprintf(stderr, "kernel_stub.cpp: GPU indisponível nesta build.\n");
+	return false;
+}
+
+extern "C" bool FreeGpuState(int gpu_count){
+	fprintf(stderr, "kernel_stub.cpp: GPU indisponível nesta build.\n");
+	return false;
+}
+
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
 	fprintf(stderr, "kernel_stub.cpp: GPU indisponível nesta build.\n");
 	return false;

@@ -477,15 +477,65 @@ de timing em `ProjectState`/`GpuExecutionWrapper`/`GetState`
 (`kernel.cu`, opt-in via `HYBRID_DEBUG=1`, custo zero desligada) — foi
 ela que achou o cold-start de verdade, vale continuar tendo à mão.
 
-Item 17 segue sem solução. Três tentativas testadas e rejeitadas
-empiricamente (subir `qubits_limit`; mesclar regiões de GPU; esconder o
-cold-start atrás de construção de circuito). Se alguém retomar: o
-cold-start de ~200ms é real e teoricamente evitável, mas só valeria a
-pena numa arquitetura onde o contexto CUDA é aquecido uma vez e
-reaproveitado entre muitas execuções (um processo de longa duração/
-serviço), não no modelo atual de "um processo novo por execução de
-circuito" — mudar isso é uma decisão de arquitetura bem maior que o
-escopo deste item.
+Três tentativas testadas nesta sessão e rejeitadas empiricamente (subir
+`qubits_limit`; mesclar regiões de GPU; esconder o cold-start atrás de
+construção de circuito). O cold-start de ~200ms é real e teoricamente
+evitável, mas só valeria a pena numa arquitetura onde o contexto CUDA é
+aquecido uma vez e reaproveitado entre muitas execuções (um processo de
+longa duração/serviço), não no modelo atual de "um processo novo por
+execução de circuito" — mudar isso é uma decisão de arquitetura bem
+maior que o escopo deste item.
+
+**Tentativa 4 — [IMPLEMENTADA, NÃO VERIFICADA] içar `cudaMalloc`/`cudaFree`
+pra fora do laço de regiões (2026-09-16, sessão sem GPU disponível).**
+
+Motivada por um relatório de investigação independente (outra sessão,
+achado consistente com a tentativa 3 acima, mas mais específico):
+`ProjectState` fazia `cudaMalloc` do zero e `GetState` fazia `cudaFree`
+**a cada região individual** processada pela GPU no modo híbrido — 29 a
+32 vezes numa execução típica —, mesmo o tamanho do buffer
+(`global_region_bits`) sendo constante durante todo o laço de regiões de
+um mesmo lote. O modo `t_GPU` puro (`GpuExecution01`), em contraste, já
+alocava a memória uma única vez no início de toda a execução.
+
+**Mudança aplicada:** duas novas funções `extern "C"` em `kernel.cu` —
+`AllocGpuState(region_size, gpu_count)` (faz só o `cudaMalloc`, um por
+GPU) e `FreeGpuState(gpu_count)` (faz só o `cudaFree`) — chamadas por
+`DGM::HybridExecution` uma vez antes/depois do laço `while (gpu_proj_id
+!= -1)` da thread de GPU, em vez de a cada iteração. `ProjectState`
+perdeu o `cudaMalloc` que tinha (só copia agora, pressupondo o buffer já
+alocado); `GetState` perdeu o `cudaFree` (só copia de volta). Assinaturas
+espelhadas em `kernel_stub.cpp` (stub, sem GPU real) e declaradas em
+`dgm.h`. `AllocGpuState` só é chamada se a thread de GPU realmente vai
+processar ao menos 1 região no lote (evita um malloc+free vazio quando
+todas as regiões de um lote pequeno caem só em CPU).
+
+**Verificado nesta sessão (sem GPU real disponível aqui):** compila
+limpo (`g++`, lado `.cpp`/stub); `make test` completo (66/66 + 32/32 +
+smoke test) sem regressão em `GPU=stub` — inclusive `t_HYBRID`, que só
+passa pelos novos stubs sem tocar em `kernel.cu` de verdade.
+**`kernel.cu` em si não foi compilado nem executado nenhuma vez** — esta
+máquina não tem `nvcc`/GPU. A lógica foi revisada por leitura cuidadosa
+(mesmo protocolo de cautela extra já usado antes neste arquivo), não por
+execução real.
+
+**Precisa, antes de considerar resolvido:**
+1. `make GPU=real` compilar sem erro (a mudança usa a mesma API CUDA já
+   presente no arquivo, mas nunca foi testada por um compilador de
+   verdade).
+2. `general.out <q> 3 <threads>` (`t_HYBRID`) continuar reproduzindo a
+   amplitude exata esperada em vários tamanhos de qubits (18-30) —
+   corretude antes de performance, mesmo padrão já usado nas tentativas
+   1-3.
+3. Comparar tempo de execução antes/depois (mesmos parâmetros da
+   tentativa 2/3, ex. `general.out 24 3 4`) — se a hipótese estiver
+   certa, deve melhorar; se piorar ou não mudar nada (como aconteceu na
+   tentativa 2, por um motivo diferente), documentar aqui e reverter,
+   mesmo padrão das tentativas anteriores.
+4. Testar o caso `gpu_count > 1` com cautela redobrada — não mudei a
+   lógica de multi-GPU em si, só onde o malloc/free acontece no tempo,
+   mas essa combinação nunca foi testada com hardware real neste
+   projeto (ver item 13).
 
 ---
 

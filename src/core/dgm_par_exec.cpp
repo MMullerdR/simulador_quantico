@@ -382,6 +382,15 @@ void DGM::HybridExecution(PT **pts){
 						gpu_proj_id = -1;
 				}
 
+				// Item 17 em docs/07-bugs-e-pontos-de-atencao.md: o buffer
+				// de GPU usado por ProjectState/GetState agora é alocado
+				// uma única vez por lote (não mais a cada região), já que
+				// global_region_bits (o que determina o tamanho do buffer)
+				// não muda enquanto este laço roda. Só aloca se a thread
+				// realmente vai processar pelo menos uma região.
+				bool gpu_state_allocated = (gpu_proj_id != -1);
+				if (gpu_state_allocated) AllocGpuState(global_region_bits, gpu_count);
+
 				while (gpu_proj_id != -1){
 					if (hybrid_debug){
 						#pragma omp atomic
@@ -463,6 +472,8 @@ void DGM::HybridExecution(PT **pts){
 							gpu_proj_id = -1;
 					}
 				}
+
+				if (gpu_state_allocated) FreeGpuState(gpu_count);
 			}
 
 		}

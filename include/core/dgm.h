@@ -28,6 +28,14 @@ extern "C" bool setDevice(int device_id = 0);
 // qubits, coalesced_bits, gpu_region_bits, gpu_count, block_size,
 // repeat_count, iterations).
 extern "C" float complex* GpuExecutionWrapper(float complex* read_memory, PT **pts, int qubits, int coalesced_bits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int iterations);
+// AllocGpuState/FreeGpuState: alocam/liberam o buffer de GPU usado por
+// ProjectState/GetState uma única vez por lote de regiões (não mais a
+// cada região individual) — ver DGM::HybridExecution e item 17 em
+// docs/07-bugs-e-pontos-de-atencao.md. region_size precisa ser o mesmo
+// valor passado a ProjectState/GetState durante o lote inteiro (o
+// tamanho do buffer depende só dele, não muda região a região).
+extern "C" bool AllocGpuState(int region_size, int gpu_count);
+extern "C" bool FreeGpuState(int gpu_count);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 
