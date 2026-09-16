@@ -519,6 +519,22 @@ máquina não tem `nvcc`/GPU. A lógica foi revisada por leitura cuidadosa
 (mesmo protocolo de cautela extra já usado antes neste arquivo), não por
 execução real.
 
+**Achado numa revisão de código logo em seguida:** a API nova
+(`AllocGpuState`/`FreeGpuState`) introduzia uma pré-condição não
+verificada — `ProjectState`/`GetState` passaram a exigir que
+`AllocGpuState` já tivesse rodado antes (pra `gpu_mem[]` estar
+alocado), mas isso só estava documentado em comentário, sem checagem em
+runtime. Hoje o único chamador (`HybridExecution`) sempre respeita a
+ordem certa, mas um uso incorreto futuro leria um ponteiro `NULL`/já
+liberado sem aviso claro. **Corrigido**: uma flag `gpu_state_ready`
+(estática, em `kernel.cu`) agora é checada por `AllocGpuState` (recusa
+alocar de novo sem `FreeGpuState` antes — evitaria vazar o buffer
+anterior), `FreeGpuState` (recusa liberar sem alocação correspondente),
+`ProjectState` e `GetState` (recusam rodar sem alocação prévia) — todas
+abortam com `printf` + `exit(1)` explicando a violação, mesmo padrão já
+usado em `GpuExecution01` pra outros erros fatais. Também não verificado
+com GPU real ainda (mesma limitação acima).
+
 **Precisa, antes de considerar resolvido:**
 1. `make GPU=real` compilar sem erro (a mudança usa a mesma API CUDA já
    presente no arquivo, mas nunca foi testada por um compilador de

@@ -315,6 +315,14 @@ extern "C" float* GpuExecutionWrapper(float* state, PT **pts, int qubits, int co
 	return state;
 }
 
+// Marca se gpu_mem[] está alocado agora (ver AllocGpuState/FreeGpuState
+// abaixo) — ProjectState/GetState checam isso e abortam com uma
+// mensagem clara em vez de ler/escrever um ponteiro NULL ou já liberado
+// se alguém chamá-las fora de ordem (achado na revisão de código do
+// commit que introduziu essa API, ver item 17 em
+// docs/07-bugs-e-pontos-de-atencao.md).
+static bool gpu_state_ready = false;
+
 // Aloca o buffer de GPU usado por ProjectState/GetState — item 17 em
 // docs/07-bugs-e-pontos-de-atencao.md: antes, ProjectState fazia
 // cudaMalloc e GetState fazia cudaFree a cada região individual do modo
@@ -323,6 +331,11 @@ extern "C" float* GpuExecutionWrapper(float* state, PT **pts, int qubits, int co
 // em Alloc/FreeGpuState pra quem chama (DGM::HybridExecution) alocar
 // uma única vez por lote e reaproveitar entre regiões.
 extern "C" bool AllocGpuState(int region_size, int gpu_count){
+	if (gpu_state_ready){
+		printf("ERRO: AllocGpuState chamada de novo sem FreeGpuState antes -- vazaria o buffer já alocado.\n");
+		exit(1);
+	}
+
 	float malloc_size = (1 << region_size)/gpu_count * sizeof(float)*2;
 
 	for (int device_index = 0; device_index < gpu_count; device_index++){
@@ -330,25 +343,38 @@ extern "C" bool AllocGpuState(int region_size, int gpu_count){
 		cudaMalloc(&gpu_mem[device_index], malloc_size); error();
 	}
 
+	gpu_state_ready = true;
 	return true;
 }
 
 // Inverso de AllocGpuState — libera o buffer alocado por ela. Só deve
 // ser chamada depois de AllocGpuState, no fim do mesmo lote de regiões.
 extern "C" bool FreeGpuState(int gpu_count){
+	if (!gpu_state_ready){
+		printf("ERRO: FreeGpuState chamada sem AllocGpuState correspondente antes.\n");
+		exit(1);
+	}
+
 	for (int device_index = 0; device_index < gpu_count; device_index++){
 		cudaSetDevice(device_index);
 		cudaFree(gpu_mem[device_index]); error();
 	}
 
+	gpu_state_ready = false;
 	return true;
 }
 
 // Copia só a fatia do estado correspondente a uma região (region_id/
 // region_mask) do host pra GPU — usado pelo modo híbrido pra mandar só
 // a parte que a GPU vai processar naquela rodada, não o vetor inteiro.
-// Pressupõe que AllocGpuState já foi chamada (não aloca o buffer).
+// Pressupõe que AllocGpuState já foi chamada (não aloca o buffer) —
+// checado abaixo, aborta com mensagem clara se não foi.
 extern "C" bool ProjectState(float* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
+	if (!gpu_state_ready){
+		printf("ERRO: ProjectState chamada sem AllocGpuState antes -- gpu_mem[] não está alocado.\n");
+		exit(1);
+	}
+
 	// Instrumentação opt-in (item 17 em docs/07-bugs-e-pontos-de-atencao.md,
 	// investigando se o custo de ProjectState/GetState é dominado pelo
 	// número de cudaMemcpy (mem_portions pequenos e não-contíguos) ou pelo
@@ -407,8 +433,14 @@ extern "C" bool ProjectState(float* state, int qubits, int region_size, long reg
 
 // Inverso de ProjectState: copia a fatia processada de volta da GPU pro
 // vetor de estado no host. Não libera o buffer (ver FreeGpuState) — quem
-// chama decide quando o lote de regiões acabou.
+// chama decide quando o lote de regiões acabou. Pressupõe AllocGpuState
+// já chamada — checado abaixo, aborta com mensagem clara se não foi.
 extern "C" bool GetState(float* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
+	if (!gpu_state_ready){
+		printf("ERRO: GetState chamada sem AllocGpuState antes -- gpu_mem[] não está alocado.\n");
+		exit(1);
+	}
+
 	static bool hybrid_debug = (getenv("HYBRID_DEBUG") != NULL);
 	std::chrono::steady_clock::time_point t_start;
 	if (hybrid_debug) t_start = std::chrono::steady_clock::now();
