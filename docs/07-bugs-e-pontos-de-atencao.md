@@ -303,188 +303,49 @@ cobrindo tudo de uma vez. A fila round-robin distribui **número de
 regiões** igualmente entre CPU e GPU, não tempo esperado — daí o
 desbalanceamento.
 
-**Duas tentativas de correção nesta sessão, nenhuma das duas ficou —
-ambas testadas com hardware real e descartadas por dados/segurança, não
-por preguiça:**
+**Três tentativas de correção testadas com hardware real numa sessão
+anterior, todas concluídas e revertidas por dados (não abandonadas):**
 
-**Tentativa 1 — só subir `qubits_limit`: rejeitada, dados mostram que
-piora às vezes.** Varredura empírica (`general.out <q> 3 4`,
-`qubits_limit` ∈ {20,22,24,26}):
+**Tentativa 1 — subir `qubits_limit`.** Rejeitada: resultado inconsistente
+(varredura empírica com `qubits_limit` ∈ {20,22,24,26} — às vezes
+melhora, às vezes piora muito, ex. 24 qubits com `limit=24` caiu pra
+desempenho de single-thread). Causa: com região única, quem processa
+tudo é loteria de agendamento do SO entre as threads, não CPU vs GPU de
+verdade — subir o limite só desloca *onde* a loteria acontece, não
+resolve o problema de fundo.
 
-| qubits_limit | 20q | 22q | 24q | 26q |
-|---|---|---|---|---|
-| 20 (atual) | 0.074s | 0.307s | **0.397s** | 1.252s |
-| 22 | 0.074s | 0.317s | 0.495s | 1.179s |
-| 24 | 0.074s | 0.317s | **1.388s** | 2.110s |
-| 26 | 0.196s | 0.320s | 1.388s | **0.773s** |
+**Tentativa 2 — GPU reserva um bloco de regiões mescladas por vez, CPU
+disputa dinamicamente o resto.** Implementada; corrigiu no caminho um
+segfault real (a fórmula de "pular N posições na fila compartilhada" só
+funcionava pra máscaras de bits contíguas — corrigida com o mesmo
+incremento por acarreio já usado no resto do código, funciona pra
+qualquer formato de máscara). Verificada correta com GPU real
+(amplitude exata certa em 18-30 qubits, `make test` sem regressão). Mas
+a comparação A/B mostrou que mesclar regiões **piora** a performance
+(ex: 26 qubits, mais que o dobro do tempo) — invalidando a premissa de
+que o custo era overhead fixo de lançamento de kernel (mais provável:
+`cudaMemcpy` proporcional ao volume de dados). Revertida; só a
+instrumentação `HYBRID_DEBUG` ficou no código.
 
-Nada consistente: às vezes melhora (26q/limit=26), às vezes piora muito
-(24q/limit=24, 1.388s — bate exato com `PAR_CPU(1)`, single-thread).
-Causa: com região única (`qubits == qubits_limit`), quem processa tudo é
-**loteria de agendamento do SO** entre as `thread_count` threads
-disputando a mesma região — não CPU vs GPU de verdade. Às vezes a GPU
-vence (bom, se for uma faixa de qubits onde GPU já é mais rápida — ver
-`docs/08-performance.md`), às vezes uma única thread de CPU vence e
-processa tudo sozinha, sem paralelismo nenhum (péssimo). Subir
-`qubits_limit` só desloca *onde* essa loteria acontece, não resolve o
-problema de fundo.
+**Tentativa 3 — instrumentar `ProjectState`/`GpuExecutionWrapper`/
+`GetState` diretamente.** Confirmou que a cópia de memória domina o
+kernel em ~25x (consistente com a tentativa 2), e achou algo novo: a
+**primeira** chamada de GPU do processo inteiro custa sozinha ~250ms
+(~100x mais que as chamadas seguintes, 1.5-2ms) — é o custo de
+inicialização preguiçosa do contexto CUDA (driver), pago **uma vez por
+processo**, não por região/chamada. Testado esconder esse custo com um
+warm-up assíncrono disparado bem no início do `main()` dos três CLIs —
+**sem ganho medível**, nem no benchmark trivial nem no Shor a 21
+qubits: a janela de trabalho de CPU disponível antes da primeira
+chamada real de GPU é curta demais pra escondê-lo. Revertido; a
+instrumentação de timing ficou.
 
-**Tentativa 2 — GPU reserva estaticamente um bloco de regiões
-consecutivas (mescladas numa única chamada maior), CPU disputa
-dinamicamente o resto: implementada, corrigida, verificada correta —
-mas revertida por não melhorar a performance (ao contrário, piora).**
-
-Primeira rodada desta tentativa deu **segfault** em `general.out 24 3 4`.
-Investigando o porquê antes de tentar de novo (em vez de ajustar às
-cegas): o `+1` de `RegionPlan::region_count` (`plan.region_count = (1 <<
-(outer_bound_bits - region_bits)) + 1`) **não é ambíguo, é uma margem de
-segurança correta e bem definida** — o laço de reivindicação atribui
-`region_id` **antes** de decrementar/checar o contador
-(`dgm_par_exec.cpp`, `#pragma omp critical`), então a última região
-válida sempre seria descartada por engano sem essa margem extra pra
-absorver o descarte. Confirmado por simulação numérica:
-`região_count_de_verdade = region_count - 1`, sempre.
-
-O bug real da primeira tentativa era outro, mais sutil: pra "pular"
-`gpu_slots` posições da fila compartilhada, a fórmula usada foi
-`next_proj_id = gpu_slots * (global_region_mask + 1)` — só válida se
-`global_region_mask` for uma faixa de bits baixa **contígua**. Simulação
-numérica confirmou que **não é sempre** (ex: 2º lote do Hadamard em 24
-qubits, depois que o 1º já consumiu os qubits 0-19: o preenchimento de
-`compute_region` deixa um buraco nos bits 16-19), e nesse caso a
-multiplicação produzia um `proj_id` **maior que o vetor de estado
-inteiro** (`63.176.704` contra `2^24 = 16.777.216`) — acesso de memória
-fora dos limites, daí o segfault.
-
-**Corrigido** trocando a multiplicação por um laço aplicando o mesmo
-incremento por acarreio que o resto do código já usa
-(`(id + mask+1) & ~mask`), `gpu_slots` vezes em sequência — funciona pra
-`region_mask` de qualquer formato — e ajustando o limiar de
-`use_gpu_batch` pra usar a contagem de verdade (`region_count - 1`, não
-`region_count`). **Verificado com GPU real:** amplitude exata correta em
-18-30 qubits, `general.out 24 3 4` repetido 5× sem falha nenhuma,
-`HYBRID_DEBUG` mostrando múltiplos lotes (inclusive o 2º, o que
-segfaultava antes) processados corretamente. `make test` completo sem
-regressão.
-
-**Mas a comparação A/B direta (com merge vs sem merge, mesma sessão,
-`general.out <q> 3 4`) mostrou que mesclar regiões piora a performance,
-não melhora:**
-
-| qubits | sem merge | com merge |
-|---|---|---|
-| 22 | ~0.25s | ~0.28s |
-| 24 | ~0.37s | ~0.50s |
-| 26 | ~1.24s | **~2.60s** (mais que o dobro!) |
-
-Isso invalida a premissa da hipótese B: **o custo de ~0.2s por chamada
-de GPU provavelmente não é overhead fixo de lançamento de kernel** (que
-seria da ordem de microssegundos, não décimos de segundo) — é mais
-provável que seja dominado pelo `cudaMemcpy` dentro de
-`ProjectState`/`GetState` ([kernel.cu](../src/core/kernel.cu)),
-proporcional ao tamanho dos dados copiados, não uma constante por
-chamada. Mesclar 4 regiões numa só não elimina esse custo (a mesma
-quantidade de dados precisa atravessar host↔device de qualquer jeito) —
-e pode até piorar, se o `coalesced_bits` calculado por `ProjectState` a
-partir do mask mesclado (que pode ficar menos contíguo que o mask
-original) resultar em mais `portions`/chamadas de `cudaMemcpy` menores
-em vez de menos. Não confirmado a fundo (exigiria instrumentar
-`ProjectState` também), mas é a explicação mais consistente com os
-números.
-
-**Revertida nesta sessão** — o mecanismo (agora corrigido e verificado)
-não resolve o problema que motivou tentar. Só a instrumentação
-`HYBRID_DEBUG` ficou no código.
-
-**Tentativa 3 — instrumentar `ProjectState`/`GpuExecutionWrapper`/`GetState`
-diretamente (não mais só `ApplyValuesC01`), como o próprio texto acima
-sugeria como próximo passo. Achado real, mas o fix natural não rendeu
-ganho medível.**
-
-Adicionado timing (`std::chrono`, opt-in via `HYBRID_DEBUG=1`, mesmo
-padrão já existente) às três funções em
-[kernel.cu](../src/core/kernel.cu). `general.out 24 3 4` com GPU real:
-
-| fase | total (35 chamadas) | média/chamada |
-|---|---|---|
-| `ProjectState` (H→D) | 314ms | 8.9ms |
-| `GpuExecutionWrapper` (kernel) | 11ms | 0.3ms |
-| `GetState` (D→H) | 72ms | 1.9ms |
-
-Confirma de novo que a cópia domina o kernel em ~25x (consistente com a
-tentativa 2). Mas decompondo `ProjectState` em `cudaMalloc`/`cudaMemcpy`
-separadamente apareceu outra coisa: a **primeira chamada do processo
-inteiro** leva sozinha ~253ms, enquanto `cudaMalloc`+`cudaMemcpy`
-juntos, nessa mesma chamada, somam só ~2.5ms. Todas as chamadas
-seguintes (mesmo formato, mesmo tamanho de dado) levam ~1.5-2ms —
-100x mais rápido. Confirmado com um experimento isolado: chamar
-`setDevice()` (`kernel.cu`, já existia, nunca era chamado em lugar
-nenhum do projeto) antes da região paralela absorve sozinho ~170-250ms,
-e depois disso a "primeira" `ProjectState` cai pra 3-6ms — igual às
-demais. **É custo de inicialização preguiçosa do contexto CUDA (driver),
-pago uma vez por processo — não um custo por região, por chamada, ou
-por formato de `mask`/`coalesced_bits` como as tentativas 1 e 2
-suspeitavam.**
-
-Isso reabre uma dúvida maior: como `grover.out`/`shor.out`/`general.out`
-são processos novos por execução, **todo benchmark de `t_GPU`/`t_HYBRID`
-já feito neste projeto** (inclusive a tabela em
-[docs/08-performance.md](08-performance.md)) carrega esse ~200ms fixo
-embutido, disfarçado de custo do algoritmo — o que pode estar deslocando
-artificialmente pra cima o ponto de cruzamento CPU/GPU relatado lá.
-
-**Fix natural testado: warm-up assíncrono.** Implementado
-`warmup_gpu_async(exec_type)` ([cli_common.cpp](../src/cli/cli_common.cpp)),
-chamado o mais cedo possível em `main()` dos três CLIs — logo depois de
-`exec_type` validado, antes de qualquer construção de circuito — que
-dispara `setDevice()` numa `std::thread` solta (`.detach()`, sem
-`join()`: `setDevice()` só toca o contexto CUDA do driver, não
-compartilha estado com o resto do processo, então não tem corrida real
-pra proteger). Ideia: sobrepor esse ~200ms com o trabalho de CPU que já
-acontece antes da primeira chamada de GPU de verdade, em vez de pagá-lo
-bloqueado dentro dela.
-
-**Verificado com GPU real:** `make test` completo sem regressão
-(WSL, GPU=real). Mas a comparação A/B (mesma sessão, mesmos parâmetros,
-com/sem o warm-up assíncrono) não mostrou ganho medível — nem em
-`general.out` (circuito trivial, H em N qubits, 18-26 qubits, 3
-execuções cada) nem em `shor.out` (circuito grande de verdade, 21
-qubits, 5 execuções cada, t_GPU e t_HYBRID):
-
-| caso | com warm-up | sem warm-up |
-|---|---|---|
-| general.out 18-26q, t_GPU | 0.18-0.85s | 0.17-0.81s (igual, dentro do ruído) |
-| general.out 18-26q, t_HYBRID | 0.02-1.24s | 0.02-1.23s (igual, dentro do ruído) |
-| shor.out 21q, t_GPU (5x) | média 1.74s | média 1.76s |
-| shor.out 21q, t_HYBRID (5x) | média 39.68s | média 39.81s |
-
-Diferenças em ambos os sentidos, sempre menores que o desvio-padrão
-entre execuções do mesmo lado. **Diagnóstico do cold-start confirmado;
-o fix não ajudou.** Hipótese de por que não: a janela de trabalho de
-CPU disponível entre "`exec_type` conhecido" e "primeira chamada real de
-GPU" é curta demais pra esconder ~200ms atrás dela mesmo pro circuito
-maior testado (Shor a 21 qubits) — construir a lista de portas (`PT`)
-aparentemente não é o gargalo que se imaginava, mesmo pra circuitos
-razoavelmente grandes. Sem essa janela, a thread de warm-up e a thread
-principal chegam no mesmo lugar (o lock interno do driver pra inicializar
-o contexto) quase ao mesmo tempo de qualquer forma — o resultado
-matemático é o mesmo custo total, só que pago um pouco mais cedo.
-
-**Revertido o warm-up assíncrono** (`cli_common.h/.cpp`,
-`general.cpp`/`grover.cpp`/`shor.cpp`) por não ter efeito medível —
-complexidade sem ganho comprovado não fica. **Mantida a instrumentação**
-de timing em `ProjectState`/`GpuExecutionWrapper`/`GetState`
-(`kernel.cu`, opt-in via `HYBRID_DEBUG=1`, custo zero desligada) — foi
-ela que achou o cold-start de verdade, vale continuar tendo à mão.
-
-Três tentativas testadas nesta sessão e rejeitadas empiricamente (subir
-`qubits_limit`; mesclar regiões de GPU; esconder o cold-start atrás de
-construção de circuito). O cold-start de ~200ms é real e teoricamente
-evitável, mas só valeria a pena numa arquitetura onde o contexto CUDA é
-aquecido uma vez e reaproveitado entre muitas execuções (um processo de
-longa duração/serviço), não no modelo atual de "um processo novo por
-execução de circuito" — mudar isso é uma decisão de arquitetura bem
-maior que o escopo deste item.
+O cold-start de ~200ms é real e teoricamente evitável, mas só valeria a
+pena numa arquitetura onde o contexto CUDA é aquecido uma vez e
+reaproveitado entre muitas execuções (um processo de longa duração/
+serviço), não no modelo atual de "um processo novo por execução de
+circuito" — mudar isso é uma decisão de arquitetura bem maior que o
+escopo deste item.
 
 **Tentativa 4 — [IMPLEMENTADA, NÃO VERIFICADA] içar `cudaMalloc`/`cudaFree`
 pra fora do laço de regiões (2026-09-16, sessão sem GPU disponível).**
