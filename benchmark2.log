@@ -1,0 +1,1003 @@
+[2026-09-28 20:23:48] ===== Benchmark iniciado =====
+[2026-09-28 20:23:48] Timeout por teste: 20m (kill forçado após +10s)
+[2026-09-28 20:23:48] ### Bateria GENERAL (15 a 30 qubits) ###
+==================================================
+[2026-09-28 20:23:48] Algoritmo: GENERAL | Qubits: 15
+[2026-09-28 20:23:48] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 15 1 16
+0:	0.005524 0.000000
+0.002067
+[2026-09-28 20:23:48] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:48] Algoritmo: GENERAL | Qubits: 15
+[2026-09-28 20:23:48] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 15 2 1 64 2 8
+0:	0.005524 0.000000
+0.222844
+[2026-09-28 20:23:49] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 15
+[2026-09-28 20:23:49] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 15 3 16 64 2 8
+0:	0.005524 0.000000
+0.00301
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 16
+[2026-09-28 20:23:49] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 16 1 16
+0:	0.003906 0.000000
+0.002299
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 16
+[2026-09-28 20:23:49] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 16 2 1 64 2 8
+0:	0.003906 0.000000
+0.145941
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 16
+[2026-09-28 20:23:49] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 16 3 16 64 2 8
+0:	0.003906 0.000000
+0.139954
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 17
+[2026-09-28 20:23:49] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 17 1 16
+0:	0.002762 0.000000
+0.003032
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 17
+[2026-09-28 20:23:49] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 17 2 1 64 2 8
+0:	0.002762 0.000000
+0.138041
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 17
+[2026-09-28 20:23:49] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 17 3 16 64 2 8
+0:	0.002762 0.000000
+0.010915
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 18
+[2026-09-28 20:23:49] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 18 1 16
+0:	0.001953 0.000000
+0.004708
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 18
+[2026-09-28 20:23:49] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 18 2 1 64 2 8
+0:	0.001953 0.000000
+0.134446
+[2026-09-28 20:23:49] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:49] Algoritmo: GENERAL | Qubits: 18
+[2026-09-28 20:23:49] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 18 3 16 64 2 8
+0:	0.001953 0.000000
+0.137641
+[2026-09-28 20:23:50] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:50] Algoritmo: GENERAL | Qubits: 19
+[2026-09-28 20:23:50] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 19 1 16
+0:	0.001381 0.000000
+0.008894
+[2026-09-28 20:23:50] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:50] Algoritmo: GENERAL | Qubits: 19
+[2026-09-28 20:23:50] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 19 2 1 64 2 8
+0:	0.001381 0.000000
+0.13881
+[2026-09-28 20:23:50] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:50] Algoritmo: GENERAL | Qubits: 19
+[2026-09-28 20:23:50] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 19 3 16 64 2 8
+0:	0.001381 0.000000
+0.139918
+[2026-09-28 20:23:50] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:50] Algoritmo: GENERAL | Qubits: 20
+[2026-09-28 20:23:50] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 20 1 16
+0:	0.000977 0.000000
+0.015374
+[2026-09-28 20:23:50] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:50] Algoritmo: GENERAL | Qubits: 20
+[2026-09-28 20:23:50] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 20 2 1 64 2 8
+0:	0.000977 0.000000
+0.137983
+[2026-09-28 20:23:50] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:50] Algoritmo: GENERAL | Qubits: 20
+[2026-09-28 20:23:50] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 20 3 16 64 2 8
+0:	0.000977 0.000000
+0.139174
+[2026-09-28 20:23:51] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:51] Algoritmo: GENERAL | Qubits: 21
+[2026-09-28 20:23:51] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 21 1 16
+0:	0.000691 0.000000
+0.027578
+[2026-09-28 20:23:51] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:51] Algoritmo: GENERAL | Qubits: 21
+[2026-09-28 20:23:51] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 21 2 1 64 2 8
+0:	0.000691 0.000000
+0.147933
+[2026-09-28 20:23:51] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:51] Algoritmo: GENERAL | Qubits: 21
+[2026-09-28 20:23:51] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 21 3 16 64 2 8
+0:	0.000691 0.000000
+0.200679
+[2026-09-28 20:23:51] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:51] Algoritmo: GENERAL | Qubits: 22
+[2026-09-28 20:23:51] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 22 1 16
+0:	0.000488 0.000000
+0.052007
+[2026-09-28 20:23:51] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:51] Algoritmo: GENERAL | Qubits: 22
+[2026-09-28 20:23:51] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 22 2 1 64 2 8
+0:	0.000488 0.000000
+0.158196
+[2026-09-28 20:23:51] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:51] Algoritmo: GENERAL | Qubits: 22
+[2026-09-28 20:23:51] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 22 3 16 64 2 8
+0:	0.000488 0.000000
+0.207268
+[2026-09-28 20:23:52] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:52] Algoritmo: GENERAL | Qubits: 23
+[2026-09-28 20:23:52] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 23 1 16
+0:	0.000345 0.000000
+0.103249
+[2026-09-28 20:23:52] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:52] Algoritmo: GENERAL | Qubits: 23
+[2026-09-28 20:23:52] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 23 2 1 64 2 8
+0:	0.000345 0.000000
+0.187923
+[2026-09-28 20:23:52] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:52] Algoritmo: GENERAL | Qubits: 23
+[2026-09-28 20:23:52] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 23 3 16 64 2 8
+0:	0.000345 0.000000
+0.205242
+[2026-09-28 20:23:52] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:52] Algoritmo: GENERAL | Qubits: 24
+[2026-09-28 20:23:52] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 24 1 16
+0:	0.000244 0.000000
+0.219117
+[2026-09-28 20:23:52] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:52] Algoritmo: GENERAL | Qubits: 24
+[2026-09-28 20:23:52] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 24 2 1 64 2 8
+0:	0.000244 0.000000
+0.262313
+[2026-09-28 20:23:53] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:53] Algoritmo: GENERAL | Qubits: 24
+[2026-09-28 20:23:53] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 24 3 16 64 2 8
+0:	0.000244 0.000000
+0.244202
+[2026-09-28 20:23:53] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:53] Algoritmo: GENERAL | Qubits: 25
+[2026-09-28 20:23:53] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 25 1 16
+0:	0.000173 0.000000
+0.456286
+[2026-09-28 20:23:54] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:54] Algoritmo: GENERAL | Qubits: 25
+[2026-09-28 20:23:54] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 25 2 1 64 2 8
+0:	0.000173 0.000000
+0.392014
+[2026-09-28 20:23:54] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:54] Algoritmo: GENERAL | Qubits: 25
+[2026-09-28 20:23:54] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 25 3 16 64 2 8
+0:	0.000173 0.000000
+0.369548
+[2026-09-28 20:23:54] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:23:54] Algoritmo: GENERAL | Qubits: 26
+[2026-09-28 20:23:54] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 26 1 16
+0:	0.000122 0.000000
+0.975534
+[2026-09-28 20:23:55] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:55] Algoritmo: GENERAL | Qubits: 26
+[2026-09-28 20:23:55] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 26 2 1 64 2 8
+0:	0.000122 0.000000
+0.614452
+[2026-09-28 20:23:56] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:56] Algoritmo: GENERAL | Qubits: 26
+[2026-09-28 20:23:56] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 26 3 16 64 2 8
+0:	0.000122 0.000000
+0.671752
+[2026-09-28 20:23:57] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:23:57] Algoritmo: GENERAL | Qubits: 27
+[2026-09-28 20:23:57] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 27 1 16
+0:	0.000086 0.000000
+2.08978
+[2026-09-28 20:23:59] ✓ OK (2s)
+
+==================================================
+[2026-09-28 20:23:59] Algoritmo: GENERAL | Qubits: 27
+[2026-09-28 20:23:59] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 27 2 1 64 2 8
+0:	0.000086 0.000000
+1.22561
+[2026-09-28 20:24:00] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:24:00] Algoritmo: GENERAL | Qubits: 27
+[2026-09-28 20:24:00] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 27 3 16 64 2 8
+0:	0.000086 0.000000
+1.33695
+[2026-09-28 20:24:02] ✓ OK (2s)
+
+==================================================
+[2026-09-28 20:24:02] Algoritmo: GENERAL | Qubits: 28
+[2026-09-28 20:24:02] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 28 1 16
+0:	0.000061 0.000000
+4.40029
+[2026-09-28 20:24:06] ✓ OK (4s)
+
+==================================================
+[2026-09-28 20:24:06] Algoritmo: GENERAL | Qubits: 28
+[2026-09-28 20:24:06] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 28 2 1 64 2 8
+0:	0.000061 0.000000
+2.16699
+[2026-09-28 20:24:08] ✓ OK (2s)
+
+==================================================
+[2026-09-28 20:24:08] Algoritmo: GENERAL | Qubits: 28
+[2026-09-28 20:24:08] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 28 3 16 64 2 8
+0:	0.000061 0.000000
+2.74376
+[2026-09-28 20:24:11] ✓ OK (3s)
+
+==================================================
+[2026-09-28 20:24:11] Algoritmo: GENERAL | Qubits: 29
+[2026-09-28 20:24:11] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 29 1 16
+0:	0.000043 0.000000
+9.23259
+[2026-09-28 20:24:20] ✓ OK (9s)
+
+==================================================
+[2026-09-28 20:24:20] Algoritmo: GENERAL | Qubits: 29
+[2026-09-28 20:24:20] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 29 2 1 64 2 8
+0:	0.000043 0.000000
+4.11011
+[2026-09-28 20:24:25] ✓ OK (5s)
+
+==================================================
+[2026-09-28 20:24:25] Algoritmo: GENERAL | Qubits: 29
+[2026-09-28 20:24:25] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 29 3 16 64 2 8
+0:	0.000043 0.000000
+5.69498
+[2026-09-28 20:24:30] ✓ OK (5s)
+
+==================================================
+[2026-09-28 20:24:30] Algoritmo: GENERAL | Qubits: 30
+[2026-09-28 20:24:30] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 30 1 16
+0:	0.000031 0.000000
+19.3944
+[2026-09-28 20:24:50] ✓ OK (20s)
+
+==================================================
+[2026-09-28 20:24:50] Algoritmo: GENERAL | Qubits: 30
+[2026-09-28 20:24:50] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/general.out 30 2 1 64 2 8
+0:	0.000031 0.000000
+7.8332
+[2026-09-28 20:24:58] ✓ OK (8s)
+
+==================================================
+[2026-09-28 20:24:58] Algoritmo: GENERAL | Qubits: 30
+[2026-09-28 20:24:58] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/general.out 30 3 16 64 2 8
+0:	0.000031 0.000000
+11.8889
+[2026-09-28 20:25:10] ✓ OK (12s)
+
+[2026-09-28 20:25:10] ### Bateria SHOR (17 a 27 qubits, ímpares) ###
+==================================================
+[2026-09-28 20:25:10] Algoritmo: SHOR | Qubits: 17
+[2026-09-28 20:25:10] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/shor.out 17 0
+Executing Shor: 17 qubits
+Time: 2.94045
+Found factors: 17 -- 7
+[2026-09-28 20:25:13] ✓ OK (3s)
+
+==================================================
+[2026-09-28 20:25:13] Algoritmo: SHOR | Qubits: 17
+[2026-09-28 20:25:13] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 17 1 16
+Executing Shor: 17 qubits
+Time: 0.488285
+Found factors: 17 -- 7
+[2026-09-28 20:25:13] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:25:13] Algoritmo: SHOR | Qubits: 17
+[2026-09-28 20:25:13] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/shor.out 17 2 1 64 2 8
+Executing Shor: 17 qubits
+Time: 0.355696
+Found factors: 7 -- 17
+[2026-09-28 20:25:13] ✓ OK (0s)
+
+==================================================
+[2026-09-28 20:25:13] Algoritmo: SHOR | Qubits: 17
+[2026-09-28 20:25:13] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 17 3 16 64 2 8
+Executing Shor: 17 qubits
+Time: 2.09982
+Failed to find factors
+[2026-09-28 20:25:16] ✓ OK (3s)
+
+==================================================
+[2026-09-28 20:25:16] Algoritmo: SHOR | Qubits: 19
+[2026-09-28 20:25:16] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/shor.out 19 0
+Executing Shor: 19 qubits
+Time: 18.1409
+Failed to find factors
+[2026-09-28 20:25:34] ✓ OK (18s)
+
+==================================================
+[2026-09-28 20:25:34] Algoritmo: SHOR | Qubits: 19
+[2026-09-28 20:25:34] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 19 1 16
+Executing Shor: 19 qubits
+Time: 1.30586
+Found factors: 23 -- 11
+[2026-09-28 20:25:35] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:25:35] Algoritmo: SHOR | Qubits: 19
+[2026-09-28 20:25:35] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/shor.out 19 2 1 64 2 8
+Executing Shor: 19 qubits
+Time: 0.621822
+Found factors: 11 -- 23
+[2026-09-28 20:25:36] ✓ OK (1s)
+
+==================================================
+[2026-09-28 20:25:36] Algoritmo: SHOR | Qubits: 19
+[2026-09-28 20:25:36] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 19 3 16 64 2 8
+Executing Shor: 19 qubits
+Time: 10.1113
+Found factors: 11 -- 23
+[2026-09-28 20:25:46] ✓ OK (10s)
+
+==================================================
+[2026-09-28 20:25:46] Algoritmo: SHOR | Qubits: 21
+[2026-09-28 20:25:46] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/shor.out 21 0
+Executing Shor: 21 qubits
+Time: 106.98
+Failed to find factors
+[2026-09-28 20:27:33] ✓ OK (107s)
+
+==================================================
+[2026-09-28 20:27:33] Algoritmo: SHOR | Qubits: 21
+[2026-09-28 20:27:33] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 21 1 16
+Executing Shor: 21 qubits
+Time: 6.78115
+Found factors: 5 -- 97
+[2026-09-28 20:27:40] ✓ OK (7s)
+
+==================================================
+[2026-09-28 20:27:40] Algoritmo: SHOR | Qubits: 21
+[2026-09-28 20:27:40] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/shor.out 21 2 1 64 2 8
+Executing Shor: 21 qubits
+Time: 2.14309
+Failed to find factors
+[2026-09-28 20:27:42] ✓ OK (2s)
+
+==================================================
+[2026-09-28 20:27:42] Algoritmo: SHOR | Qubits: 21
+[2026-09-28 20:27:42] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 21 3 16 64 2 8
+Executing Shor: 21 qubits
+Time: 45.5981
+Found factors: 5 -- 97
+[2026-09-28 20:28:28] ✓ OK (46s)
+
+==================================================
+[2026-09-28 20:28:28] Algoritmo: SHOR | Qubits: 23
+[2026-09-28 20:28:28] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/shor.out 23 0
+Executing Shor: 23 qubits
+Time: 745.777
+Found factors: 9 -- 113
+[2026-09-28 20:40:53] ✓ OK (745s)
+
+==================================================
+[2026-09-28 20:40:53] Algoritmo: SHOR | Qubits: 23
+[2026-09-28 20:40:53] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 23 1 16
+Executing Shor: 23 qubits
+Time: 35.0146
+Found factors: 3 -- 339
+[2026-09-28 20:41:29] ✓ OK (36s)
+
+==================================================
+[2026-09-28 20:41:29] Algoritmo: SHOR | Qubits: 23
+[2026-09-28 20:41:29] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/shor.out 23 2 1 64 2 8
+Executing Shor: 23 qubits
+Time: 9.9966
+Found factors: 3 -- 339
+[2026-09-28 20:41:39] ✓ OK (10s)
+
+==================================================
+[2026-09-28 20:41:39] Algoritmo: SHOR | Qubits: 23
+[2026-09-28 20:41:39] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 23 3 16 64 2 8
+Executing Shor: 23 qubits
+Time: 66.7759
+Found factors: 9 -- 113
+[2026-09-28 20:42:45] ✓ OK (66s)
+
+==================================================
+[2026-09-28 20:42:45] Algoritmo: SHOR | Qubits: 25
+[2026-09-28 20:42:45] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/shor.out 25 0
+Executing Shor: 25 qubits
+[2026-09-28 21:02:45] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-28 21:02:45] Algoritmo: SHOR | Qubits: 25
+[2026-09-28 21:02:45] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 25 1 16
+Executing Shor: 25 qubits
+Time: 188.897
+Failed to find factors
+[2026-09-28 21:05:54] ✓ OK (189s)
+
+==================================================
+[2026-09-28 21:05:54] Algoritmo: SHOR | Qubits: 25
+[2026-09-28 21:05:54] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/shor.out 25 2 1 64 2 8
+Executing Shor: 25 qubits
+Time: 50.601
+Found factors: 5 -- 409
+[2026-09-28 21:06:45] ✓ OK (51s)
+
+==================================================
+[2026-09-28 21:06:45] Algoritmo: SHOR | Qubits: 25
+[2026-09-28 21:06:45] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 25 3 16 64 2 8
+Executing Shor: 25 qubits
+Time: 92.4863
+Failed to find factors
+[2026-09-28 21:08:18] ✓ OK (93s)
+
+==================================================
+[2026-09-28 21:08:18] Algoritmo: SHOR | Qubits: 27
+[2026-09-28 21:08:18] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/shor.out 27 0
+Executing Shor: 27 qubits
+[2026-09-28 21:28:18] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-28 21:28:18] Algoritmo: SHOR | Qubits: 27
+[2026-09-28 21:28:18] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 27 1 16
+Executing Shor: 27 qubits
+Time: 1022.23
+Found factors: 409 -- 7
+[2026-09-28 21:45:20] ✓ OK (1022s)
+
+==================================================
+[2026-09-28 21:45:20] Algoritmo: SHOR | Qubits: 27
+[2026-09-28 21:45:20] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/shor.out 27 2 1 64 2 8
+Executing Shor: 27 qubits
+Time: 277.974
+Found factors: 409 -- 7
+[2026-09-28 21:49:58] ✓ OK (278s)
+
+==================================================
+[2026-09-28 21:49:58] Algoritmo: SHOR | Qubits: 27
+[2026-09-28 21:49:58] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/shor.out 27 3 16 64 2 8
+Executing Shor: 27 qubits
+Time: 273.34
+Found factors: 7 -- 409
+[2026-09-28 21:54:31] ✓ OK (273s)
+
+[2026-09-28 21:54:31] ### Bateria GROVER (15 a 27 qubits) ###
+==================================================
+[2026-09-28 21:54:31] Algoritmo: GROVER | Qubits: 15
+[2026-09-28 21:54:31] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 15 0
+0.1851
+Found value: 10
+[2026-09-28 21:54:32] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:32] Algoritmo: GROVER | Qubits: 15
+[2026-09-28 21:54:32] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 15 1 16
+0.097828
+Found value: 10
+[2026-09-28 21:54:32] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:32] Algoritmo: GROVER | Qubits: 15
+[2026-09-28 21:54:32] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 15 2 1 64 2 8
+0.155984
+Found value: 10
+[2026-09-28 21:54:32] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:32] Algoritmo: GROVER | Qubits: 15
+[2026-09-28 21:54:32] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 15 3 16 64 2 8
+0.185158
+Found value: 10
+[2026-09-28 21:54:32] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:32] Algoritmo: GROVER | Qubits: 16
+[2026-09-28 21:54:32] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 16 0
+0.553926
+Found value: 10
+[2026-09-28 21:54:33] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:33] Algoritmo: GROVER | Qubits: 16
+[2026-09-28 21:54:33] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 16 1 16
+0.151453
+Found value: 10
+[2026-09-28 21:54:33] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:33] Algoritmo: GROVER | Qubits: 16
+[2026-09-28 21:54:33] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 16 2 1 64 2 8
+0.162616
+Found value: 10
+[2026-09-28 21:54:33] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:33] Algoritmo: GROVER | Qubits: 16
+[2026-09-28 21:54:33] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 16 3 16 64 2 8
+0.550484
+Found value: 10
+[2026-09-28 21:54:34] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:34] Algoritmo: GROVER | Qubits: 17
+[2026-09-28 21:54:34] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 17 0
+1.65776
+Found value: 10
+[2026-09-28 21:54:35] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:35] Algoritmo: GROVER | Qubits: 17
+[2026-09-28 21:54:35] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 17 1 16
+0.235099
+Found value: 10
+[2026-09-28 21:54:35] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:35] Algoritmo: GROVER | Qubits: 17
+[2026-09-28 21:54:35] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 17 2 1 64 2 8
+0.215186
+Found value: 10
+[2026-09-28 21:54:36] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:36] Algoritmo: GROVER | Qubits: 17
+[2026-09-28 21:54:36] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 17 3 16 64 2 8
+1.64515
+Found value: 10
+[2026-09-28 21:54:37] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:37] Algoritmo: GROVER | Qubits: 18
+[2026-09-28 21:54:37] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 18 0
+4.94843
+Found value: 10
+[2026-09-28 21:54:42] ✓ OK (5s)
+
+==================================================
+[2026-09-28 21:54:42] Algoritmo: GROVER | Qubits: 18
+[2026-09-28 21:54:42] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 18 1 16
+0.381803
+Found value: 10
+[2026-09-28 21:54:43] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:43] Algoritmo: GROVER | Qubits: 18
+[2026-09-28 21:54:43] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 18 2 1 64 2 8
+0.303154
+Found value: 10
+[2026-09-28 21:54:43] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:43] Algoritmo: GROVER | Qubits: 18
+[2026-09-28 21:54:43] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 18 3 16 64 2 8
+0.230117
+Found value: 10
+[2026-09-28 21:54:43] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:54:43] Algoritmo: GROVER | Qubits: 19
+[2026-09-28 21:54:43] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 19 0
+14.7772
+Found value: 10
+[2026-09-28 21:54:58] ✓ OK (15s)
+
+==================================================
+[2026-09-28 21:54:58] Algoritmo: GROVER | Qubits: 19
+[2026-09-28 21:54:58] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 19 1 16
+1.08162
+Found value: 10
+[2026-09-28 21:54:59] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:54:59] Algoritmo: GROVER | Qubits: 19
+[2026-09-28 21:54:59] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 19 2 1 64 2 8
+0.403531
+Found value: 10
+[2026-09-28 21:55:00] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:55:00] Algoritmo: GROVER | Qubits: 19
+[2026-09-28 21:55:00] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 19 3 16 64 2 8
+0.311688
+Found value: 10
+[2026-09-28 21:55:00] ✓ OK (0s)
+
+==================================================
+[2026-09-28 21:55:00] Algoritmo: GROVER | Qubits: 20
+[2026-09-28 21:55:00] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 20 0
+44.0025
+Found value: 10
+[2026-09-28 21:55:44] ✓ OK (44s)
+
+==================================================
+[2026-09-28 21:55:44] Algoritmo: GROVER | Qubits: 20
+[2026-09-28 21:55:44] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 20 1 16
+3.09601
+Found value: 10
+[2026-09-28 21:55:47] ✓ OK (3s)
+
+==================================================
+[2026-09-28 21:55:47] Algoritmo: GROVER | Qubits: 20
+[2026-09-28 21:55:47] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 20 2 1 64 2 8
+0.705055
+Found value: 10
+[2026-09-28 21:55:48] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:55:48] Algoritmo: GROVER | Qubits: 20
+[2026-09-28 21:55:48] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 20 3 16 64 2 8
+43.5515
+Found value: 10
+[2026-09-28 21:56:32] ✓ OK (44s)
+
+==================================================
+[2026-09-28 21:56:32] Algoritmo: GROVER | Qubits: 21
+[2026-09-28 21:56:32] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 21 0
+131.05
+Found value: 10
+[2026-09-28 21:58:43] ✓ OK (131s)
+
+==================================================
+[2026-09-28 21:58:43] Algoritmo: GROVER | Qubits: 21
+[2026-09-28 21:58:43] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 21 1 16
+9.10787
+Found value: 10
+[2026-09-28 21:58:52] ✓ OK (9s)
+
+==================================================
+[2026-09-28 21:58:52] Algoritmo: GROVER | Qubits: 21
+[2026-09-28 21:58:52] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 21 2 1 64 2 8
+1.40843
+Found value: 10
+[2026-09-28 21:58:53] ✓ OK (1s)
+
+==================================================
+[2026-09-28 21:58:53] Algoritmo: GROVER | Qubits: 21
+[2026-09-28 21:58:53] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 21 3 16 64 2 8
+73.8365
+Found value: 10
+[2026-09-28 22:00:07] ✓ OK (74s)
+
+==================================================
+[2026-09-28 22:00:07] Algoritmo: GROVER | Qubits: 22
+[2026-09-28 22:00:07] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 22 0
+396.792
+Found value: 10
+[2026-09-28 22:06:44] ✓ OK (397s)
+
+==================================================
+[2026-09-28 22:06:44] Algoritmo: GROVER | Qubits: 22
+[2026-09-28 22:06:44] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 22 1 16
+26.4194
+Found value: 10
+[2026-09-28 22:07:10] ✓ OK (26s)
+
+==================================================
+[2026-09-28 22:07:10] Algoritmo: GROVER | Qubits: 22
+[2026-09-28 22:07:10] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 22 2 1 64 2 8
+3.41407
+Found value: 10
+[2026-09-28 22:07:14] ✓ OK (4s)
+
+==================================================
+[2026-09-28 22:07:14] Algoritmo: GROVER | Qubits: 22
+[2026-09-28 22:07:14] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 22 3 16 64 2 8
+108.107
+Found value: 10
+[2026-09-28 22:09:02] ✓ OK (108s)
+
+==================================================
+[2026-09-28 22:09:02] Algoritmo: GROVER | Qubits: 23
+[2026-09-28 22:09:02] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 23 0
+[2026-09-28 22:29:02] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-28 22:29:02] Algoritmo: GROVER | Qubits: 23
+[2026-09-28 22:29:02] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 23 1 16
+77.4822
+Found value: 10
+[2026-09-28 22:30:20] ✓ OK (78s)
+
+==================================================
+[2026-09-28 22:30:20] Algoritmo: GROVER | Qubits: 23
+[2026-09-28 22:30:20] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 23 2 1 64 2 8
+9.4279
+Found value: 10
+[2026-09-28 22:30:29] ✓ OK (9s)
+
+==================================================
+[2026-09-28 22:30:29] Algoritmo: GROVER | Qubits: 23
+[2026-09-28 22:30:29] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 23 3 16 64 2 8
+165.785
+Found value: 10
+[2026-09-28 22:33:15] ✓ OK (166s)
+
+==================================================
+[2026-09-28 22:33:15] Algoritmo: GROVER | Qubits: 24
+[2026-09-28 22:33:15] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 24 0
+[2026-09-28 22:53:15] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-28 22:53:15] Algoritmo: GROVER | Qubits: 24
+[2026-09-28 22:53:15] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 24 1 16
+244.486
+Found value: 10
+[2026-09-28 22:57:19] ✓ OK (244s)
+
+==================================================
+[2026-09-28 22:57:19] Algoritmo: GROVER | Qubits: 24
+[2026-09-28 22:57:20] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 24 2 1 64 2 8
+27.4978
+Found value: 10
+[2026-09-28 22:57:47] ✓ OK (27s)
+
+==================================================
+[2026-09-28 22:57:47] Algoritmo: GROVER | Qubits: 24
+[2026-09-28 22:57:47] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 24 3 16 64 2 8
+220.947
+Found value: 10
+[2026-09-28 23:01:28] ✓ OK (221s)
+
+==================================================
+[2026-09-28 23:01:28] Algoritmo: GROVER | Qubits: 25
+[2026-09-28 23:01:28] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 25 0
+[2026-09-28 23:21:28] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-28 23:21:28] Algoritmo: GROVER | Qubits: 25
+[2026-09-28 23:21:28] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 25 1 16
+737.908
+Found value: 10
+[2026-09-28 23:33:46] ✓ OK (738s)
+
+==================================================
+[2026-09-28 23:33:46] Algoritmo: GROVER | Qubits: 25
+[2026-09-28 23:33:46] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 25 2 1 64 2 8
+73.021
+Found value: 10
+[2026-09-28 23:34:59] ✓ OK (73s)
+
+==================================================
+[2026-09-28 23:34:59] Algoritmo: GROVER | Qubits: 25
+[2026-09-28 23:34:59] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 25 3 16 64 2 8
+415.162
+Found value: 10
+[2026-09-28 23:41:54] ✓ OK (415s)
+
+==================================================
+[2026-09-28 23:41:54] Algoritmo: GROVER | Qubits: 26
+[2026-09-28 23:41:54] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 26 0
+[2026-09-29 00:01:54] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-29 00:01:54] Algoritmo: GROVER | Qubits: 26
+[2026-09-29 00:01:54] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 26 1 16
+[2026-09-29 00:21:54] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-29 00:21:54] Algoritmo: GROVER | Qubits: 26
+[2026-09-29 00:21:54] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 26 2 1 64 2 8
+218.742
+Found value: 10
+[2026-09-29 00:25:33] ✓ OK (219s)
+
+==================================================
+[2026-09-29 00:25:33] Algoritmo: GROVER | Qubits: 26
+[2026-09-29 00:25:33] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 26 3 16 64 2 8
+[2026-09-29 00:45:33] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-29 00:45:33] Algoritmo: GROVER | Qubits: 27
+[2026-09-29 00:45:33] Execução: CPU_SERIAL
+Comando: timeout -k 10s 20m outputs/grover.out 27 0
+[2026-09-29 01:05:33] ⚠ PULADO: excedeu 20m (rodou 1200s antes de ser cancelado)
+
+==================================================
+[2026-09-29 01:05:33] Algoritmo: GROVER | Qubits: 27
+[2026-09-29 01:05:33] Execução: CPU_PARALLEL (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 27 1 16
+[2026-09-29 01:25:34] ⚠ PULADO: excedeu 20m (rodou 1201s antes de ser cancelado)
+
+==================================================
+[2026-09-29 01:25:34] Algoritmo: GROVER | Qubits: 27
+[2026-09-29 01:25:34] Execução: GPU (gpus=1)
+Comando: timeout -k 10s 20m outputs/grover.out 27 2 1 64 2 8
+654.736
+Found value: 10
+[2026-09-29 01:36:28] ✓ OK (654s)
+
+==================================================
+[2026-09-29 01:36:28] Algoritmo: GROVER | Qubits: 27
+[2026-09-29 01:36:28] Execução: HYBRID (threads=16)
+Comando: timeout -k 10s 20m outputs/grover.out 27 3 16 64 2 8
+[2026-09-29 01:56:29] ⚠ PULADO: excedeu 20m (rodou 1201s antes de ser cancelado)
+
+==================================================
+[2026-09-29 01:56:29] Benchmark concluído.
+[2026-09-29 01:56:29] Total de testes: 124 | Pulados (timeout): 11 | Falharam: 0
+[2026-09-29 01:56:29] Tempo total: 5h 32m 41s
