@@ -396,10 +396,63 @@ abortam com `printf` + `exit(1)` explicando a violação, mesmo padrão já
 usado em `GpuExecution01` pra outros erros fatais. Também não verificado
 com GPU real ainda (mesma limitação acima).
 
+**Dados de dois benchmarks completos (`benchmark.sh`/`benchmark2.sh`,
+logs na raiz do repositório, 26-28/09/2026).** Baterias de General
+(15-30 qubits), Shor (17-27, ímpares) e Grover (15-27), em CPU serial,
+CPU paralela, GPU e híbrido, com 16 threads, 1 GPU, `block_size=64`,
+`repeat_count=2`, `gpu_region_bits=8`. Nos testes longos os dois logs
+concordam em cerca de 1% (exceto o híbrido a 19-20 qubits no Grover, ver
+abaixo). Os logs não
+registram o commit nem a máquina usados, então **não dá pra afirmar que já
+incluem a tentativa 4**. Tempos em segundos:
+
+| Caso | CPU serial | CPU paralela | GPU | Híbrido |
+|---|---|---|---|---|
+| Grover 17 | 1,66 | 0,24 | 0,22 | 1,65 |
+| Grover 20 | 44,0 | 3,10 | 0,70 | 0,59 (rodada 1) / 43,6 (rodada 2) |
+| Grover 21 | 131 | 9,1 | 1,41 | 73,8 |
+| Grover 22 | 397 | 26,4 | 3,41 | 108 |
+| Grover 25 | timeout | 738 | 73,0 | 415 |
+| Shor 21 | 107 | 6,8 | 2,14 | 45,6 |
+| Shor 23 | 746 | 35,0 | 10,0 | 66,8 |
+| Shor 27 | timeout | 1022 | 278 | 273 |
+| General 30 | não rodado | 19,4 | 7,83 | 11,9 |
+
+O que isso mostra:
+
+- **Hipótese A confirmada em escala.** Com `qubits <= 20` só existe uma
+  região, e quem a pega faz tudo. Grover a 20 qubits: o híbrido deu 0,59s
+  numa rodada (GPU pegou, igual ao tempo da GPU) e 43,6s na outra (CPU
+  pegou, igual ao serial) — até 60x de diferença entre execuções
+  idênticas. A 15, 16 e 17 qubits o híbrido também ficou igual ao serial
+  (0,185 / 0,551 / 1,646s).
+- **Acima do limite, o híbrido parece ficar perto do serial dividido pelo
+  número de regiões** (leitura dos números, não testada): Grover a 21
+  qubits, 131s / 2 regiões = 65s (medido 74s); a 22 qubits, 397s / 4
+  regiões = 99s (medido 108s). Isso sugere que cada região é processada
+  por uma thread só e que o paralelismo fica limitado pelo número de
+  regiões (2^(qubits-20)), não pelas 16 threads.
+- **O híbrido não bate a GPU sozinha em nenhum caso relevante.** General a
+  28-30 qubits: 1,27x a 1,52x mais lento que a GPU (a 30 qubits, ideal
+  seria ~5,6s a partir de 19,4s da CPU paralela e 7,8s da GPU; medido
+  11,9s). Shor a 17-23 qubits: 5,9x a 21x mais lento. Grover a 25 qubits:
+  5,7x mais lento. Únicas exceções: Shor a 27 (273s contra 278s, empate) e
+  General a 25 qubits (0,370s contra 0,392s, 6% melhor).
+- **Cold-start do contexto CUDA visível:** a GPU no General fica em
+  0,13-0,14s de 16 a 20 qubits, independente do tamanho — o custo fixo de
+  ~200ms da tentativa 3, na RTX A4500.
+
+Direções que esses dados sugerem para uma tentativa 5 (nada disso foi
+implementado): usar só a GPU quando `qubits <= qubits_limit` (acaba com a
+loteria), e/ou fazer a CPU processar cada região com todas as threads em
+vez de uma por região.
+
 **Precisa, antes de considerar resolvido:**
-1. `make GPU=real` compilar sem erro (a mudança usa a mesma API CUDA já
-   presente no arquivo, mas nunca foi testada por um compilador de
-   verdade).
+1. [FEITO em 2026-10-19] `make GPU=real` compilar sem erro — confirmado
+   no servidor qflex (RTX A4500, `nvcc` 12.0, `sm_86`): build limpo, sem
+   warnings, nos 3 binários. Só compilou; nada foi executado em GPU lá
+   porque o `nvidia-smi` do servidor estava com "Driver/library version
+   mismatch" (precisa de reboot pelo administrador).
 2. `general.out <q> 3 <threads>` (`t_HYBRID`) continuar reproduzindo a
    amplitude exata esperada em vários tamanhos de qubits (18-30) —
    corretude antes de performance, mesmo padrão já usado nas tentativas
