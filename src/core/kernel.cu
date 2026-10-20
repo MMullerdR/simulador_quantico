@@ -364,6 +364,28 @@ extern "C" bool FreeGpuState(int gpu_count){
 	return true;
 }
 
+// Item 17, tentativa 7: menor memória livre entre as primeiras gpu_count
+// GPUs, em bytes (-1 se não conseguiu consultar). Usada por
+// DGM::HybridExecution pra decidir se o vetor de estado inteiro cabe na
+// GPU -- nesse caso o modo híbrido por regiões só perde tempo copiando e
+// o caminho residente do t_GPU é mais rápido (docs/07, item 17).
+extern "C" long GpuMinFreeBytes(int gpu_count){
+	long min_free = -1;
+	for (int device_index = 0; device_index < gpu_count; device_index++){
+		if (cudaSetDevice(device_index) != cudaSuccess){
+			cudaGetLastError();
+			return -1;
+		}
+		size_t free_bytes = 0, total_bytes = 0;
+		if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess){
+			cudaGetLastError();
+			return -1;
+		}
+		if (min_free < 0 || (long)free_bytes < min_free) min_free = (long)free_bytes;
+	}
+	return min_free;
+}
+
 // Item 17, tentativa 6: trava (page-lock) o vetor de estado do host durante
 // o modo híbrido. Cópias de/para memória "pageable" passam por um buffer
 // de staging do driver e disputam banda de memória com as threads de CPU;

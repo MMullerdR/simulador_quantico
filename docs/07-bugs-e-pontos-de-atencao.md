@@ -548,17 +548,51 @@ Qualquer ganho real do híbrido sobre a GPU exigiria manter parte do
 estado residente na GPU entre passadas -- redesenho maior, não feito.
 Opção mais simples e sem redesenho: quando o vetor de estado inteiro
 cabe na memória da GPU, delegar tudo ao caminho do `t_GPU` (o híbrido de
-regiões só seria necessário acima disso). Fica como decisão de projeto,
-já que muda o que "híbrido" significa.
+regiões só seria necessário acima disso) -- implementada na tentativa 7.
 
-**O que continua aberto (acima de 20 qubits):** `t_HYBRID` segue
-1,3x-1,5x mais lento que `t_GPU` no General a 28-30 qubits e muito mais
-lento no Grover/Shor médios (Grover 21: 73s contra 1,4s). A causa
-provável é a vista acima: cada região de CPU é processada por uma thread
-só, e a CPU pega regiões na mesma taxa que a GPU mesmo sendo muito mais
-lenta por região. Direção para a tentativa 6: dar à CPU uma fração menor
-das regiões (ou só regiões pequenas), ou fazer a CPU processar cada
-região com todas as threads.
+**Tentativa 7 — [IMPLEMENTADA E VERIFICADA EM GPU (qflex, 2026-10-20)]:
+delegar à GPU quando o estado cabe nela, e `QB_LIMIT` 30 -> 32.**
+Decisão tomada em cima do limite medido na tentativa 6: o modo de regiões
+copia o estado a cada passada e nunca bate o `t_GPU` residente. Agora
+`DGM::HybridExecution` consulta a memória livre das GPUs
+(`GpuMinFreeBytes`, `cudaMemGetInfo`) e, se o vetor de estado inteiro
+(+512 MB de folga) cabe, roda tudo pelo caminho do `t_GPU`, como já fazia
+a 20 qubits ou menos (tentativa 5). O modo de regiões com CPU+GPU só roda
+quando o estado **não** cabe na GPU. `HYBRID_FORCE_REGIONS=1` desliga o
+desvio "cabe na GPU" pra medir o modo de regiões.
+
+Medido no qflex (General, 16 threads, GPU de 20 GB), segundos:
+
+| Qubits | Estado | `t_PAR_CPU` | `t_GPU` | `t_HYBRID` |
+|---|---|---|---|---|
+| 28 | 2 GB | 4,4 | 2,08 | 2,12 (delegado) |
+| 30 | 8 GB | 19,4 | 7,78 | 7,78 (delegado) |
+| 31 | 16 GB | 40,7 | 15,8 | 16,0 (delegado) |
+| 32 | 32 GB | 85,4 | sem memória | **~42 (modo de regiões)** |
+
+Grover 21 e 22: híbrido 1,29s e 3,32s (= `t_GPU`; eram 4,5s e 11,3s na
+tentativa 6, 74s e 108s antes). Shor 21: 2,03s. A 32 qubits a GPU
+processa ~18,7 mil regiões e a CPU ~26,3 mil, e o híbrido fica ~2x mais
+rápido que a CPU paralela -- o único tamanho em que ele é a melhor opção
+com GPU. Amplitudes conferidas em todos os tamanhos.
+
+**`QB_LIMIT` 32:** a 32 qubits o vetor de estado tem 32 GB, então foi
+preciso corrigir overflows de `int` latentes (nada quebrava até 31 qubits):
+`1 << bit` virou `1L << bit` nos arquivos do núcleo (`dgm_par_exec.cpp`,
+`dgm_cpu_exec.cpp`, `dgm_core.cpp`, `common.cpp`, `dgm_parser.cpp`) e
+`PCpuExecution1_0` passou a receber `region_id`/`region_mask`/`pos_count`/
+`pts_start`/`pts_end` como `long` (a 32 qubits `t_PAR_CPU` dava segfault).
+`DGM::allocateMemory` agora aborta com mensagem clara se o `calloc` falhar
+(antes: segfault no primeiro acesso a `state[]`). Em 33 qubits o CLI
+recusa. Não testado: Grover/Shor a 31-32 qubits (inviáveis em tempo), e
+multi-GPU (`gpu_count > 1`, item 13).
+
+**O que continua aberto:** o híbrido só ganha de verdade quando o estado
+não cabe na GPU; abaixo disso ele é o `t_GPU`. Um híbrido que bata a GPU
+com o estado cabendo exigiria manter parte do estado residente na GPU
+entre passadas (redesenho maior, não feito) e, pelos números acima, o
+ganho máximo seria ~1,4x em circuitos limitados por memória e ~0 nos
+pesados (a CPU é ~100x mais lenta por região).
 
 ---
 

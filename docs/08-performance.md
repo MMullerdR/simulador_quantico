@@ -84,6 +84,13 @@ estado, dentro do orçamento de VRAM (16GB) e RAM do WSL2 (15GB) com
 folga. Não testado além de 30 (o código recusa qualquer valor maior, ver
 `QB_LIMIT`).
 
+**Atualização (2026-10-20, servidor qflex, RTX A4500 de 20 GB):** `QB_LIMIT`
+subiu para 32. A 31 qubits (16 GB) a GPU leva ~15,8s contra ~40,7s da CPU
+paralela; a 32 qubits (32 GB, não cabe na GPU) o `t_GPU` falha com "out of
+memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
+delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+
 ## Como reproduzir
 
 ```bash

@@ -41,8 +41,8 @@ long PT::matrixType(){
 // partes: a que cai dentro da região coalescida da GPU e o restante —
 // ver docs/04-gpu-cuda.md.
 void PT::setArgsGPU(long *arg, int region_start, int region_size, int coalesced_bits){
-	long coalesced_mask = (1 << coalesced_bits) - 1;
-	long region_mask = ((1<<(region_size-coalesced_bits)) - 1) << region_start;
+	long coalesced_mask = (1L << coalesced_bits) - 1;
+	long region_mask = ((1L <<(region_size-coalesced_bits)) - 1) << region_start;
 	long rest_mask = ~(coalesced_mask | region_mask);
 
 

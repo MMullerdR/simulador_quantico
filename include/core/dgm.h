@@ -41,6 +41,9 @@ extern "C" bool FreeGpuState(int gpu_count);
 // tentativa 6). Devolvem false se não conseguiram -- nesse caso o híbrido
 // continua funcionando, só sem a aceleração.
 extern "C" bool PinHostState(void* ptr, size_t bytes);
+// GpuMinFreeBytes: menor memória livre (em bytes) entre as gpu_count GPUs,
+// ou -1 se não for possível consultar (item 17, tentativa 7).
+extern "C" long GpuMinFreeBytes(int gpu_count);
 extern "C" bool UnpinHostState(void* ptr);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
@@ -50,7 +53,7 @@ extern "C" bool GetState(float complex* state, int qubits, int region_size, long
 void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations);
 // Aplica os operadores de uma região específica — chamada por
 // PCpuExecution1 e por DGM::HybridExecution (lado CPU do modo híbrido).
-void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start, int pts_end, int pos_count, int region_id, int region_mask);
+void PCpuExecution1_0(float complex *state, PT **pts, int qubits, long pts_start, long pts_end, long pos_count, long region_id, long region_mask);
 
 // Backends de execução (DGM::exec_type).
 enum {

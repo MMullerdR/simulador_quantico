@@ -53,6 +53,13 @@ void DGM::erase(){
 
 void DGM::allocateMemory(){
 	state = (float complex*) calloc(1L << qubits, sizeof(float complex));
+	if (state == NULL){
+		// QB_LIMIT permite vetores de ate 32 GB (32 qubits); numa maquina com
+		// menos memoria o calloc falha e, sem esta checagem, o primeiro acesso
+		// a state[] seria um segfault sem nenhuma explicacao.
+		cout << "Erro: sem memoria para o vetor de estado de " << qubits << " qubits (" << ((sizeof(float complex) << qubits) >> 20) << " MB)." << endl;
+		exit(1);
+	}
 }
 
 void DGM::freeMemory(){
@@ -118,7 +125,7 @@ int DGM::measure(int qubit_pos){
 	for (long state_index = 0; state_index < size/2; state_index++){
 		long pos = (state_index << 1) - (state_index&low_bits_mask);
 		state[pos] = state[pos | (measured_bit << qubit_bit_shift)]/norm;
-		state[pos | (1<<qubit_bit_shift)] = 0.0;
+		state[pos | (1L <<qubit_bit_shift)] = 0.0;
 	}
 
 	return measured_bit;
@@ -150,7 +157,7 @@ void DGM::colapse(int qubit_pos, int value){
 map <long, float> DGM::measure(vector<int> qubit_positions){
 	long qubit_positions_mask = 0;
 
-	for (int i = 0; i < qubit_positions.size(); i++) qubit_positions_mask = qubit_positions_mask | (1<<(qubits - 1 - qubit_positions[i]));
+	for (int i = 0; i < qubit_positions.size(); i++) qubit_positions_mask = qubit_positions_mask | (1L <<(qubits - 1 - qubit_positions[i]));
 
 	map <long, float> probabilities;
 
@@ -314,5 +321,5 @@ void DGM::setGpuStructure(long gpu_coalesced_bits, long gpu_region_bits, int rep
 	this->gpu_coalesced_bits = gpu_coalesced_bits;
 	this->gpu_region_bits = gpu_region_bits;
 	this->repeat_count = repeat_count;
-	this->block_size = 1 << gpu_region_bits / 2 / repeat_count;
+	this->block_size = 1L << gpu_region_bits / 2 / repeat_count;
 }

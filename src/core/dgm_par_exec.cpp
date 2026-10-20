@@ -37,7 +37,7 @@ struct RegionPlan{
 // final (caso do sub-lote de CPU, recortado de dentro de global_region_mask).
 static RegionPlan compute_region(PT **pts, long op_start, long op_search_end, long coalesced_bits, long region_bits, long outer_bound_bits, long parent_mask){
 	long region_qubit_count = coalesced_bits;
-	long region_mask = (coalesced_bits)? (1 << coalesced_bits) - 1 : 0;
+	long region_mask = (coalesced_bits)? (1L << coalesced_bits) - 1 : 0;
 
 	long op_index = op_start;
 	while (region_qubit_count < region_bits && (op_search_end < 0 || op_index < op_search_end) && pts[op_index] != NULL){
@@ -46,7 +46,7 @@ static RegionPlan compute_region(PT **pts, long op_start, long op_search_end, lo
 		}
 
 		if (region_qubit_count <= region_bits)
-			region_mask = region_mask | (1 << pts[op_index]->target_bit);
+			region_mask = region_mask | (1L << pts[op_index]->target_bit);
 
 		op_index++;
 	}
@@ -70,8 +70,8 @@ static RegionPlan compute_region(PT **pts, long op_start, long op_search_end, lo
 	RegionPlan plan;
 	plan.region_mask = region_mask;
 	plan.region_bits = region_bits;
-	plan.region_count = (1 << (outer_bound_bits - region_bits)) + 1;
-	plan.pos_count = 1 << (region_bits - 1);
+	plan.region_count = (1L << (outer_bound_bits - region_bits)) + 1;
+	plan.pos_count = 1L << (region_bits - 1);
 	plan.op_end = op_index;
 	return plan;
 }
@@ -135,7 +135,7 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 // (region_id/region_mask) — mesma lógica de pares (pos0, pos1) e tipos de
 // matriz de CpuExecution1_1/2/3, só que iterando apenas sobre a fatia de
 // memória dessa região (ver docs/03-motor-de-execucao-cpu.md, seção 5).
-void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start, int pts_end, int pos_count, int region_id, int region_mask){
+void PCpuExecution1_0(float complex *state, PT **pts, int qubits, long pts_start, long pts_end, long pos_count, long region_id, long region_mask){
 	PT *term;
 	long pos0, pos1;
 	float complex tmp;
@@ -143,7 +143,7 @@ void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start,
 
 	for (int op_index = pts_start; op_index < pts_end; op_index++){
 		term = pts[op_index];
-		long target_bit_mask = (1 << term->target_bit);						//mascara com a posição do qubit do operador
+		long target_bit_mask = (1L << term->target_bit);						//mascara com a posição do qubit do operador
 		long matrix_type = term->matrixType();
 		long pos_mask = region_mask & ~target_bit_mask;			//mascara da posição --- retira o 'target_bit_mask' da region_mask, para o 'inc pular sobre ' esse bit também
 		long inc = ~pos_mask + 1;						  	//usado para calcular a proxima posição de uma região
@@ -313,10 +313,27 @@ void DGM::HybridExecution(PT **pts){
 	// benchmark2.log). Sem mais de uma região não há o que dividir entre CPU
 	// e GPU, então o resultado deste caso é decidido aqui de forma
 	// determinística: roda inteiro na GPU, pelo mesmo caminho do t_GPU.
-	if (qubits <= qubits_limit){
+	//
+	// Tentativa 7: o mesmo desvio vale quando o vetor de estado inteiro cabe
+	// na memória livre da GPU. Medido no qflex (RTX A4500, 20 GB): o modo de
+	// regiões copia o estado a cada passada do circuito e fica de 1x a 3,4x
+	// mais lento que o caminho residente do t_GPU, que copia uma vez só.
+	// O modo de regiões com CPU+GPU só é necessário quando o estado NÃO cabe
+	// na GPU (32 qubits = 32 GB: t_GPU dá "out of memory", o híbrido roda e
+	// é ~2x mais rápido que a CPU paralela). HYBRID_FORCE_REGIONS=1 desliga
+	// este desvio de "cabe na GPU" (pra medir/comparar o modo de regiões).
+	bool fits_in_gpu = false;
+	static bool force_regions = (getenv("HYBRID_FORCE_REGIONS") != NULL && getenv("HYBRID_FORCE_REGIONS")[0] == '1');
+	if (qubits > qubits_limit && !force_regions){
+		long free_bytes = GpuMinFreeBytes(gpu_count);
+		long need_bytes = (mem_size * (long)sizeof(float complex)) / gpu_count + (512L << 20);	// + folga pro contexto/kernels
+		fits_in_gpu = (free_bytes >= 0 && free_bytes >= need_bytes);
+		if (hybrid_debug) fprintf(stderr, "[HYBRID] memória livre da GPU=%ld bytes, estado precisa de %ld: %s\n", free_bytes, need_bytes, fits_in_gpu ? "cabe" : "não cabe");
+	}
+	if (qubits <= qubits_limit || fits_in_gpu){
 		GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, 1);
 		if (hybrid_debug){
-			fprintf(stderr, "[HYBRID] qubits=%ld <= qubits_limit=%ld: região única, delegado inteiro à GPU\n", qubits, qubits_limit);
+			fprintf(stderr, "[HYBRID] qubits=%ld: %s, delegado inteiro à GPU\n", qubits, (qubits <= qubits_limit) ? "região única (<= qubits_limit)" : "estado cabe na GPU");
 		}
 		return;
 	}
@@ -413,7 +430,7 @@ void DGM::HybridExecution(PT **pts){
 						long cpu_pos_count = cpu_plan.pos_count;
 
 						long cpu_next_proj_id = 0;
-						long proj_id_increment = ~(cpu_region_mask ^ global_region_mask) & ((1 << qubits) - 1);
+						long proj_id_increment = ~(cpu_region_mask ^ global_region_mask) & ((1L << qubits) - 1);
 
 						long proj_id;		//indentificador local da região
 						proj_id = cpu_next_proj_id | cpu_proj_id;
@@ -502,7 +519,7 @@ void DGM::HybridExecution(PT **pts){
 
 					int mapped_qubit_index = 0;
 					for (qubit_index = 0; qubit_index < qubits; qubit_index++){
-						if ((1 << qubit_index) & global_region_mask){
+						if ((1L << qubit_index) & global_region_mask){
 							qubit_map[qubit_index] = mapped_qubit_index++;
 						}
 					}
@@ -527,15 +544,15 @@ void DGM::HybridExecution(PT **pts){
 
 							projected_term->control_count = 0;
 							for (int qubit_index = global_coalesced_bits; qubit_index < qubits; qubit_index++){
-								if (projected_term->control_mask & (1<<qubit_index)){
+								if (projected_term->control_mask & (1L <<qubit_index)){
 									projected_term->control_count++;
 
-									projected_term->control_mask &= ~(1<<qubit_index);			//retira da mascara o controle do qubit atual (qubit_index)
-									projected_term->control_mask |= (1 << qubit_map[qubit_index]);	//e coloca o qubit que ele mapeia (qubit_map[qubit_index])
+									projected_term->control_mask &= ~(1L <<qubit_index);			//retira da mascara o controle do qubit atual (qubit_index)
+									projected_term->control_mask |= (1L << qubit_map[qubit_index]);	//e coloca o qubit que ele mapeia (qubit_map[qubit_index])
 
-									if (projected_term->control_value & (1<<qubit_index)){ 		//se o valor do controle for zero faz a mesma coisa para control_value;
-										projected_term->control_mask &= ~(1<<qubit_index);
-										projected_term->control_mask |= (1 << qubit_map[qubit_index]);
+									if (projected_term->control_value & (1L <<qubit_index)){ 		//se o valor do controle for zero faz a mesma coisa para control_value;
+										projected_term->control_mask &= ~(1L <<qubit_index);
+										projected_term->control_mask |= (1L << qubit_map[qubit_index]);
 									}
 								}
 							}

@@ -133,8 +133,8 @@ void DGM::genPTs(map<long, Group> &groups, vector <PT*> &step_pts){
 
 		for (long ctrl_index = 0; ctrl_index < group_control_count; ctrl_index++){ //gera a mascara e o valor do controle (em binario)
 			group.pos_ctrl[ctrl_index] =  qubits - group.pos_ctrl[ctrl_index] - 1;
-			group_control_mask += (1 << group.pos_ctrl[ctrl_index]);
-			if (group.ctrl[ctrl_index]) group_control_value += (1 << group.pos_ctrl[ctrl_index]);
+			group_control_mask += (1L << group.pos_ctrl[ctrl_index]);
+			if (group.ctrl[ctrl_index]) group_control_value += (1L << group.pos_ctrl[ctrl_index]);
 		}
 
 		for (int op_index = 0; op_index < op_count; op_index++){

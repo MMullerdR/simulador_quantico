@@ -32,6 +32,10 @@ extern "C" bool FreeGpuState(int gpu_count){
 	return false;
 }
 
+extern "C" long GpuMinFreeBytes(int gpu_count){
+	return -1;
+}
+
 extern "C" bool PinHostState(void* ptr, size_t bytes){
 	return false;
 }

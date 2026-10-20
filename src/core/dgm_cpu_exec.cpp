@@ -39,7 +39,7 @@ void DGM::CpuExecution1(int iterations){
 void DGM::CpuExecution1_1(PT *term, long mem_size){ //Denso
 	long pos0, pos1, target_bit_mask;
 
-	target_bit_mask = 1 << term->target_bit;
+	target_bit_mask = 1L << term->target_bit;
 
 	float complex tmp;
 
@@ -95,7 +95,7 @@ void DGM::CpuExecution1_2(PT *term, long mem_size){ //Diagonal Principal
 void DGM::CpuExecution1_3(PT *term, long mem_size){ //Diagonal Secundária
 	long pos0, pos1, target_bit_mask;
 
-	target_bit_mask = 1 << term->target_bit;
+	target_bit_mask = 1L << term->target_bit;
 
 	float complex tmp;
 

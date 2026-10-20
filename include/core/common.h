@@ -28,7 +28,7 @@ void seed_rng(unsigned long seed);
 #define CHUNCK_SIZE 262144
 
 #define PT_TAM 1
-#define QB_LIMIT 30
+#define QB_LIMIT 32
 
 #define DIM_BLOCK 2048
 
