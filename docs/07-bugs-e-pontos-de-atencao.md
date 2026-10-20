@@ -442,10 +442,32 @@ O que isso mostra:
   0,13-0,14s de 16 a 20 qubits, independente do tamanho — o custo fixo de
   ~200ms da tentativa 3, na RTX A4500.
 
-Direções que esses dados sugerem para uma tentativa 5 (nada disso foi
-implementado): usar só a GPU quando `qubits <= qubits_limit` (acaba com a
-loteria), e/ou fazer a CPU processar cada região com todas as threads em
-vez de uma por região.
+**Tentativa 5 — [PARCIALMENTE IMPLEMENTADA, NÃO VERIFICADA EM GPU]
+(2026-10-20).** Direções que os dados acima sugerem: (a) usar só a GPU
+quando `qubits <= qubits_limit` (acaba com a loteria), (b) fazer a CPU
+processar cada região com todas as threads em vez de uma por região.
+
+**(a) implementada:** `DGM::HybridExecution` agora retorna cedo quando
+`qubits <= qubits_limit` (20), delegando o circuito inteiro a
+`GpuExecutionWrapper` -- o mesmo caminho do `t_GPU` --, em vez de abrir uma
+corrida por uma região única. Resultado esperado nesses tamanhos: tempo
+igual ao da GPU sozinha, sempre (hoje varia entre o tempo da GPU e o
+serial, até 60x). Perde um pouco em circuitos triviais (General a 20
+qubits: GPU ~0,14s contra CPU paralela ~0,015s), ganha muito nos pesados
+(Grover a 20: 0,7s contra 3,1s). Todos os chamadores usam `execute(1)`
+(as iterações já vêm dobradas em `pts`), então `iterations=1` na chamada
+equivale ao comportamento anterior.
+
+**(b) não implementada:** exige mexer em como a região global é dividida
+entre threads de CPU -- mudança maior, melhor decidida com medição real
+(ver o que sobra de ganho depois de (a)).
+
+**Verificado:** `make test` completo em WSL (`GPU=stub`) sem regressão;
+`make GPU=real` compila limpo no qflex (RTX A4500, `nvcc` 12.0). **Não
+executado em GPU**: o `nvidia-smi` do qflex continua com
+"Driver/library version mismatch". Falta medir: Grover/General/Shor a
+18-20 qubits em `t_HYBRID` devem ficar iguais ao `t_GPU` (e estáveis entre
+execuções), e a amplitude/resultado continuar correto.
 
 **Precisa, antes de considerar resolvido:**
 1. [FEITO em 2026-10-19] `make GPU=real` compilar sem erro — confirmado

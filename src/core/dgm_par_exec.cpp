@@ -266,6 +266,23 @@ void DGM::HybridExecution(PT **pts){
 
 	long mem_size = 1L << qubits;
 	long qubits_limit = 20;
+
+	// Item 17 em docs/07-bugs-e-pontos-de-atencao.md, tentativa 5: com
+	// qubits <= qubits_limit existe uma única região "global", e a corrida por
+	// ela (#pragma omp critical) virava loteria -- se a GPU ganhava, o tempo
+	// era o da GPU; se uma thread de CPU ganhava, ela processava o estado
+	// inteiro sozinha, no tempo do backend serial (Grover a 20 qubits: 0,59s
+	// numa execução, 43,6s em outra idêntica, ver benchmark.log/
+	// benchmark2.log). Sem mais de uma região não há o que dividir entre CPU
+	// e GPU, então o resultado deste caso é decidido aqui de forma
+	// determinística: roda inteiro na GPU, pelo mesmo caminho do t_GPU.
+	if (qubits <= qubits_limit){
+		GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, 1);
+		if (hybrid_debug){
+			fprintf(stderr, "[HYBRID] qubits=%ld <= qubits_limit=%ld: região única, delegado inteiro à GPU\n", qubits, qubits_limit);
+		}
+		return;
+	}
 	// Fixo em 15 (em vez de derivado de cpu_coalesced_bits/gpu_coalesced_bits)
 	// — nunca chegou a ser parametrizado; ver item 6 do design de
 	// arquitetura em docs/07-bugs-e-pontos-de-atencao.md, item 7.
@@ -275,8 +292,8 @@ void DGM::HybridExecution(PT **pts){
 	// Mesmo bug de PCpuExecution1 (docs/07-bugs-e-pontos-de-atencao.md,
 	// item 6): sem este clamp, region_bits > qubits faz
 	// "1 << (qubits - global_region_bits)" mais abaixo deslocar por um
-	// expoente negativo. Aqui dispara sempre que qubits < qubits_limit
-	// (20), não só em casos extremos de linha de comando.
+	// expoente negativo. Desde a tentativa 5 do item 17 o retorno antecipado
+	// acima já cobre qubits <= qubits_limit, então o clamp virou só defesa.
 	if (global_region_bits > qubits) global_region_bits = qubits;
 	long global_op_start, global_op_end;
 	long next_proj_id;
