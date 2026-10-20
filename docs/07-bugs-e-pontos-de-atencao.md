@@ -347,7 +347,7 @@ serviço), não no modelo atual de "um processo novo por execução de
 circuito" — mudar isso é uma decisão de arquitetura bem maior que o
 escopo deste item.
 
-**Tentativa 4 — [IMPLEMENTADA, NÃO VERIFICADA] içar `cudaMalloc`/`cudaFree`
+**Tentativa 4 — [VERIFICADA EM GPU: CORRETA, SEM GANHO] içar `cudaMalloc`/`cudaFree`
 pra fora do laço de regiões (2026-09-16, sessão sem GPU disponível).**
 
 Motivada por um relatório de investigação independente (outra sessão,
@@ -442,7 +442,7 @@ O que isso mostra:
   0,13-0,14s de 16 a 20 qubits, independente do tamanho — o custo fixo de
   ~200ms da tentativa 3, na RTX A4500.
 
-**Tentativa 5 — [PARCIALMENTE IMPLEMENTADA, NÃO VERIFICADA EM GPU]
+**Tentativa 5 — [(a) IMPLEMENTADA E VERIFICADA EM GPU; (b) NÃO IMPLEMENTADA]
 (2026-10-20).** Direções que os dados acima sugerem: (a) usar só a GPU
 quando `qubits <= qubits_limit` (acaba com a loteria), (b) fazer a CPU
 processar cada região com todas as threads em vez de uma por região.
@@ -462,32 +462,45 @@ equivale ao comportamento anterior.
 entre threads de CPU -- mudança maior, melhor decidida com medição real
 (ver o que sobra de ganho depois de (a)).
 
-**Verificado:** `make test` completo em WSL (`GPU=stub`) sem regressão;
-`make GPU=real` compila limpo no qflex (RTX A4500, `nvcc` 12.0). **Não
-executado em GPU**: o `nvidia-smi` do qflex continua com
-"Driver/library version mismatch". Falta medir: Grover/General/Shor a
-18-20 qubits em `t_HYBRID` devem ficar iguais ao `t_GPU` (e estáveis entre
-execuções), e a amplitude/resultado continuar correto.
+**Verificado:** `make test` completo em WSL (`GPU=stub`) sem regressão e
+medição em GPU real, ver abaixo.
 
-**Precisa, antes de considerar resolvido:**
-1. [FEITO em 2026-10-19] `make GPU=real` compilar sem erro — confirmado
-   no servidor qflex (RTX A4500, `nvcc` 12.0, `sm_86`): build limpo, sem
-   warnings, nos 3 binários. Só compilou; nada foi executado em GPU lá
-   porque o `nvidia-smi` do servidor estava com "Driver/library version
-   mismatch" (precisa de reboot pelo administrador).
-2. `general.out <q> 3 <threads>` (`t_HYBRID`) continuar reproduzindo a
-   amplitude exata esperada em vários tamanhos de qubits (18-30) —
-   corretude antes de performance, mesmo padrão já usado nas tentativas
-   1-3.
-3. Comparar tempo de execução antes/depois (mesmos parâmetros da
-   tentativa 2/3, ex. `general.out 24 3 4`) — se a hipótese estiver
-   certa, deve melhorar; se piorar ou não mudar nada (como aconteceu na
-   tentativa 2, por um motivo diferente), documentar aqui e reverter,
-   mesmo padrão das tentativas anteriores.
-4. Testar o caso `gpu_count > 1` com cautela redobrada — não mudei a
-   lógica de multi-GPU em si, só onde o malloc/free acontece no tempo,
-   mas essa combinação nunca foi testada com hardware real neste
-   projeto (ver item 13).
+**Verificação em GPU real (qflex, RTX A4500, 2026-10-20), tentativas 4 e
+5(a):** o driver do qflex foi recarregado (`rmmod`/`modprobe`, sem reboot)
+e a GPU passou a funcionar.
+
+1. `make GPU=real` compila limpo -- feito (`nvcc` 12.0, `sm_86`).
+2. **Corretude:** `general.out <q> 3 16 64 2 8` (`t_HYBRID`) dá a
+   amplitude exata esperada (2^(-q/2)) em 10, 18, 20, 21, 24, 26, 28 e 30
+   qubits, igual ao `t_GPU`; Grover e Shor também acham o resultado.
+3. **Tentativa 4, A/B contra o build anterior (`3ad037c`) no mesmo
+   servidor, mesmos parâmetros, `t_HYBRID`:** General 28 qubits 2,82s ->
+   2,77s; General 30: 12,15s -> 11,92s; Grover 21: 74,0s -> 73,0s; Grover
+   22: 108,5s -> 108,8s; Shor 21: 46,0s -> 45,9s. **Diferença de 0-2%,
+   dentro do ruído** (General 24: 0,329s -> 0,242s, mas é uma execução
+   só, na faixa de 0,1s onde o cold-start domina). Ou seja, a tentativa 4
+   está correta mas **não resolve o problema** -- os números pós-mudança
+   são iguais aos dos benchmarks de setembro. A suspeita sobre
+   `cudaMalloc`/`cudaFree` por região estava errada, ou ao menos não é o
+   gargalo; a mudança fica no código (é inofensiva e evita
+   alocações repetidas), mas o item continua aberto.
+4. Caso `gpu_count > 1`: continua não testado (só há 1 GPU no qflex, ver
+   item 13).
+
+**Tentativa 5(a), verificada:** `t_HYBRID` a 10, 18 e 20 qubits agora dá o
+mesmo tempo que `t_GPU` (0,14s contra 0,14s no General). Grover a 20
+qubits, 5 execuções seguidas em `t_HYBRID`: 0,61 / 0,59 / 0,61 / 0,58 /
+0,58s (GPU sozinha: 0,58s) -- contra 0,59s ou 43,6s antes. A loteria
+acabou nesse tamanho.
+
+**O que continua aberto (acima de 20 qubits):** `t_HYBRID` segue
+1,3x-1,5x mais lento que `t_GPU` no General a 28-30 qubits e muito mais
+lento no Grover/Shor médios (Grover 21: 73s contra 1,4s). A causa
+provável é a vista acima: cada região de CPU é processada por uma thread
+só, e a CPU pega regiões na mesma taxa que a GPU mesmo sendo muito mais
+lenta por região. Direção para a tentativa 6: dar à CPU uma fração menor
+das regiões (ou só regiões pequenas), ou fazer a CPU processar cada
+região com todas as threads.
 
 ---
 
