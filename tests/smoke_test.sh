@@ -23,7 +23,10 @@ check_amplitude(){
 		FAIL=1
 		return
 	fi
-	awk -v g="$got" -v e="$expected" 'BEGIN{ d=g-e; if (d<0) d=-d; exit !(d<0.0001) }'
+	# A saída tem 6 casas decimais, então o erro de arredondamento é <= 5e-7;
+	# 2e-6 deixa folga pro float e continua distinguindo amplitudes a partir
+	# de ~22 qubits (1/sqrt(2^22) ~ 4,9e-4) de zero ou do valor vizinho.
+	awk -v g="$got" -v e="$expected" 'BEGIN{ d=g-e; if (d<0) d=-d; exit !(d<0.000002) }'
 	if [ $? -eq 0 ]; then
 		echo "OK   $label ($got ~ $expected)"
 	else
@@ -99,6 +102,23 @@ else
 		amp=$("$BIN/general.out" $combo 2>/dev/null | head -1 | awk '{print $2}')
 		check_amplitude "general.out $combo (t_HYBRID)" "$amp" "$expected"
 	done
+
+	# Os casos acima (<= 20 qubits) caem no desvio "região única -> GPU"
+	# de DGM::HybridExecution e nunca passam pelo modo de regiões CPU+GPU.
+	# Estes cobrem os outros dois caminhos (item 17, tentativas 5-7 em
+	# docs/07-bugs-e-pontos-de-atencao.md):
+	#  - 22 e 24 qubits sem variável: o estado cabe na GPU, é delegado ao t_GPU
+	#  - HYBRID_FORCE_REGIONS=1: força o modo de regiões (ProjectState/
+	#    GetState, memória travada, regra de custo da CPU)
+	echo "-- t_HYBRID acima de 20 qubits: delegação (estado cabe na GPU) e modo de regiões forçado --"
+	for pair in "22 3 4:0.00048828125" "24 3 4:0.000244140625"; do
+		combo="${pair%%:*}"
+		expected="${pair##*:}"
+		amp=$("$BIN/general.out" $combo 2>/dev/null | head -1 | awk '{print $2}')
+		check_amplitude "general.out $combo (t_HYBRID, delegado à GPU)" "$amp" "$expected"
+		amp=$(HYBRID_FORCE_REGIONS=1 "$BIN/general.out" $combo 2>/dev/null | head -1 | awk '{print $2}')
+		check_amplitude "general.out $combo (t_HYBRID, modo de regiões)" "$amp" "$expected"
+	done
 fi
 
 echo "-- grover.out: taxa de sucesso (achar search_value) em vários runs, não só 'sem crash' --"
@@ -118,6 +138,14 @@ else
 	check_success_rate "grover.out 12 3 2 (t_HYBRID)" "^Found value:" 10 7 "$BIN/grover.out" 12 3 2
 	check_success_rate "shor.out 15 2 1 (t_GPU)" "^Found factors:" 16 1 "$BIN/shor.out" 15 2 1
 	check_success_rate "shor.out 15 3 2 (t_HYBRID)" "^Found factors:" 16 1 "$BIN/shor.out" 15 3 2
+
+	# Modo de regiões de verdade (21 qubits = 2 regiões globais por passada):
+	# Grover confere o resultado; Shor roda centenas de HybridExecution
+	# seguidas (alloc/pin/free de GPU a cada chamada) e só confere que não
+	# quebra -- a taxa de sucesso do Shor é baixa demais pra servir de teste
+	# em poucas rodadas.
+	check_success_rate "grover.out 21 3 4 (t_HYBRID, modo de regiões)" "^Found value:" 3 2 env HYBRID_FORCE_REGIONS=1 "$BIN/grover.out" 21 3 4
+	check_no_crash "shor.out 21 3 4 (t_HYBRID, modo de regiões)" env HYBRID_FORCE_REGIONS=1 "$BIN/shor.out" 21 3 4
 fi
 
 exit $FAIL

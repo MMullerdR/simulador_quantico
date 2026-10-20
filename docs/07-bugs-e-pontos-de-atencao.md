@@ -587,6 +587,18 @@ preciso corrigir overflows de `int` latentes (nada quebrava até 31 qubits):
 recusa. Não testado: Grover/Shor a 31-32 qubits (inviáveis em tempo), e
 multi-GPU (`gpu_count > 1`, item 13).
 
+**Cobertura de regressão (`tests/smoke_test.sh`, sob `GPU=real`):** os
+casos antigos de `t_HYBRID` (10-14 qubits) só passavam pelo desvio "região
+única -> GPU" e nunca exerciam o modo de regiões. Agora há também: General
+a 22 e 24 qubits com amplitude exata nos dois caminhos (estado cabe na GPU
+-> delegado; `HYBRID_FORCE_REGIONS=1` -> modo de regiões, com CPU e GPU
+participando), Grover a 21 qubits em modo de regiões (taxa de sucesso) e
+Shor a 21 qubits em modo de regiões (várias chamadas seguidas de
+`HybridExecution`, só confere que não quebra). A tolerância de
+`check_amplitude` caiu de 1e-4 para 2e-6 (a saída tem 6 casas): com 1e-4,
+uma amplitude de 22 qubits (~4,9e-4) errada em 20% ainda passaria. Suíte
+completa em GPU real: 38s, tudo OK; em `GPU=stub` (WSL) continua igual.
+
 **O que continua aberto:** o híbrido só ganha de verdade quando o estado
 não cabe na GPU; abaixo disso ele é o `t_GPU`. Um híbrido que bata a GPU
 com o estado cabendo exigiria manter parte do estado residente na GPU
