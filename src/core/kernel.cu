@@ -364,6 +364,30 @@ extern "C" bool FreeGpuState(int gpu_count){
 	return true;
 }
 
+// Item 17, tentativa 6: trava (page-lock) o vetor de estado do host durante
+// o modo híbrido. Cópias de/para memória "pageable" passam por um buffer
+// de staging do driver e disputam banda de memória com as threads de CPU;
+// com memória travada o DMA é direto (medido no qflex: ~12,8 -> ~22 GB/s
+// sem concorrência). Falha de forma graciosa -- devolve false e o híbrido
+// segue com memória comum --, pois não é requisito de corretude.
+extern "C" bool PinHostState(void* ptr, size_t bytes){
+	cudaError_t status = cudaHostRegister(ptr, bytes, cudaHostRegisterDefault);
+	if (status != cudaSuccess){
+		cudaGetLastError();	// limpa o erro pendente pra não contaminar o error() seguinte
+		return false;
+	}
+	return true;
+}
+
+extern "C" bool UnpinHostState(void* ptr){
+	cudaError_t status = cudaHostUnregister(ptr);
+	if (status != cudaSuccess){
+		cudaGetLastError();
+		return false;
+	}
+	return true;
+}
+
 // Copia só a fatia do estado correspondente a uma região (region_id/
 // region_mask) do host pra GPU — usado pelo modo híbrido pra mandar só
 // a parte que a GPU vai processar naquela rodada, não o vetor inteiro.

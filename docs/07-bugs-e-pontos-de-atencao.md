@@ -493,6 +493,64 @@ qubits, 5 execuções seguidas em `t_HYBRID`: 0,61 / 0,59 / 0,61 / 0,58 /
 0,58s (GPU sozinha: 0,58s) -- contra 0,59s ou 43,6s antes. A loteria
 acabou nesse tamanho.
 
+**Tentativa 6 — [IMPLEMENTADA E VERIFICADA EM GPU (qflex, 2026-10-20)]:
+memória travada + modelo de custo pra decidir quanto a CPU pega.** Duas
+mudanças em `DGM::HybridExecution`, medidas antes de escrever (por região
+de 2^20 amplitudes, General a 28 qubits: `ProjectState` ~2ms +
+`GetState` ~3ms contra 0,17ms do kernel -- a GPU gasta ~98% do tempo
+copiando; e cada região de CPU leva ~25-34ms em 1 thread):
+
+1. **Vetor de estado travado (`cudaHostRegister`)** pela thread de GPU na
+   primeira região (assim o cold-start do contexto CUDA continua
+   sobreposto ao trabalho da CPU), destravado no fim. Em teste isolado a
+   cópia vai de ~12,8 para ~22 GB/s; sem concorrência de CPU. Ganho
+   medido no híbrido (`HYBRID_PIN=0` desliga, pra A/B): General a 28
+   qubits 2,75s -> 2,23s; a 30 qubits 11,84s -> 9,54s (~19%). Se o
+   `cudaHostRegister` falhar, segue com memória comum.
+2. **Regra de custo pra CPU** (`hybrid_cpu_may_claim`): uma thread de CPU
+   só pega mais uma região se ela terminar antes de a GPU, sozinha,
+   limpar as que sobraram. Custo de CPU = portas x 2^bits x
+   `cpu_ns_per_amp_op` (inicial 1,4 ns, medido); custo de GPU = escala x
+   2^bits x (cópia + portas x ns_porta) (iniciais medidos no qflex);
+   ambos refinados online por média móvel a cada região concluída
+   (descartando a 1ª região de GPU do processo, que paga o cold-start).
+   `HYBRID_GATING=0` desliga. Antes, a CPU pegava regiões na mesma taxa
+   que a GPU mesmo sendo 100x mais lenta por região em circuitos
+   pesados.
+
+Resultados, `t_HYBRID` (16 threads) antes -> depois, com `t_GPU` de
+referência (segundos):
+
+| Caso | Híbrido antes | Híbrido depois | `t_GPU` |
+|---|---|---|---|
+| Grover 21 | 73,8 | 4,5 | 1,3 |
+| Grover 22 | 108 | 11,3 | 3,3 |
+| Grover 23 | 165 | 31,7 | 9,4 |
+| Grover 24 | 221 | 88,9 | 27,7 |
+| Shor 21 | 45,6 | 2,1 | 2,0 |
+| Shor 23 | 66,8 | 9,8 | 10,0 |
+| Shor 25 | 92,5 | 52,1 | 51,2 |
+| General 28 | 2,75 | 2,20 | 2,02 |
+| General 30 | 11,84 | 9,57 | 7,73 |
+
+Corretude conferida: amplitude exata no General, `Found value: 10` no
+Grover, e taxa de sucesso do Shor equivalente entre backends (17 qubits,
+16 execuções: híbrido 11, GPU 12, CPU paralela 8). `make test` em WSL sem
+regressão.
+
+**Limite que sobrou:** o híbrido agora fica de 1x a ~3,4x o `t_GPU`, mas
+**não bate o `t_GPU`** em nenhum caso. Motivo medido no Grover a 22
+qubits: o circuito vira ~2.275 passadas e 9.102 regiões, cada uma pagando
+cópia (~0,4ms de ida + ~0,4ms de volta) + kernel (~0,32ms), enquanto o
+`t_GPU` mantém o estado inteiro residente na GPU e copia uma vez só. A
+CPU quase não participa (2 regiões em 9.102: o modelo recusa o resto).
+Qualquer ganho real do híbrido sobre a GPU exigiria manter parte do
+estado residente na GPU entre passadas -- redesenho maior, não feito.
+Opção mais simples e sem redesenho: quando o vetor de estado inteiro
+cabe na memória da GPU, delegar tudo ao caminho do `t_GPU` (o híbrido de
+regiões só seria necessário acima disso). Fica como decisão de projeto,
+já que muda o que "híbrido" significa.
+
 **O que continua aberto (acima de 20 qubits):** `t_HYBRID` segue
 1,3x-1,5x mais lento que `t_GPU` no General a 28-30 qubits e muito mais
 lento no Grover/Shor médios (Grover 21: 73s contra 1,4s). A causa

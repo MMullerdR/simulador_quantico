@@ -252,6 +252,43 @@ void PCpuExecution1_0(float complex *state, PT **pts, int qubits, int pts_start,
 	}
 }
 
+// Item 17, tentativa 6: modelo de custo por região usado pra decidir se uma
+// thread de CPU deve ou não pegar mais uma região. Sem isso a CPU pegava
+// regiões na mesma taxa que a GPU mesmo sendo dezenas de vezes mais lenta
+// por região em circuitos pesados -- Grover a 21 qubits: uma região de
+// CPU leva ~65s, a GPU faz o circuito inteiro em ~1,4s (docs/07, item 17).
+//
+// Custo de uma região de 2^bits amplitudes com `ops` portas:
+//   CPU (1 thread) = ops * 2^bits * cpu_ns_per_amp_op
+//   GPU            = escala * 2^bits * (ns_cópia + ops * ns_porta)
+// Valores iniciais medidos no qflex (RTX A4500 + Threadripper PRO 5955WX,
+// 1,4 ns por amplitude-porta na CPU; GPU ~3,8 ns/amplitude de cópia com
+// memória travada e ~0,012 ns por amplitude-porta). São só o ponto de
+// partida: cada região concluída refina cpu_ns_per_amp_op e a escala da
+// GPU (média móvel), então outra máquina converge sozinha.
+static double hybrid_cpu_ns_per_amp_op = 1.4;
+static double hybrid_gpu_scale = 1.0;
+static long hybrid_gpu_samples = 0;
+static const double HYBRID_GPU_NS_COPY = 3.8;
+static const double HYBRID_GPU_NS_OP = 0.012;
+
+static double hybrid_est_cpu_ns(long ops, long region_bits){
+	return (double)ops * (double)(1L << region_bits) * hybrid_cpu_ns_per_amp_op;
+}
+
+static double hybrid_gpu_prior_ns(long ops, long region_bits){
+	return (double)(1L << region_bits) * (HYBRID_GPU_NS_COPY + (double)ops * HYBRID_GPU_NS_OP);
+}
+
+// Regra: uma thread de CPU só pega mais uma região se ela terminar antes de
+// a GPU, sozinha, limpar todas as que sobraram. Chamar dentro da seção
+// crítica global_teste (lê/escreve as estimativas acima).
+static bool hybrid_cpu_may_claim(long unclaimed, long ops, long region_bits){
+	if (unclaimed < 1) return false;
+	double est_gpu = hybrid_gpu_scale * hybrid_gpu_prior_ns(ops, region_bits);
+	return (double)unclaimed * est_gpu >= hybrid_est_cpu_ns(ops, region_bits);
+}
+
 // Backend t_HYBRID: a thread OpenMP 0 comanda a GPU (projeta o estado,
 // dispara o kernel, recolhe o resultado) enquanto as demais processam
 // regiões em CPU ao mesmo tempo, região "global" por região "global" —
@@ -298,6 +335,18 @@ void DGM::HybridExecution(PT **pts){
 	long global_op_start, global_op_end;
 	long next_proj_id;
 
+	// Item 17, tentativa 6: o vetor de estado é travado em memória (pinned)
+	// uma vez por chamada, pela thread de GPU na primeira região que ela
+	// processar (assim o custo de inicializar o contexto CUDA continua
+	// sobreposto ao trabalho das threads de CPU), e destravado no fim.
+	// HYBRID_PIN=0 desliga, pra comparar A/B sem recompilar.
+	static bool pin_enabled = !(getenv("HYBRID_PIN") != NULL && getenv("HYBRID_PIN")[0] == '0');
+	bool state_pinned = false, pin_attempted = false;
+
+	// HYBRID_GATING=0 desliga a regra hybrid_cpu_may_claim (comparação A/B).
+	static bool gating_enabled = !(getenv("HYBRID_GATING") != NULL && getenv("HYBRID_GATING")[0] == '0');
+	long debug_cpu_refusals = 0;
+
 	omp_set_num_threads(thread_count);
 
 	int op_index = 0;
@@ -310,6 +359,8 @@ void DGM::HybridExecution(PT **pts){
 		long global_region_mask = plan.region_mask;
 		long global_region_count = plan.region_count;
 		long global_pos_count = plan.pos_count;
+		long pass_ops = global_op_end - global_op_start;
+		if (pass_ops < 1) pass_ops = 1;
 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -324,13 +375,20 @@ void DGM::HybridExecution(PT **pts){
 
 				#pragma omp critical (global_teste)
 				{
-					cpu_proj_id = next_proj_id;
-					next_proj_id = (next_proj_id + global_region_mask + 1) & ~global_region_mask;
-					global_region_count--;
-					if (global_region_count <= 0)
+					if (!gating_enabled || hybrid_cpu_may_claim(global_region_count - 1, pass_ops, global_region_bits)){
+						cpu_proj_id = next_proj_id;
+						next_proj_id = (next_proj_id + global_region_mask + 1) & ~global_region_mask;
+						global_region_count--;
+						if (global_region_count <= 0)
+							cpu_proj_id = -1;
+					}
+					else{
 						cpu_proj_id = -1;
+						debug_cpu_refusals++;
+					}
 				}
 
+				double cpu_t0 = omp_get_wtime();
 				while (cpu_proj_id != -1){
 					if (hybrid_debug){
 						#pragma omp atomic
@@ -376,14 +434,26 @@ void DGM::HybridExecution(PT **pts){
 						cpu_op_start = cpu_op_end;
 					}
 
+					double cpu_dur_ns = (omp_get_wtime() - cpu_t0) * 1e9;
+
 					#pragma omp critical (global_teste)
 					{
-						cpu_proj_id = next_proj_id;
-						next_proj_id = (next_proj_id + global_region_mask + 1) & ~global_region_mask;
-						global_region_count--;
+						// refina a estimativa de custo da CPU com a região que acabou de terminar
+						hybrid_cpu_ns_per_amp_op = 0.7 * hybrid_cpu_ns_per_amp_op + 0.3 * (cpu_dur_ns / ((double)pass_ops * (double)(1L << global_region_bits)));
+
+						if (!gating_enabled || hybrid_cpu_may_claim(global_region_count - 1, pass_ops, global_region_bits)){
+							cpu_proj_id = next_proj_id;
+							next_proj_id = (next_proj_id + global_region_mask + 1) & ~global_region_mask;
+							global_region_count--;
 							if (global_region_count <= 0)
-						cpu_proj_id = -1;
+								cpu_proj_id = -1;
+						}
+						else{
+							cpu_proj_id = -1;
+							debug_cpu_refusals++;
+						}
 					}
+					cpu_t0 = omp_get_wtime();
 				}
 
 			}
@@ -407,8 +477,14 @@ void DGM::HybridExecution(PT **pts){
 				// realmente vai processar pelo menos uma região.
 				bool gpu_state_allocated = (gpu_proj_id != -1);
 				if (gpu_state_allocated) AllocGpuState(global_region_bits, gpu_count);
+				if (gpu_state_allocated && pin_enabled && !pin_attempted){
+					pin_attempted = true;
+					state_pinned = PinHostState(state, mem_size * sizeof(float complex));
+					if (hybrid_debug) fprintf(stderr, "[HYBRID] pin do vetor de estado (%ld bytes): %s\n", mem_size * (long)sizeof(float complex), state_pinned ? "ok" : "falhou, segue com memória comum");
+				}
 
 				while (gpu_proj_id != -1){
+					double gpu_t0 = omp_get_wtime();
 					if (hybrid_debug){
 						#pragma omp atomic
 						debug_gpu_regions++;
@@ -480,8 +556,15 @@ void DGM::HybridExecution(PT **pts){
 						delete gpu_pts[cleanup_index];
 					}
 
+					double gpu_dur_ns = (omp_get_wtime() - gpu_t0) * 1e9;
+
 					#pragma omp critical (global_teste)
 					{
+						// A primeira região do processo paga o cold-start do contexto
+						// CUDA (~0,2s, docs/07 item 17) e não representa o custo normal.
+						if (hybrid_gpu_samples++ > 0)
+							hybrid_gpu_scale = 0.7 * hybrid_gpu_scale + 0.3 * (gpu_dur_ns / hybrid_gpu_prior_ns(pass_ops, global_region_bits));
+
 						gpu_proj_id = next_proj_id;
 						next_proj_id = (next_proj_id + global_region_mask + 1) & ~global_region_mask;
 						global_region_count--;
@@ -498,7 +581,9 @@ void DGM::HybridExecution(PT **pts){
 		op_index = global_op_end;
 	}
 
+	if (state_pinned) UnpinHostState(state);
+
 	if (hybrid_debug){
-		fprintf(stderr, "[HYBRID] total: %ld região(ões) CPU, %ld região(ões) GPU\n", debug_cpu_regions, debug_gpu_regions);
+		fprintf(stderr, "[HYBRID] total: %ld região(ões) CPU, %ld região(ões) GPU, %ld recusa(s) de CPU pelo modelo de custo (cpu_ns_por_amp_porta=%.3f gpu_escala=%.3f)\n", debug_cpu_regions, debug_gpu_regions, debug_cpu_refusals, hybrid_cpu_ns_per_amp_op, hybrid_gpu_scale);
 	}
 }

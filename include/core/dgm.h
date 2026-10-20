@@ -36,6 +36,12 @@ extern "C" float complex* GpuExecutionWrapper(float complex* read_memory, PT **p
 // tamanho do buffer depende só dele, não muda região a região).
 extern "C" bool AllocGpuState(int region_size, int gpu_count);
 extern "C" bool FreeGpuState(int gpu_count);
+// PinHostState/UnpinHostState: travam (page-lock) o vetor de estado do host
+// enquanto durar o modo híbrido, pra acelerar ProjectState/GetState (item 17,
+// tentativa 6). Devolvem false se não conseguiram -- nesse caso o híbrido
+// continua funcionando, só sem a aceleração.
+extern "C" bool PinHostState(void* ptr, size_t bytes);
+extern "C" bool UnpinHostState(void* ptr);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 

@@ -32,6 +32,14 @@ extern "C" bool FreeGpuState(int gpu_count){
 	return false;
 }
 
+extern "C" bool PinHostState(void* ptr, size_t bytes){
+	return false;
+}
+
+extern "C" bool UnpinHostState(void* ptr){
+	return false;
+}
+
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count){
 	fprintf(stderr, "kernel_stub.cpp: GPU indisponível nesta build.\n");
 	return false;
