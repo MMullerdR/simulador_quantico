@@ -18,18 +18,19 @@ amplitudes pra shared memory **uma vez**, aplicar as 20 portas ali dentro
 (rapidíssimo), e escrever de volta **uma vez**. Isso evita 19 idas e vindas
 desnecessárias à memória global.
 
-`coalesced_bits` (campo `gpu_coalesced_bits` da `DGM`, parâmetro de template
-`t_coalesced_bits` no kernel) é justamente **quantos bits menos
+`coalesced_bits` (campo `gpu_coalesced_bits` da `DGM`, parâmetro de runtime
+`coalesced_bits` do kernel) é justamente **quantos bits menos
 significativos** do índice formam esse bloco "sempre presente" na shared
 memory.
 
 ## 2. `ApplyValuesC01` — o kernel principal
 
-[kernel.cu:60](../src/core/kernel.cu#L60), um kernel *template* em
-`t_block_size` (threads por bloco CUDA), `t_repeat_count` (quantas posições
-cada thread processa) e `t_coalesced_bits` (bits coalescidos). Passos:
+[kernel.cu:100](../src/core/kernel.cu#L100), com `block_size` (threads por
+bloco CUDA), `repeat_count` (quantas posições cada thread processa) e
+`coalesced_bits` (bits coalescidos) como parâmetros de runtime (eram templates
+até 2026-08-11, ver seção 4). Passos:
 
-1. **Copiar para shared memory**: cada thread lê `t_repeat_count` pares de
+1. **Copiar para shared memory**: cada thread lê `repeat_count` pares de
    amplitudes da memória global (`gpu_pointer`, ponteiro(s) para a(s)
    GPU(s)) para o array `__shared__ cuFloatComplex shared_amplitudes[...]`.
    O índice de leitura (`local_pos`) combina o `blockIdx` (qual bloco/região
@@ -46,24 +47,25 @@ cada thread processa) e `t_coalesced_bits` (bits coalescidos). Passos:
    shared_amplitudes[pos0] = tmp;` — mas em `shared_amplitudes[]` (shared
    memory), não em `state[]` global. Há um `__syncthreads()` entre portas
    para garantir que toda a shared memory do bloco esteja consistente antes
-   da próxima porta usar os resultados da anterior.
+   da próxima porta usar os resultados da anterior. Uma porta pode ser normal
+   (`OP_STD`, a fórmula acima) ou uma porta de fase fundida (`OP_FUSED`, seção 7).
 3. **Copiar de volta**: mesmo padrão de índice do passo 1, mas escrevendo
    `shared_amplitudes[...]` de volta em `gpu_pointer[...]`.
 
-`DEV_OP` ([kernel.cu:18](../src/core/kernel.cu#L18)) é o equivalente,
+`DEV_OP` ([kernel.cu:24](../src/core/kernel.cu#L24)) é o equivalente,
 do lado da GPU, da struct `PT` do lado da CPU: matriz 2x2 + os argumentos de
 controle/deslocamento pré-calculados por `PT::setArgsGPU`
-([common.cpp:94](../src/core/common.cpp#L94)), que ajusta as máscaras
+([common.cpp:79](../src/core/common.cpp#L79)), que ajusta as máscaras
 de controle considerando que parte dos qubits está "dentro" da região
 coalescida e parte "fora".
 
 ## 3. Como as portas são agrupadas em blocos (`GpuExecution01`)
 
-[kernel.cu:124](../src/core/kernel.cu#L124). Antes de chamar o
+[kernel.cu:206](../src/core/kernel.cu#L206). Antes de chamar o
 kernel, o código CPU percorre a lista de `PT`s tentando juntar o máximo de
 portas consecutivas que **cabem na mesma região de qubits** (região de
 `gpu_region_bits` bits — chamada de `block_region_size` dentro da função —,
-respeitando `t_coalesced_bits`), monta o array `operators[]` (até
+respeitando `coalesced_bits`), monta o array `operators[]` (até
 `OPS_BLOCK` portas), copia para a GPU via `cudaMemcpyToSymbol(op, operators,
 ...)`, e só então dispara o kernel para aquele lote. Isso se repete até
 esgotar a lista de `PT`s.
@@ -168,6 +170,11 @@ calculado a partir de `region_start_bit` e do número de GPUs) — nesse caso,
 todas as GPUs são sincronizadas antes de rodar o kernel para evitar
 condição de corrida entre elas.
 
+**Arquivado (2026-10-21):** o multi-GPU (item 13 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)) não tem
+previsão de ser testado nem usado, então não será trabalhado; a sessão de GPU
+(seção 8) só vale para `gpu_count == 1`.
+
 **Atenção:** este caminho (`gpu_count > 1`) nunca foi exercitado com
 hardware real em nenhuma sessão deste projeto — só existiu acesso a 1 GPU
 NVIDIA de cada vez. `gpu_count > 4` é validado e recusado (limite dos
@@ -178,12 +185,54 @@ não corrigido às cegas) — ver
 
 ## 6. `ProjectState` / `GetState` — a ponte para o modo híbrido
 
-[kernel.cu:315](../src/core/kernel.cu#L315) e
-[kernel.cu:356](../src/core/kernel.cu#L356). Copiam **apenas uma
+[kernel.cu:666](../src/core/kernel.cu#L666) e
+[kernel.cu:732](../src/core/kernel.cu#L732). Copiam **apenas uma
 região** (um subconjunto de índices que compartilham os bits fora de
 `region_mask` iguais a `region_id`) entre a memória do host e a GPU, em vez
 do vetor inteiro. É isso que permite ao `HybridExecution` (ver
 [03-motor-de-execucao-cpu.md](03-motor-de-execucao-cpu.md), seção 5, e o
-código em [dgm_par_exec.cpp:258](../src/core/dgm_par_exec.cpp#L258)) mandar
+código em [dgm_par_exec.cpp:513](../src/core/dgm_par_exec.cpp#L513)) mandar
 só a fatia do estado que a GPU vai processar naquele momento, enquanto o
 resto do estado continua sendo processado pelas threads de CPU em paralelo.
+
+## 7. Portas de fase fundidas (`OP_FUSED`)
+
+No Shor, ~85% das portas são rotações controladas da QFT, todas diagonais. Em
+`t_GPU` (e no `t_HYBRID` quando ele delega à GPU), `FusePhaseRuns`
+([gate_fuse.cpp](../src/core/gate_fuse.cpp)) troca cada corrida de portas de fase
+consecutivas por **um único `PT`** com uma lista de termos (`PT::phase_terms`,
+`PhaseTerm{mask, value, steps}`): a amplitude cujo índice bate com
+`mask`/`value` ganha `steps` unidades de fase, em passos de 2π/65536 (por isso
+só portas cujo ângulo cai a menos de 0,02 passo de um múltiplo entram; as outras
+ficam como portas normais). Uma porta fundida carrega até 64 termos. Desliga com
+`GPU_FUSE=0`; a CPU entende o PT fundido (`ApplyFusedPhase`) mas não o usa.
+
+No kernel, `DEV_OP.kind == OP_FUSED` ignora `matrix`/`arg`. O host separa os
+bits de cada termo em "fora da região do bloco" (`omask/oval`, comparados uma
+vez por bloco com `block_base`) e "dentro" (`lmask/lval`, já reindexados para a
+shared memory). Por bloco, só os termos ativos entram numa lista compactada na
+shared (`int4 {lmask, lval, steps}`, uma leitura de 128 bits por termo) e cada
+thread soma 4 amplitudes por leitura de termo; a fase final vem de uma tabela de
+65536 entradas `e^{i*2*pi*k/65536}` em memória global. Com `repeat_count = 1` a
+região só tem `2*block_size` amplitudes e as guardas `p < region_size` do laço
+passam a valer (têm teste em `test_cpu_parallel`). Histórico, medidas e a
+alternativa descartada (tabela em dois níveis): item 27 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+
+## 8. Sessão de GPU (estado residente)
+
+Por padrão cada `execute` copia o estado host -> GPU, roda os kernels e copia de
+volta. O Shor, que faz `2*largura` rodadas de `executeFunction` + `measure`,
+abre uma **sessão** (`DGM::beginGpuSession()`): o estado sobe uma vez,
+`GpuExecutionWrapper` recebe `state = NULL` ("já está na GPU", o mesmo contrato
+do modo de regiões do híbrido) e `measure()` roda na GPU
+(`GpuMeasureSums`, redução em `double`, e `GpuCollapse`, com o mesmo mapeamento
+do host). A sessão acaba em `freeMemory()`; `colapse()` e `measure(vector)`
+copiam o estado de volta antes. API em `kernel.cu`: `GpuSessionBegin`,
+`GpuSessionEnd`, `GpuMeasureSums`, `GpuCollapse`.
+
+Vale só para `gpu_count == 1`, `t_GPU` e `t_HYBRID` quando ele delegaria à GPU
+(`DGM::hybridDelegatesToGpu`), e só se couber (estado + 512 MB livres); senão
+`beginGpuSession()` devolve `false` e vale o caminho de sempre. `GPU_RESIDENT=0`
+desliga. Detalhes e medidas: item 28 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).

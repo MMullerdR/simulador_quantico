@@ -4,7 +4,7 @@
 
 Um registrador de `qubits` qubits é representado por um vetor de
 `2^qubits` números complexos (`float complex *state`, alocado em
-`DGM::allocateMemory()`, [dgm_core.cpp:82](../src/core/dgm_core.cpp#L82)):
+`DGM::allocateMemory()`, [dgm_core.cpp:55](../src/core/dgm_core.cpp#L55)):
 
 ```c
 state = (float complex*) calloc(1L << qubits, sizeof(float complex));
@@ -23,12 +23,12 @@ e o último qubit (`qubits-1`) é o bit menos significativo (LSB). Isso aparece
 em `DGM::measure()`:
 
 ```c
-long qubit_bit_shift = (qubits - 1 - qubit_pos);   // dgm_core.cpp:104
+long qubit_bit_shift = (qubits - 1 - qubit_pos);   // dgm_core.cpp:81
 ```
 
 e na hora de transformar a posição de uma porta no circuito (`pos_ops`, contado
 da esquerda) em um "bit de deslocamento" (`target_bit`) usado durante a execução
-(`DGM::genPTs`, [dgm_parser.cpp:107](../src/core/dgm_parser.cpp#L107)):
+(`DGM::genPTs`, [dgm_parser.cpp:118](../src/core/dgm_parser.cpp#L118)):
 
 ```c
 term->span_start_bit = qubits - group.pos_ops[op_index];
@@ -48,7 +48,7 @@ Se `state[0b100] = 1` isso é o estado `|q0=1, q1=0, q2=0>`.
 - `pts` / `vec_pts` — a lista de operações **já compiladas** (ver
   [02-linguagem-de-circuitos.md](02-linguagem-de-circuitos.md)), terminada por `NULL`.
 - `exec_type` — qual dos 4 backends usar (`t_CPU`, `t_PAR_CPU`, `t_GPU`, `t_HYBRID`,
-  enum em [dgm.h:44](../include/core/dgm.h#L44)).
+  enum em [dgm.h:76](../include/core/dgm.h#L76)).
 - parâmetros de tuning de performance: `thread_count`, `cpu_region_bits`/
   `cpu_coalesced_bits`, `gpu_region_bits`/`gpu_coalesced_bits`/`block_size`/
   `repeat_count`, `gpu_count` (explicados em [03](03-motor-de-execucao-cpu.md)
@@ -75,7 +75,7 @@ dgm.freeMemory();
 
 ## 3. Os quatro backends de execução
 
-`DGM::execute()` ([dgm_core.cpp:209](../src/core/dgm_core.cpp#L209)) despacha
+`DGM::execute()` ([dgm_core.cpp:336](../src/core/dgm_core.cpp#L336)) despacha
 para um dos quatro caminhos, todos calculando a mesma coisa:
 
 | `exec_type`   | Função                                    | Onde                          | Ideia                                                                 |
@@ -91,6 +91,14 @@ particioná-lo em blocos independentes (fixando alguns bits do índice) e
 processar cada bloco em paralelo — seja em threads CPU diferentes, seja em
 blocos CUDA diferentes, seja mandando alguns blocos pra CPU e outros pra GPU
 ao mesmo tempo (o modo híbrido, que é a contribuição central do "HybriD-GM").
+
+Antes de chegar ao kernel, `t_GPU` (e o `t_HYBRID` quando delega à GPU) passam
+por `DGM::scheduleForGpu()`: `FusePhaseRuns` troca corridas de portas de fase
+por uma única porta fundida e `ScheduleForBatching` reordena portas que comutam
+para caberem mais por passada (ver [04](04-gpu-cuda.md), seção 7, e itens 24 e 27
+de [07](07-bugs-e-pontos-de-atencao.md)). O Shor ainda abre uma sessão de GPU
+(`beginGpuSession()`), que mantém o estado na GPU entre as rodadas e mede lá
+([04](04-gpu-cuda.md), seção 8).
 
 ## 4. Fluxo de um algoritmo (ex: Grover)
 

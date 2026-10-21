@@ -29,6 +29,56 @@ hoje o default é 512/4/12 e o Grover não faz mais os X do difusor, então os
 tempos de GPU e Grover desta tabela estão defasados — ver item 22 em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)).
 
+## Resumo atual (2026-10-21, servidor qflex)
+
+As seções abaixo são o registro cronológico: as primeiras tabelas (RTX 4070)
+são de antes das otimizações e várias "Atualizações" foram superadas pelas
+seguintes. Este resumo compara três pontos do histórico na qflex (Threadripper
+PRO 5955WX, RTX A4500), com a mesma linha de comando em todos: **primeira** =
+código original (`9d36e42`), **início** = `62ddb7b` (começo das otimizações da
+sessão), **antes** = `bb83ffe`, **atual** = `46b14f3`. Cada célula é uma
+execução.
+
+| Caso | Primeira | Início | `bb83ffe` | Atual |
+|---|---|---|---|---|
+| shor 17, serial (`t_CPU`) | 2,96 s | 2,97 s | 2,67 s | não remedido |
+| shor 19, serial (`t_CPU`) | 18,05 s | 18,12 s | 15,60 s | não remedido |
+| grover 18, serial (`t_CPU`) | 4,91 s | 4,93 s | 3,26 s | não remedido |
+| general 24, CPU paralela 16 thr | 0,221 s | 0,221 s | 0,177 s | não remedido |
+| general 26, CPU paralela 16 thr | 0,977 s | 0,978 s | 0,803 s | não remedido |
+| general 26, GPU | 0,709 s | 0,630 s | 0,601 s | não remedido |
+| general 26, híbrido | 1,084 s | 0,599 s | 0,571 s | não remedido |
+| grover 22, CPU paralela 16 thr | (1) | 26,3 s | 6,94 s | não remedido |
+| grover 24, GPU | (1) | 27,4 s | 8,21 s | não remedido |
+| grover 24, híbrido | (1) | 27,5 s | 8,24 s | não remedido |
+| shor 21, CPU paralela 16 thr | (1) | 6,78 s | 2,12 s | não remedido |
+| shor 21, GPU | (1) | 2,13 s | 0,81 s | 0,72 s (2) |
+| shor 25, GPU | (1) | 50,5 s | 13,0 s | 8,92-9,01 s (3) |
+| shor 27, GPU | (1) | 278,8 s | 76,4 s | 43,4-44,0 s (3) |
+| general 32, CPU paralela 32 thr | (1) | 72,4 s | 60,1 s | não remedido |
+| general 32, híbrido (não cabe na GPU) | (1) | 37,1 s | 32,6 s | não remedido |
+
+(1) O `grover.out` e o `shor.out` originais ignoravam o tipo de execução e
+sempre rodavam em CPU serial (item 8 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)); só o caso
+serial é comparável com o original. (2) Medido em `06c010a`, com a sessão de GPU
+(item 28) e antes do corpo novo da porta fundida. (3) Medido em `46b14f3`, 4
+execuções para o Shor 25 e 2 para o Shor 27; em uma execução de cada (Shor 25:
+1 de 4; Shor 27: 1 de 2) o algoritmo não achou fatores, o que o Shor
+probabilístico permite.
+
+O que dá o ganho: o tuning de GPU e o Grover sem os X (item 22), laços de CPU
+vetorizados (item 23), reordenação de portas (item 24), QFT aproximada (item 26),
+fusão de portas de fase (item 27, com o corpo do kernel reescrito em 2026-10-21),
+e a sessão de GPU com estado residente (item 28). No Shor em GPU: 25 qubits de
+50,5 s para ~8,95 s (5,6x) e 27 qubits de 279 s para ~43,7 s (6,4x). O
+`general` (só portas H) e os casos de 32 qubits ficam limitados pela banda de
+memória e quase não mudam. O `t_CPU` serial foi deixado sem otimização de
+propósito, como referência dos testes. Os circuitos de hoje não são os
+originais (o original tinha o bug de `genRot` do item 1 e o difusor do Grover
+com mais portas), então a comparação com a "primeira" mede o conjunto, não só o
+motor.
+
 ## Qubits pequenos a médios (10-24) — todos os backends
 
 | qubits | PAR_CPU(1) | PAR_CPU(4) | PAR_CPU(8) | PAR_CPU(16) | GPU | HYBRID(4) |
@@ -93,6 +143,12 @@ paralela; a 32 qubits (32 GB, não cabe na GPU) o `t_GPU` falha com "out of
 memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+
+**Atualização (2026-10-21, corpo da porta fundida):** reescrito o corpo do
+kernel das portas de fase fundidas (item 27 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)): `shor.out
+25` em GPU 11,0 -> 8,95 s e `shor.out 27` 55,1 -> 43,4-44,0 s (já com o estado
+residente abaixo).
 
 **Atualização (2026-10-21, estado residente):** o Shor em `t_GPU` mantém o
 estado na GPU entre as rodadas e mede lá (item 28 de

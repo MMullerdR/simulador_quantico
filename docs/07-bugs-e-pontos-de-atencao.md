@@ -1110,8 +1110,11 @@ e a multiplicação por amplitude.
 Testes: `make test GPU=real` passa; `tests/test_cpu_parallel.cpp` ganhou dois
 combos com `repeat_count = 1`, o único caso em que as guardas novas valem.
 Conferido por mutação: sem as guardas o teste `t_GPU` contra `t_CPU` aborta com
-"illegal memory access". **Não medido:** `shor.out 27` com o corpo novo; só o
-Shor 25 foi cronometrado (2 execuções por versão).
+"illegal memory access". Medido depois no clone principal (commit `46b14f3`,
+`make test GPU=real` com 38 OK e nenhum FAIL): `shor.out 25` 8,92-9,01 s (4
+execuções) e `shor.out 27` 43,4 e 44,0 s (2 execuções; antes 55,1 s). Em uma
+execução do Shor 25 e uma do Shor 27 o algoritmo não achou fatores, dentro do
+esperado para o Shor probabilístico.
 
 **Avaliado e descartado: juntar portas fundidas consecutivas num só passe.**
 Medido no `shor.out 25` (`t_GPU`): 2112 lançamentos, 21032 portas fundidas em

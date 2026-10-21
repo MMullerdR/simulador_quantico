@@ -24,7 +24,7 @@ fórmula.
 
 ## 2. `CpuExecution1_1` — caso denso, sem controle
 
-[dgm_cpu_exec.cpp:34](../src/core/dgm_cpu_exec.cpp#L34):
+[dgm_cpu_exec.cpp:44](../src/core/dgm_cpu_exec.cpp#L44):
 
 ```c
 target_bit_mask = 1 << term->target_bit;    // máscara com o bit do qubit alvo
@@ -82,7 +82,7 @@ ver [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md), item 2.
 
 ## 4. Os três "tipos de matriz" — a otimização mais importante
 
-`PT::matrixType()` ([common.cpp:29](../src/core/common.cpp#L29)) olha
+`PT::matrixType()` ([common.cpp:65](../src/core/common.cpp#L65)) olha
 para a matriz 2x2 da porta e classifica em três formatos, **sem olhar para o
 vetor de estado**:
 
@@ -96,7 +96,7 @@ Essa classificação existe porque **portas diagonais não misturam
 amplitudes** — elas só multiplicam cada amplitude por um número, dependendo
 do valor do bit do qubit alvo. Não precisa nem separar em pares `(pos0,
 pos1)`: dá pra percorrer o vetor inteiro, uma posição de cada vez
-(`CpuExecution1_2`, [dgm_cpu_exec.cpp:67](../src/core/dgm_cpu_exec.cpp#L67)):
+(`CpuExecution1_2`, [dgm_cpu_exec.cpp:80](../src/core/dgm_cpu_exec.cpp#L80)):
 
 ```c
 state[pos] = term->matrix[((pos >> target_bit_index) & 1) * 3] * state[pos];
@@ -109,10 +109,10 @@ por amplitude**, contra as 4 multiplicações + 2 somas do caso denso.
 O tipo `DIAG_SEC` (anti-diagonal, como o `X`) também economiza: como
 `m00=m11=0`, a fórmula geral simplifica para
 `novo[pos0] = m01*state[pos1]` e `novo[pos1] = m10*state[pos0]`
-(`CpuExecution1_3`, [dgm_cpu_exec.cpp:85](../src/core/dgm_cpu_exec.cpp#L85))
+(`CpuExecution1_3`, [dgm_cpu_exec.cpp:100](../src/core/dgm_cpu_exec.cpp#L100))
 — metade das multiplicações do caso denso.
 
-`DGM::CpuExecution1(it)` ([dgm_cpu_exec.cpp:8](../src/core/dgm_cpu_exec.cpp#L8))
+`DGM::CpuExecution1(it)` ([dgm_cpu_exec.cpp:11](../src/core/dgm_cpu_exec.cpp#L11))
 só faz um `switch` em `pt->matrixType()` e chama a função certa para cada `PT`
 da lista. Esse "roteamento por formato de matriz" é reaproveitado também no
 kernel CUDA de forma conceitualmente igual (ver [04](04-gpu-cuda.md)) e no
@@ -120,7 +120,7 @@ código paralelo de CPU abaixo.
 
 ## 5. Execução paralela em CPU: `PCpuExecution1` — o conceito de "região"
 
-[dgm_par_exec.cpp:81](../src/core/dgm_par_exec.cpp#L81). Ideia: em vez de rodar
+[dgm_par_exec.cpp:82](../src/core/dgm_par_exec.cpp#L82). Ideia: em vez de rodar
 um `PT` de cada vez sobre o vetor inteiro, o vetor de `2^qubits` posições é
 dividido em **regiões** — blocos definidos por fixar um conjunto de bits do
 índice (`region_mask`) em um valor (`region_id`), variando o resto. Cada
@@ -131,7 +131,7 @@ toquem qubits dentro da região (por isso o código primeiro agrupa quantos
 olhando os qubits que cada um afeta, antes de disparar as threads OpenMP).
 
 Essa conta de agrupamento é feita por `compute_region`
-([dgm_par_exec.cpp:37](../src/core/dgm_par_exec.cpp#L37)), um helper
+([dgm_par_exec.cpp:38](../src/core/dgm_par_exec.cpp#L38)), um helper
 compartilhado — antes existiam três cópias quase idênticas dessa lógica
 (aqui e duas vezes dentro de `HybridExecution`), e foi exatamente por isso
 que o bug do deslocamento negativo (item 6 de
@@ -140,7 +140,7 @@ lugar. `compute_region` também é usado pelas duas passagens de região do
 `HybridExecution` (ver [04-gpu-cuda.md](04-gpu-cuda.md)).
 
 Dentro da região, `PCpuExecution1_0`
-([dgm_par_exec.cpp:133](../src/core/dgm_par_exec.cpp#L133)) faz basicamente o
+([dgm_par_exec.cpp:442](../src/core/dgm_par_exec.cpp#L442)) faz basicamente o
 mesmo que `CpuExecution1_1/2/3`, mas usando `region_id`/`region_mask` no
 lugar de todo o índice — ou seja, a mesma lógica de pares `(pos0, pos1)` e
 tipos de matriz, só que restrita à fatia de memória daquela região/thread.
