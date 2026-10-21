@@ -194,6 +194,23 @@ void DGM::validateTuning(){
 	// fazia esse clamp por conta própria; agora é garantido aqui, uma vez,
 	// antes de qualquer um deles rodar.
 	if (cpu_region_bits > qubits) cpu_region_bits = qubits;
+
+	// Uma região de CPU que não é maior que a faixa coalescida (e que não
+	// cobre o circuito inteiro) não consegue absorver nenhuma porta com
+	// alvo fora dela: compute_region() devolve um lote vazio e
+	// PCpuExecution1/HybridExecution ficavam num laço infinito em
+	// pts_start == pts_end. Achado pelo test_cpu_parallel (região 5 com
+	// coalesced 5 em 9 qubits).
+	if (exec_type == t_PAR_CPU || exec_type == t_HYBRID){
+		// A faixa coalescida também não pode passar dos qubits do circuito
+		// (o default, 11 bits, passa de um circuito de 10 qubits): a máscara
+		// da região incluiria bits que não existem e os kernels de CPU, que
+		// agora medem a região pela própria máscara, escreveriam fora do vetor.
+		if (cpu_coalesced_bits > qubits) cpu_coalesced_bits = qubits;
+		if (cpu_region_bits < qubits && cpu_coalesced_bits >= cpu_region_bits)
+			cpu_coalesced_bits = (cpu_region_bits > 0) ? cpu_region_bits - 1 : 0;
+	}
+
 	bool gpu_region_clamped = (gpu_region_bits > qubits);
 	if (gpu_region_clamped) gpu_region_bits = qubits;
 

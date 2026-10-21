@@ -94,6 +94,14 @@ memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
 
+**Atualização (2026-10-21, CPU vetorizada):** os laços de `t_PAR_CPU`/
+`t_HYBRID` foram reescritos em blocos contíguos com AVX2 escolhido em
+execução (item 23 de [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)).
+Na qflex: Grover 22 em 16 threads 17,3 → 6,95 s, Shor 21 6,66 → 2,64 s,
+`general.out 24` em 1 thread 1,61 → 0,37 s, e a 32 qubits (limitado por
+banda de memória) `t_PAR_CPU` ~85 → 61 s e `t_HYBRID` ~42 → 36 s. Os
+números de CPU das tabelas abaixo são anteriores a essa mudança.
+
 **Atualização (2026-10-21, qflex):** `QB_LIMIT` subiu para 33 (64 GB de
 vetor de estado; a máquina tem 125 GB de RAM, então 34 qubits — 128 GB —
 não cabe e não foi testado). `general.out 33`: `t_PAR_CPU` com 32 threads

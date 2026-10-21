@@ -131,123 +131,322 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Kernels de CPU vetorizáveis (item 23 em docs/07-bugs-e-pontos-de-atencao.md)
+//
+// O laço antigo de PCpuExecution1_0 caminhava pelos pares (pos0, pos1) com a
+// recorrência `pos = (pos + inc) & pos_mask`: cada índice depende do
+// anterior, então o compilador não vetoriza e cada par custa ~9 ciclos. Os
+// bits baixos da região são sempre contíguos (cpu_coalesced_bits), então
+// dá pra enumerar só os blocos "externos" com a recorrência e processar
+// cada bloco contíguo com um laço simples, que o compilador vetoriza.
+//
+// target_clones gera uma versão AVX2 e uma genérica e escolhe em tempo de
+// execução, então o binário continua rodando em qualquer x86-64 sem
+// precisar de -march=native. Fora de x86-64/Linux/GCC>=6 (ou clang) o
+// atributo some e fica só a versão genérica.
+//
+// "avx2" e não "arch=haswell": o dispatcher de "arch=<cpu>" testa o modelo
+// exato do processador (cpu_is), não as instruções, e num Zen 3 (Threadripper
+// PRO 5955WX da qflex) caía na versão genérica sem avisar -- 0,575 ns por
+// amplitude-porta contra 0,15 ns com a versão AVX2 de fato escolhida.
+// ---------------------------------------------------------------------------
+#if (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 6)) && defined(__x86_64__) && defined(__linux__)
+#define CPU_SIMD_CLONES __attribute__((target_clones("avx2", "default")))
+#else
+#define CPU_SIMD_CLONES
+#endif
+#define CPU_INLINE static inline __attribute__((always_inline))
+
+// m = matriz 2x2 como 8 floats (re, im de m00, m01, m10, m11). a[j] e b[j]
+// são os pares (pos0, pos1) de n amplitudes consecutivas.
+CPU_INLINE void dense_run(float *__restrict a, float *__restrict b, long n, const float *m){
+	const float m0r = m[0], m0i = m[1], m1r = m[2], m1i = m[3];
+	const float m2r = m[4], m2i = m[5], m3r = m[6], m3i = m[7];
+	#pragma omp simd
+	for (long j = 0; j < n; j++){
+		float ar = a[2*j], ai = a[2*j+1], br = b[2*j], bi = b[2*j+1];
+		a[2*j]   = m0r*ar - m0i*ai + m1r*br - m1i*bi;
+		a[2*j+1] = m0r*ai + m0i*ar + m1r*bi + m1i*br;
+		b[2*j]   = m2r*ar - m2i*ai + m3r*br - m3i*bi;
+		b[2*j+1] = m2r*ai + m2i*ar + m3r*bi + m3i*br;
+	}
+}
+
+// Alvo fora da faixa baixa contígua: a e b são dois blocos separados de n
+// amplitudes (distância tmask entre eles).
+CPU_SIMD_CLONES static void dense_pairs_far(float *__restrict a, float *__restrict b, long n, const float *m){
+	dense_run(a, b, n, m);
+}
+
+// Alvo dentro da faixa baixa contígua: o bloco de n amplitudes contém os
+// dois lados de cada par, a tmask de distância (blocos alternados de tmask).
+CPU_INLINE void dense_pair(float *a, float *b, const float *m){
+	float ar = a[0], ai = a[1], br = b[0], bi = b[1];
+	a[0] = m[0]*ar - m[1]*ai + m[2]*br - m[3]*bi;
+	a[1] = m[0]*ai + m[1]*ar + m[2]*bi + m[3]*br;
+	b[0] = m[4]*ar - m[5]*ai + m[6]*br - m[7]*bi;
+	b[1] = m[4]*ai + m[5]*ar + m[6]*bi + m[7]*br;
+}
+
+// tmask = 1 e 2 têm blocos curtos demais pra dense_run: laço próprio sobre
+// os blocos, que o compilador vetoriza entre blocos.
+// m é copiado pra uma matriz local: por ser float* sem restrict, as escritas em s
+// obrigariam o compilador a reler m a cada iteração e impediriam a vetorização.
+CPU_SIMD_CLONES static void dense_pairs_low(float *s, long n, long tmask, const float *mat){
+	const float m[8] = {mat[0], mat[1], mat[2], mat[3], mat[4], mat[5], mat[6], mat[7]};
+	if (tmask == 1){
+		#pragma omp simd
+		for (long k = 0; k < n/2; k++)
+			dense_pair(s + 4*k, s + 4*k + 2, m);
+	}
+	else if (tmask == 2){
+		#pragma omp simd
+		for (long k = 0; k < n/4; k++){
+			dense_pair(s + 8*k,     s + 8*k + 4, m);
+			dense_pair(s + 8*k + 2, s + 8*k + 6, m);
+		}
+	}
+	else{
+		for (long base = 0; base < n; base += 2*tmask)
+			dense_run(s + 2*base, s + 2*(base + tmask), tmask, m);
+	}
+}
+
+// Matriz diagonal principal (m01 = m10 = 0): a *= m00, b *= m11. Portas de
+// fase (Z, R1-R3) têm m00 = 1, e aí só o lado b precisa ser tocado --
+// metade das leituras/escritas e das multiplicações.
+CPU_INLINE void diag_run(float *__restrict a, float *__restrict b, long n, const float *m){
+	const float p0r = m[0], p0i = m[1], p3r = m[6], p3i = m[7];
+	if (p0r == 1.0f && p0i == 0.0f){
+		#pragma omp simd
+		for (long j = 0; j < n; j++){
+			float br = b[2*j], bi = b[2*j+1];
+			b[2*j]   = p3r*br - p3i*bi;
+			b[2*j+1] = p3r*bi + p3i*br;
+		}
+	}
+	else{
+		#pragma omp simd
+		for (long j = 0; j < n; j++){
+			float ar = a[2*j], ai = a[2*j+1], br = b[2*j], bi = b[2*j+1];
+			a[2*j]   = p0r*ar - p0i*ai;
+			a[2*j+1] = p0r*ai + p0i*ar;
+			b[2*j]   = p3r*br - p3i*bi;
+			b[2*j+1] = p3r*bi + p3i*br;
+		}
+	}
+}
+
+CPU_SIMD_CLONES static void diag_pairs_far(float *__restrict a, float *__restrict b, long n, const float *m){
+	diag_run(a, b, n, m);
+}
+
+CPU_INLINE void diag_pair(float *a, float *b, const float *m, bool skip_a){
+	if (!skip_a){
+		float ar = a[0], ai = a[1];
+		a[0] = m[0]*ar - m[1]*ai;
+		a[1] = m[0]*ai + m[1]*ar;
+	}
+	float br = b[0], bi = b[1];
+	b[0] = m[6]*br - m[7]*bi;
+	b[1] = m[6]*bi + m[7]*br;
+}
+
+// m é copiado pra uma matriz local: por ser float* sem restrict, as escritas em s
+// obrigariam o compilador a reler m a cada iteração e impediriam a vetorização.
+CPU_SIMD_CLONES static void diag_pairs_low(float *s, long n, long tmask, const float *mat){
+	const float m[8] = {mat[0], mat[1], mat[2], mat[3], mat[4], mat[5], mat[6], mat[7]};
+	if (tmask == 1 || tmask == 2){
+		const bool skip_a = (m[0] == 1.0f && m[1] == 0.0f);
+		if (tmask == 1){
+			#pragma omp simd
+			for (long k = 0; k < n/2; k++)
+				diag_pair(s + 4*k, s + 4*k + 2, m, skip_a);
+		}
+		else{
+			#pragma omp simd
+			for (long k = 0; k < n/4; k++){
+				diag_pair(s + 8*k,     s + 8*k + 4, m, skip_a);
+				diag_pair(s + 8*k + 2, s + 8*k + 6, m, skip_a);
+			}
+		}
+	}
+	else{
+		for (long base = 0; base < n; base += 2*tmask)
+			diag_run(s + 2*base, s + 2*(base + tmask), tmask, m);
+	}
+}
+
+// Matriz anti-diagonal (m00 = m11 = 0): a' = m01 * b, b' = m10 * a. Quando
+// m01 = m10 = 1 (X) é só uma troca de memória, sem nenhuma multiplicação.
+CPU_INLINE void sec_run(float *__restrict a, float *__restrict b, long n, const float *m){
+	const float q1r = m[2], q1i = m[3], q2r = m[4], q2i = m[5];
+	if (q1r == 1.0f && q1i == 0.0f && q2r == 1.0f && q2i == 0.0f){
+		#pragma omp simd
+		for (long j = 0; j < 2*n; j++){
+			float t = a[j];
+			a[j] = b[j];
+			b[j] = t;
+		}
+	}
+	else{
+		#pragma omp simd
+		for (long j = 0; j < n; j++){
+			float ar = a[2*j], ai = a[2*j+1], br = b[2*j], bi = b[2*j+1];
+			a[2*j]   = q1r*br - q1i*bi;
+			a[2*j+1] = q1r*bi + q1i*br;
+			b[2*j]   = q2r*ar - q2i*ai;
+			b[2*j+1] = q2r*ai + q2i*ar;
+		}
+	}
+}
+
+CPU_SIMD_CLONES static void sec_pairs_far(float *__restrict a, float *__restrict b, long n, const float *m){
+	sec_run(a, b, n, m);
+}
+
+CPU_INLINE void sec_pair(float *a, float *b, const float *m){
+	float ar = a[0], ai = a[1], br = b[0], bi = b[1];
+	a[0] = m[2]*br - m[3]*bi;
+	a[1] = m[2]*bi + m[3]*br;
+	b[0] = m[4]*ar - m[5]*ai;
+	b[1] = m[4]*ai + m[5]*ar;
+}
+
+// m é copiado pra uma matriz local: por ser float* sem restrict, as escritas em s
+// obrigariam o compilador a reler m a cada iteração e impediriam a vetorização.
+CPU_SIMD_CLONES static void sec_pairs_low(float *s, long n, long tmask, const float *mat){
+	const float m[8] = {mat[0], mat[1], mat[2], mat[3], mat[4], mat[5], mat[6], mat[7]};
+	if (tmask == 1){
+		#pragma omp simd
+		for (long k = 0; k < n/2; k++)
+			sec_pair(s + 4*k, s + 4*k + 2, m);
+	}
+	else if (tmask == 2){
+		#pragma omp simd
+		for (long k = 0; k < n/4; k++){
+			sec_pair(s + 8*k,     s + 8*k + 4, m);
+			sec_pair(s + 8*k + 2, s + 8*k + 6, m);
+		}
+	}
+	else{
+		for (long base = 0; base < n; base += 2*tmask)
+			sec_run(s + 2*base, s + 2*(base + tmask), tmask, m);
+	}
+}
+
+// Aplica o PT "term" sobre todos os pares da região descrita por
+// (mask, id): mask = bits que a região enumera (inclui o alvo; já sem os
+// controles que caem dentro da região), id = valor dos bits fora de mask
+// (inclui o valor dos controles). Mesmo resultado do laço genérico no fim
+// da função, só que em blocos contíguos quando dá.
+static void apply_gate(float complex *state, PT *term, long matrix_type, long mask, long id){
+	long target_bit_mask = 1L << term->target_bit;
+	long region_size = __builtin_popcountl(mask);
+	long low_bits = __builtin_ctzl(~mask);	// bits baixos contíguos dentro da região
+
+	if (low_bits >= 2){
+		void (*far_kernel)(float *, float *, long, const float *);
+		void (*low_kernel)(float *, long, long, const float *);
+		switch (matrix_type){
+			case DENSE:    far_kernel = dense_pairs_far; low_kernel = dense_pairs_low; break;
+			case DIAG_PRI: far_kernel = diag_pairs_far;  low_kernel = diag_pairs_low;  break;
+			default:       far_kernel = sec_pairs_far;   low_kernel = sec_pairs_low;   break;	// DIAG_SEC
+		}
+		const float *m = (const float *) term->matrix;
+		float *s = (float *) state;
+		long run_len = 1L << low_bits;
+		long pos = 0;
+
+		if (term->target_bit >= low_bits){
+			long outer_mask = mask & ~target_bit_mask & ~(run_len - 1);
+			long outer_count = 1L << (region_size - 1 - low_bits);
+			long inc = ~outer_mask + 1;
+			for (long outer_index = 0; outer_index < outer_count; outer_index++){
+				long base = pos | id;
+				far_kernel(s + 2*base, s + 2*(base + target_bit_mask), run_len, m);
+				pos = (pos + inc) & outer_mask;
+			}
+		}
+		else{
+			long outer_mask = mask & ~(run_len - 1);
+			long outer_count = 1L << (region_size - low_bits);
+			long inc = ~outer_mask + 1;
+			for (long outer_index = 0; outer_index < outer_count; outer_index++){
+				low_kernel(s + 2*(pos | id), run_len, target_bit_mask, m);
+				pos = (pos + inc) & outer_mask;
+			}
+		}
+		return;
+	}
+
+	// Caminho genérico (um par por iteração).
+	long pos_mask = mask & ~target_bit_mask;
+	long inc = ~pos_mask + 1;
+	long pos = 0;
+	long pos_count = 1L << (region_size - 1);
+	long pos0, pos1;
+	float complex tmp;
+
+	switch (matrix_type){
+		case DENSE:
+			for (long pos_index = 0; pos_index < pos_count; pos_index++){
+				pos0 = pos | id;
+				pos1 = pos0 | target_bit_mask;
+				pos = (pos+inc) & pos_mask;
+
+				tmp 		= term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
+				state[pos0] = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
+				state[pos1] = tmp;
+			}
+			break;
+		case DIAG_PRI:
+			for (long pos_index = 0; pos_index < pos_count; pos_index++){
+				pos0 = pos | id;
+				pos1 = pos0 | target_bit_mask;
+				pos = (pos+inc) & pos_mask;
+
+				tmp			= term->matrix[3] * state[pos1];
+				state[pos0] *= term->matrix[0];
+				state[pos1] = tmp;
+			}
+			break;
+		case DIAG_SEC:
+			for (long pos_index = 0; pos_index < pos_count; pos_index++){
+				pos0 = pos | id;
+				pos1 = pos0 | target_bit_mask;
+				pos = (pos+inc) & pos_mask;
+
+				tmp 		= term->matrix[2] * state[pos0];
+				state[pos0] = term->matrix[1] * state[pos1];
+				state[pos1] = tmp;
+			}
+			break;
+		default:
+			printf("Erro de Tipo\n");
+	}
+}
+
 // Aplica os PT de pts[pts_start..pts_end) restritos a uma única região
 // (region_id/region_mask) — mesma lógica de pares (pos0, pos1) e tipos de
 // matriz de CpuExecution1_1/2/3, só que iterando apenas sobre a fatia de
 // memória dessa região (ver docs/03-motor-de-execucao-cpu.md, seção 5).
+// pos_count (2^(bits da região - 1)) segue na assinatura por compatibilidade
+// com dgm.h, mas agora sai da própria máscara em apply_gate().
 void PCpuExecution1_0(float complex *state, PT **pts, int qubits, long pts_start, long pts_end, long pos_count, long region_id, long region_mask){
-	PT *term;
-	long pos0, pos1;
-	float complex tmp;
-
-
-	for (int op_index = pts_start; op_index < pts_end; op_index++){
-		term = pts[op_index];
-		long target_bit_mask = (1L << term->target_bit);						//mascara com a posição do qubit do operador
+	for (long op_index = pts_start; op_index < pts_end; op_index++){
+		PT *term = pts[op_index];
 		long matrix_type = term->matrixType();
-		long pos_mask = region_mask & ~target_bit_mask;			//mascara da posição --- retira o 'target_bit_mask' da region_mask, para o 'inc pular sobre ' esse bit também
-		long inc = ~pos_mask + 1;						  	//usado para calcular a proxima posição de uma região
-		long pos = 0;
 
 		if (!term->control_count){
-			switch (matrix_type){
-				case DENSE:
-					for (long pos_index = 0; pos_index < pos_count; pos_index++){
-						pos0 = pos | region_id;
-						pos1 = pos0 | target_bit_mask;
-						pos = (pos+inc) & pos_mask;
-
-						tmp 		= term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
-						state[pos0] = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
-						state[pos1] = tmp;
-					}
-					break;
-				case DIAG_PRI:
-					for (long pos_index = 0; pos_index < pos_count; pos_index++){
-							pos0 = pos | region_id;
-							pos1 = pos0 | target_bit_mask;
-							pos = (pos+inc) & pos_mask;
-
-							tmp			= term->matrix[3] * state[pos1];
-							state[pos0] *= term->matrix[0];// * state[pos0];
-							state[pos1] = tmp;// * state[pos1];tmp;
-					}
-					break;
-
-				case DIAG_SEC:
-					for (long pos_index = 0; pos_index < pos_count; pos_index++){
-							pos0 = pos | region_id;
-							pos1 = pos0 | target_bit_mask;
-							pos = (pos+inc) & pos_mask;
-
-							tmp 		= term->matrix[2] * state[pos0];
-							state[pos0] = term->matrix[1] * state[pos1];
-							state[pos1] = tmp;
-					}
-					break;
-				default:
-					printf("Erro de Tipo\n");
-			}
+			apply_gate(state, term, matrix_type, region_mask, region_id);
 		}
 		//Importante: region_id é o identificador da região e corresponde ao valor dos qubits externos à região de operação (region_mask)
-		else {
-			if ((term->control_mask & region_id & ~region_mask) == (term->control_value & ~region_mask)){		//Verifica se a parte 'global' do controle satisfaz a região (region_id)
-
-				// É preciso arrumar o region_mask retirando os qubits de controle que estão dentro da região e arrumar o region_id para incluir o valor dos controles
-				long control_region_id = region_id | term->control_value;				//Esta operação inclui o valor dos controles locais no region_id (funciona pois os valores globais já deram match)
-				long control_region_mask = region_mask;							//Valor inicial da mascara da região com controle
-				long control_pos_count = pos_count;						//Número inicial de posições a serem calculadas
-
-				for (int qubit_index = 0, bit_mask = 1; qubit_index < qubits; qubit_index++, bit_mask = bit_mask << 1){ 	//percorre os qubits
-					if (bit_mask & region_mask & term->control_mask){					//se o qubit pertencer a região e for um controle:
-						control_region_mask ^= bit_mask;								//	remove ele da região(region_mask) (para não iterar sobre ele)
-						control_pos_count /= 2;							//	diminui a quantidade de posições que é preciso calcular.
-					}
-				}
-
-				pos_mask = control_region_mask & ~target_bit_mask;						//mascara da posição --- retira o 'target_bit_mask' da region_mask, para o 'inc pular sobre' esse bit também
-				inc = ~pos_mask + 1;
-
-				switch (matrix_type){
-					case DENSE:
-						for (long pos_index = 0; pos_index < control_pos_count; pos_index++){
-							pos0 = pos | control_region_id;
-							pos1 = pos0 | target_bit_mask;
-							pos = (pos+inc) & pos_mask;
-
-							tmp 		= term->matrix[2] * state[pos0] + term->matrix[3] * state[pos1];
-							state[pos0] = term->matrix[0] * state[pos0] + term->matrix[1] * state[pos1];
-							state[pos1] = tmp;
-						}
-						break;
-					case DIAG_PRI:
-						for (long pos_index = 0; pos_index < control_pos_count; pos_index++){
-							pos0 = pos | control_region_id;
-							pos1 = pos0 | target_bit_mask;
-							pos = (pos+inc) & pos_mask;
-
-							tmp			= term->matrix[3] * state[pos1];
-							state[pos0] *= term->matrix[0];
-							state[pos1] = tmp;
-						}
-						break;
-
-					case DIAG_SEC:
-						for (long pos_index = 0; pos_index < control_pos_count; pos_index++){
-							pos0 = pos | control_region_id;
-							pos1 = pos0 | target_bit_mask;
-							pos = (pos+inc) & pos_mask;
-
-							tmp 		= term->matrix[2] * state[pos0];
-							state[pos0] = term->matrix[1] * state[pos1];
-							state[pos1] = tmp;
-						}
-						break;
-
-					default:
-						printf("Erro de Tipo");
-				}
-			}
+		else if ((term->control_mask & region_id & ~region_mask) == (term->control_value & ~region_mask)){		//Verifica se a parte 'global' do controle satisfaz a região (region_id)
+			// Os controles que caem dentro da região saem da máscara (não se
+			// itera sobre eles) e o valor deles entra no region_id.
+			apply_gate(state, term, matrix_type, region_mask & ~term->control_mask, region_id | term->control_value);
 		}
 	}
 }

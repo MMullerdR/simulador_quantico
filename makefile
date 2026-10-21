@@ -131,9 +131,18 @@ $(OUT)/test_gates.o: tests/test_gates.cpp | $(OUT)
 $(OUT)/test_gates.out: $(OUT)/test_gates.o $(TEST_GATES_OBJS) $(GPU_OBJS)
 	$(LINKER) -o $@ $^ $(LDFLAGS)
 
-test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out
+# test_cpu_parallel.cpp compara t_PAR_CPU contra t_CPU em circuitos
+# aleatorios (mesmos objetos de test_gates).
+$(OUT)/test_cpu_parallel.o: tests/test_cpu_parallel.cpp | $(OUT)
+	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@
+
+$(OUT)/test_cpu_parallel.out: $(OUT)/test_cpu_parallel.o $(TEST_GATES_OBJS) $(GPU_OBJS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
+
+test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out $(OUT)/test_cpu_parallel.out
 	$(OUT)/test_qft_addf.out
 	$(OUT)/test_gates.out
+	$(OUT)/test_cpu_parallel.out
 	bash tests/smoke_test.sh
 
 clean:

@@ -761,6 +761,86 @@ trocar `/` e `%` por `>>` e `&` no kernel (<2%) e paralelizar `measure()`
 num microbenchmark isolado deu 1,8x sem AVX2 e 7-8x com AVX2, mas não foi
 medido no sistema inteiro.
 
+## 23. [CORRIGIDO] Loops de CPU do `t_PAR_CPU`/`t_HYBRID` não vetorizavam (~9 ciclos por par de amplitudes)
+
+**Onde:** `PCpuExecution1_0` em `src/core/dgm_par_exec.cpp` (agora
+`apply_gate()` + kernels `dense_*`/`diag_*`/`sec_*`), `DGM::validateTuning()`
+em `src/core/dgm_core.cpp`, teste novo `tests/test_cpu_parallel.cpp`.
+
+O laço antigo caminhava pelos pares com `pos = (pos + inc) & pos_mask`: o
+índice de cada iteração depende do anterior, o compilador não vetoriza, e
+cada par de amplitudes custava ~1,3 ns (~9 ciclos). Os bits baixos da região
+(`cpu_coalesced_bits`) são sempre contíguos, então agora só os blocos
+"externos" usam a recorrência e cada bloco contíguo vai para um laço simples
+que o compilador vetoriza. Há um kernel por tipo de matriz (densa,
+diagonal principal, anti-diagonal), com casos especiais: porta de fase com
+`m00 = 1` (Z, R1-R3) só toca o lado do bit 1, e `X` é uma troca de memória
+sem multiplicação. Alvos nos bits 0, 1 e 2 têm blocos curtos demais e ganharam
+laços próprios.
+
+`target_clones("avx2", "default")` gera uma versão AVX2 e uma genérica e
+escolhe na execução, então o binário continua rodando em qualquer x86-64
+sem `-march=native` (que sozinho só deu 8-18%). Armadilha encontrada no
+caminho: a primeira tentativa usou `target_clones("arch=haswell", ...)`, cujo
+dispatcher testa o **modelo exato** do processador e não as instruções — num
+Zen 3 (qflex) caía em silêncio na versão genérica (0,575 ns por
+amplitude-porta contra 0,15 ns com a AVX2 de fato escolhida). Fora de
+x86-64/Linux/GCC>=6 (ou clang), por exemplo no MinGW, o atributo some e só a
+versão genérica é compilada.
+
+Medido na qflex (Threadripper PRO 5955WX), mesmo build antes/depois, melhor
+de 2 execuções:
+
+| caso | antes | depois |
+|---|---|---|
+| `general.out 24 1 1` (H, 1 thread) | 1,61 s | 0,37 s |
+| `general.out 26 1 16` | 0,97 s | 0,80 s (limitado por banda de memória) |
+| `grover.out 22 1 16` | 17,3 s | 6,95 s |
+| `shor.out 21 1 16` | 6,66 s | 2,64 s |
+| `shor.out 19 1 1` | 15,5 s | 5,3 s |
+| `general.out 32 1 32` | ~85 s | 60,9 s |
+| `general.out 32 3 32` (híbrido, região; também pega o tuning novo de GPU do item 22) | ~42 s | 36 s |
+
+Custo por amplitude-porta, 1 thread, em cache: alvo >= 3: H 0,14-0,19 ns,
+Z 0,05-0,08 ns, X 0,07-0,11 ns (antes ~1,3 ns); bit 0: H 0,35 ns; bit 1: H
+0,47 ns; bit 2: H 0,29 ns. Com estados grandes o limite passa a ser a banda
+de memória (`cpu_ns_por_amp_porta` do híbrido a 32 qubits fica em ~10 ns).
+`cpu_region_bits`/`cpu_coalesced_bits` (14/11 por padrão) foram variados
+(13-18 / 5-11) depois da mudança e ficaram praticamente iguais; mantidos. A
+constante inicial de 1,4 ns do modelo de custo do híbrido
+(`hybrid_cpu_ns_per_amp_op`) foi medida com o laço antigo: o valor real em
+cache caiu uns 5-10x, mas a média móvel já corrige no começo da execução e
+não mexi nela.
+
+**Teste novo, `tests/test_cpu_parallel.cpp` (`make test`):** compara o
+vetor de estado final de `t_PAR_CPU` contra `t_CPU` (o motor serial, que
+continua com os laços antigos e serve de referência) em 90 circuitos
+aleatórios, a partir de um estado inicial aleatório, com portas H, X, Y, Z,
+R1-R3 mais quatro registradas no teste (densas e anti-diagonais com parte
+imaginária, diagonal com `m00 != 1`), com e sem controles de valor 0 ou 1,
+em várias combinações de qubits/região/coalescida/threads. Conferido por
+mutação: trocar um sinal em cada um dos kernels (densa, diagonal,
+anti-diagonal, os ramos de bits baixos e a troca pura do `X`) faz o teste
+falhar.
+
+Dois bugs que o teste achou, ambos no `validateTuning()` (pré-existentes ou
+expostos por esta mudança):
+- Uma região de CPU não maior que a faixa coalescida (e menor que o
+  circuito) não absorvia nenhuma porta com alvo fora dela e
+  `PCpuExecution1` ficava em laço infinito (`pts_start == pts_end`). Agora
+  `cpu_coalesced_bits` desce para `cpu_region_bits - 1` nesse caso.
+- `cpu_coalesced_bits` (padrão 11) maior que os qubits de um circuito
+  pequeno (10 qubits, por exemplo) fazia a máscara da região incluir bits
+  que não existem. Como os kernels novos medem a região pela máscara,
+  escreveriam fora do vetor (visto como `double free or corruption` ao
+  retirar o clamp de propósito). Agora `cpu_coalesced_bits` é limitado aos
+  qubits.
+
+**Não feito:** o `t_CPU` serial (`CpuExecution1_*`) continua com os laços
+antigos de propósito, como referência do teste acima. Não medido: CPUs sem
+AVX2 (só a versão genérica é exercitada lá, a mesma do MinGW), Intel, e
+`t_HYBRID` em máquinas onde o modelo de custo parta do valor inicial.
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em

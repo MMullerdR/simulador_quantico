@@ -159,6 +159,16 @@ qubits;` logo no início — sem isso, `1 << (qubits - region_bits)` mais
 abaixo deslocaria por um expoente negativo (bug já corrigido, ver
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md), item 6).
 
+> **Atualização (2026-10-21):** o laço por par descrito acima é o do `t_CPU`
+> serial (`CpuExecution1_*`), que continua assim de propósito. No
+> `t_PAR_CPU`/`t_HYBRID`, `PCpuExecution1_0` agora chama `apply_gate()`, que
+> usa a recorrência `pos = (pos + inc) & pos_mask` só para andar pelos blocos
+> "externos" da região e processa cada bloco contíguo (os `cpu_coalesced_bits`
+> baixos) com um laço vetorizável, em versão AVX2 escolhida na execução. O
+> resultado é o mesmo (conferido contra o `t_CPU` por
+> `tests/test_cpu_parallel.cpp`); ver item 23 em
+> [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+
 ## 6. Nota sobre `CpuExecution2_*` e `CpuExecution3_*`
 
 O arquivo original tinha três "famílias" de funções (`CpuExecution1_*`,
