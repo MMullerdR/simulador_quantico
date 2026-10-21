@@ -139,7 +139,16 @@ $(OUT)/test_cpu_parallel.o: tests/test_cpu_parallel.cpp | $(OUT)
 $(OUT)/test_cpu_parallel.out: $(OUT)/test_cpu_parallel.o $(TEST_GATES_OBJS) $(GPU_OBJS)
 	$(LINKER) -o $@ $^ $(LDFLAGS)
 
-test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out $(OUT)/test_cpu_parallel.out
+# gpu_hog.cu ocupa memória da GPU pro smoke test cobrir a decisão de
+# delegação do t_HYBRID com a GPU parcialmente cheia (só com GPU=real).
+ifeq ($(GPU),real)
+TEST_GPU_EXTRA = $(OUT)/gpu_hog.out
+endif
+
+$(OUT)/gpu_hog.out: tests/gpu_hog.cu | $(OUT)
+	$(NVCC) -o $@ $<
+
+test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out $(OUT)/test_cpu_parallel.out $(TEST_GPU_EXTRA)
 	$(OUT)/test_qft_addf.out
 	$(OUT)/test_gates.out
 	$(OUT)/test_cpu_parallel.out

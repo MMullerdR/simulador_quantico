@@ -149,6 +149,43 @@ else
 	check_success_rate "shor.out 15 2 1 (t_GPU)" "^Found factors:" 16 1 "$BIN/shor.out" 15 2 1
 	check_success_rate "shor.out 15 3 2 (t_HYBRID)" "^Found factors:" 16 1 "$BIN/shor.out" 15 3 2
 
+	# Decisão "o estado cabe na GPU?" com a GPU parcialmente ocupada
+	# (DGM::HybridExecution: GpuMinFreeBytes + 512 MB de margem). gpu_hog.out
+	# ocupa a memória da GPU menos N MB e segura até ser morto (ou 300 s).
+	# 24 qubits = 128 MB de estado, precisa de 640 MB livres pra delegar:
+	# com 450 MB livres tem que cair no modo de regiões, com 3000 MB tem que
+	# delegar à GPU. O contexto CUDA do próprio processo também consome
+	# memória, por isso as margens são folgadas.
+	if [ -x "$BIN/gpu_hog.out" ]; then
+		echo "-- t_HYBRID com a GPU parcialmente ocupada: a decisão cabe/não cabe segue a memória livre --"
+		for pair in "450:não cabe" "3000:cabe"; do
+			leave_mb="${pair%%:*}"
+			expected="${pair##*:}"
+			hog_log=$(mktemp)
+			"$BIN/gpu_hog.out" "$leave_mb" > "$hog_log" 2>&1 &
+			hog_pid=$!
+			for _ in $(seq 1 50); do grep -q "^pronto" "$hog_log" && break; sleep 0.2; done
+			if ! grep -q "^pronto" "$hog_log"; then
+				echo "FAIL gpu_hog.out $leave_mb (não ocupou a memória: $(head -c 200 "$hog_log"))"
+				FAIL=1
+			else
+				out=$(HYBRID_DEBUG=1 "$BIN/general.out" 24 3 4 2>&1)
+				decision=$(echo "$out" | grep -a "memória livre da GPU" | head -1 | sed 's/.*precisa de [0-9]*: //')
+				amp=$(echo "$out" | grep -a "^0:" | head -1 | awk '{print $2}')
+				if [ "$decision" = "$expected" ]; then
+					echo "OK   t_HYBRID 24 qubits com ~${leave_mb} MB livres: decisão \"$decision\""
+				else
+					echo "FAIL t_HYBRID 24 qubits com ~${leave_mb} MB livres: esperava \"$expected\", saiu \"$decision\""
+					FAIL=1
+				fi
+				check_amplitude "general.out 24 3 4 com ~${leave_mb} MB livres na GPU" "$amp" "0.000244140625"
+			fi
+			kill "$hog_pid" 2>/dev/null
+			wait "$hog_pid" 2>/dev/null
+			rm -f "$hog_log"
+		done
+	fi
+
 	# Modo de regiões de verdade (21 qubits = 2 regiões globais por passada):
 	# Grover confere o resultado; Shor roda centenas de HybridExecution
 	# seguidas (alloc/pin/free de GPU a cada chamada) e só confere que não

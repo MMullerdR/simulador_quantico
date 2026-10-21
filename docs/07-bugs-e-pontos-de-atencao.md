@@ -606,12 +606,40 @@ Shor a 21 qubits em modo de regiões (várias chamadas seguidas de
 uma amplitude de 22 qubits (~4,9e-4) errada em 20% ainda passaria. Suíte
 completa em GPU real: 38s, tudo OK; em `GPU=stub` (WSL) continua igual.
 
+**Teste da decisão de delegação (2026-10-21):** o corte "o estado cabe ou
+não na GPU" (`GpuMinFreeBytes` + 512 MB de margem) só era coberto com a GPU
+vazia. `tests/gpu_hog.cu` ocupa memória da GPU deixando livre uma
+quantidade pedida; o smoke test (só em `GPU=real`) roda `general.out 24 3 4`
+com `HYBRID_DEBUG=1` com pouca memória livre (tem que dizer "não cabe" e cair
+no modo de regiões) e com bastante (tem que dizer "cabe" e delegar à GPU),
+e confere a amplitude nos dois casos.
+
 **O que continua aberto:** o híbrido só ganha de verdade quando o estado
-não cabe na GPU; abaixo disso ele é o `t_GPU`. Um híbrido que bata a GPU
-com o estado cabendo exigiria manter parte do estado residente na GPU
-entre passadas (redesenho maior, não feito) e, pelos números acima, o
-ganho máximo seria ~1,4x em circuitos limitados por memória e ~0 nos
-pesados (a CPU é ~100x mais lenta por região).
+não cabe na GPU; abaixo disso ele é o `t_GPU`.
+
+**Avaliado em 2026-10-21 e não implementado: manter parte do estado
+residente na GPU.** Depois dos itens 22 e 23 a CPU ficou muito mais perto
+da GPU, então refiz a conta com números novos da qflex (A4500, Threadripper
+PRO 5955WX, PCIe ~20 GB/s medido nas cópias de região):
+
+- Estado cabe na GPU, circuito pesado (`grover.out 22`): GPU 1,34 s,
+  `t_PAR_CPU` com 32 threads 6,5 s, ou seja, a GPU é ~4,9x mais rápida.
+  Dividir o estado entre as duas teria teto de 1 + 1/4,9 = ~1,2x.
+- Estado cabe na GPU, limitado por banda (`general.out 26`): GPU 0,59 s
+  contra CPU 0,83 s; teto ~1,7x.
+- Estado não cabe (32 qubits, 32 GB contra 20 GB de GPU): híbrido atual
+  36 s contra `t_PAR_CPU` 61 s; com a maior parte residente o melhor caso
+  seria ~24-30 s, e só nessa faixa estreita de 32-33 qubits.
+
+Esses tetos ignoram o custo de dividir o vetor: toda porta com alvo no bit
+de divisão exige trocar metades do estado pelo PCIe (no Grover são 2 portas
+H por iteração, e mover metade do estado leva um tempo parecido com o da
+iteração inteira na GPU), o que come a maior parte do ganho. Em troca
+traria um quarto caminho de execução, estado a manter coerente entre CPU e
+GPU e troca de qubits globais por locais, validável de verdade só a 32-33
+qubits (dezenas de segundos por teste). Decisão: não implementar. Se
+alguém retomar, o ponto de partida é este cálculo, não a estimativa antiga
+de "CPU ~100x mais lenta", que o item 23 invalidou.
 
 ---
 
