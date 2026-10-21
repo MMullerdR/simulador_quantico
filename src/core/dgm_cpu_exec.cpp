@@ -14,6 +14,11 @@ void DGM::CpuExecution1(int iterations){
 	for (int iteration_index = 0; iteration_index < iterations; iteration_index++){
 		long pt_index = 0;
 		while (pts[pt_index] != NULL){
+			if (pts[pt_index]->phase_terms){	// porta de fase fundida
+				ApplyFusedPhase(state, pts[pt_index], mem_size - 1, 0);
+				pt_index++;
+				continue;
+			}
 			long matrix_type = pts[pt_index]->matrixType();
 
 			switch (matrix_type){

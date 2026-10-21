@@ -6,6 +6,7 @@
 #include <complex.h>
 #include <sys/time.h>
 #include <random>
+#include <vector>
 
 #define complex __complex__
 
@@ -51,6 +52,27 @@ enum {
 	DIAG_SEC
 };
 
+// Porta de fase fundida (item 27 em docs/07-bugs-e-pontos-de-atencao.md):
+// várias portas diag(1, e^{i*theta}) (Z, R1-R3, rotações da QFT/somadores do
+// Shor, com ou sem controles) que comutam entre si viram UMA operação sobre o
+// vetor de estado inteiro: amplitude[idx] *= e^{i*fase(idx)} com
+//   fase(idx) = soma, sobre os termos cujo (idx & mask) == value, de steps
+// em unidades de 2*pi/2^FUSED_PHASE_BITS. "steps" é inteiro de propósito: a
+// soma é exata (módulo 2^FUSED_PHASE_BITS) e a exponencial sai de uma tabela.
+#define FUSED_PHASE_BITS 16
+#define FUSED_PHASE_STEPS (1 << FUSED_PHASE_BITS)
+#define FUSED_MAX_TERMS 64
+
+struct PhaseTerm{
+	long mask;	// bits que precisam valer 1 no value (controles e alvo)
+	long value;	// valor esperado de (idx & mask)
+	long steps;	// ângulo em unidades de 2*pi/2^FUSED_PHASE_BITS
+};
+
+// Tabela e^{i*2*pi*k/2^FUSED_PHASE_BITS}, k = 0..2^FUSED_PHASE_BITS-1, calculada
+// em double e arredondada pra float uma vez só (thread-safe, C++11).
+const float complex* PhaseTable();
+
 // PT ("Pauli Term"): uma porta de 1 qubit já compilada a partir da
 // linguagem de circuitos (ver docs/02-linguagem-de-circuitos.md),
 // pronta para ser aplicada sobre o vetor de estado.
@@ -74,6 +96,12 @@ struct PT{
 	// Parte de uma otimização de controle parcial nunca finalizada —
 	// mantida sem uso, mesma razão de span_start_bit acima.
 	long *control_rest, control_rest_count;
+
+	// Não-NULL: este PT é uma porta de fase fundida (ver PhaseTerm acima).
+	// Nesse caso matrix é NULL, target_bit vale 0 (cabe em qualquer lote/
+	// região) e control_mask/control_count valem 0; quem executa PT precisa
+	// tratar phase_terms antes de olhar matrix/matrixType().
+	std::vector<PhaseTerm> *phase_terms;
 
 	PT();
 	~PT();
@@ -104,6 +132,17 @@ void printMemExp(float complex* mem, int qubits, int reg1, int reg2, long width)
 // Como printMemExp, mas também conferindo se o valor medido bate com
 // modular_pow(base_value, expoente, modulus) — usado só em depuração.
 void printMemCheckExp(float complex* mem, int qubits, long width, long base_value, long modulus);
+
+// Aplica uma porta de fase fundida (term->phase_terms) às amplitudes
+// state[id | sub], sub = todo subconjunto dos bits de "mask" (a região, ou
+// (1 << qubits) - 1 para o vetor inteiro). Caminho escalar, usado pelo t_CPU e
+// pelo t_PAR_CPU; a GPU tem o dela em kernel.cu.
+void ApplyFusedPhase(float complex *state, const PT *term, long mask, long id);
+
+// Funde corridas de portas de fase consecutivas de list (mesmo critério e
+// resultado de src/core/gate_fuse.cpp) -- os PT fundidos são apagados.
+// Devolve quantas portas foram absorvidas. list termina em NULL.
+long FusePhaseRuns(std::vector<PT*> &list);
 
 // Exponenciação modular rápida (base^exponent mod modulus).
 long modular_pow(long base, long exponent, long modulus);

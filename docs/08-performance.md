@@ -94,12 +94,12 @@ memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
 
-**Atualização (2026-10-21, QFT aproximada):** o circuito do Shor passou a usar a
-QFT aproximada (item 26 de
-[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md);
-`SHOR_AQFT=0` volta ao circuito exato). Shor na qflex em `t_GPU`: 21 qubits
-1,03 -> 0,86 s e 25 qubits 17,4 -> 13,9 s; em `t_PAR_CPU` com 16 threads, Shor
-21: 2,64 -> 2,12 s.
+**Atualização (2026-10-21, Shor):** QFT aproximada (item 26 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md); `SHOR_AQFT=0`
+volta ao circuito exato) e fusão de portas de fase na GPU (item 27;
+`GPU_FUSE=0` desliga). Shor na qflex em `t_GPU`: 25 qubits 50 s no começo
+da sessão -> 13,1 s; 27 qubits 274 s -> 75,5 s (acumulado dos itens 22, 24, 26
+e 27). Em `t_PAR_CPU` com 16 threads, Shor 21: 6,66 s -> 2,12 s (itens 23 e 26).
 
 **Atualização (2026-10-21, passadas da GPU):** portas que comutam passaram a
 ser reordenadas antes do `t_GPU` agrupá-las em lotes (item 24 de

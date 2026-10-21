@@ -40,8 +40,18 @@ void ScheduleForBatching(PT **pts, int coalesced_bits, int extra_bits, int max_b
 	for (long i = 0; i < n; i++){
 		PT *term = pts[i];
 		long target = 1L << term->target_bit;
-		bool diagonal = (term->matrixType() == DIAG_PRI);
-		long z_bits = (long) term->control_mask | (diagonal ? target : 0L);
+		bool diagonal;
+		long z_bits;
+		if (term->phase_terms){
+			// porta de fase fundida: diagonal em todos os bits que algum termo toca
+			diagonal = true;
+			z_bits = 0;
+			for (size_t t = 0; t < term->phase_terms->size(); t++) z_bits |= (*term->phase_terms)[t].mask;
+		}
+		else{
+			diagonal = (term->matrixType() == DIAG_PRI);
+			z_bits = (long) term->control_mask | (diagonal ? target : 0L);
+		}
 		long n_bits = diagonal ? 0L : target;
 
 		for (int bit = 0; bit < MAX_BITS; bit++){

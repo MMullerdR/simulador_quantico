@@ -442,6 +442,10 @@ static void apply_gate(float complex *state, PT *term, long matrix_type, long ma
 void PCpuExecution1_0(float complex *state, PT **pts, int qubits, long pts_start, long pts_end, long pos_count, long region_id, long region_mask){
 	for (long op_index = pts_start; op_index < pts_end; op_index++){
 		PT *term = pts[op_index];
+		if (term->phase_terms){		// porta de fase fundida: depende só do índice
+			ApplyFusedPhase(state, term, region_mask, region_id);
+			continue;
+		}
 		long matrix_type = term->matrixType();
 
 		if (!term->control_count){
@@ -536,6 +540,8 @@ void DGM::HybridExecution(PT **pts, int iterations){
 	}
 	if (qubits <= qubits_limit || fits_in_gpu){
 		scheduleForGpu();	// aqui nenhuma thread de CPU lê pts[], então pode reordenar
+		// FusePhaseRuns reescreve vec_pts no lugar, então o parâmetro pts (que
+		// esconde o membro this->pts) continua apontando pra lista certa.
 		GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
 		if (hybrid_debug){
 			fprintf(stderr, "[HYBRID] qubits=%ld: %s, delegado inteiro à GPU\n", qubits, (qubits <= qubits_limit) ? "região única (<= qubits_limit)" : "estado cabe na GPU");
@@ -736,6 +742,11 @@ void DGM::HybridExecution(PT **pts, int iterations){
 					PT *projected_term;
 					gpu_pts.clear();
 					for (int op_index = global_op_start; op_index < global_op_end; op_index++){
+
+						if (pts[op_index]->phase_terms){
+							fprintf(stderr, "erro interno: porta de fase fundida no modo de regioes do t_HYBRID\n");
+							exit(1);
+						}
 
 						//verifica se o controle do operador satisfaz a parte global da região
 						if ((pts[op_index]->control_mask & gpu_proj_id & ~global_region_mask) == (pts[op_index]->control_value & ~global_region_mask)){

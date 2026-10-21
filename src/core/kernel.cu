@@ -24,7 +24,31 @@ static int call_peer_count = 0;
 struct DEV_OP{
 	long arg[TAM_ARG];
 	cuFloatComplex matrix[4];
+	int kind;		// OP_STD ou OP_FUSED
+	int term_start;		// OP_FUSED: primeiro termo em d_terms
+	int term_count;		// OP_FUSED: quantos termos
 };
+
+// OP_STD: porta 2x2 normal (matrix/arg). OP_FUSED: porta de fase fundida
+// (item 27 em docs/07-bugs-e-pontos-de-atencao.md): ignora matrix/arg e
+// multiplica cada amplitude do bloco por e^{i*fase(índice global)}.
+#define OP_STD 0
+#define OP_FUSED 1
+
+// Um termo de fase fundida (ver PhaseTerm em common.h): soma "steps" ao
+// ângulo quando o índice global bate com mask/value. O host já separa o
+// termo em duas metades, pelo lote atual: os bits que ficam FORA da região
+// do bloco (omask/oval, comparados uma vez por bloco com block_base) e os
+// bits DENTRO da região, já reindexados pro índice da shared memory
+// (lmask/lval, inteiros de 32 bits comparados por amplitude).
+struct DEV_TERM{
+	long omask;
+	long oval;
+	int lmask;
+	int lval;
+	int steps;
+};
+#define MAX_FUSED_TERMS (OPS_BLOCK * FUSED_MAX_TERMS)
 
 // Inicializa a GPU escolhida (cudaFree(0) força a inicialização do
 // contexto CUDA sem alocar nada de verdade).
@@ -36,6 +60,14 @@ __constant__ long c_arg[1][1];
 __constant__ cuFloatComplex cmatrix[1][1];
 
 __constant__ DEV_OP op[OPS_BLOCK];
+
+// Termos das portas fundidas do lote atual e tabela e^{i*2*pi*k/2^16}, em
+// memória global (ficam grandes demais pra memória constante, que também
+// guarda op[]). A tabela é enviada uma vez por processo, no primeiro lote que
+// tem porta fundida.
+__device__ DEV_TERM d_terms[MAX_FUSED_TERMS];
+__device__ cuFloatComplex d_phase_table[FUSED_PHASE_STEPS];
+static bool phase_table_uploaded = false;
 
 static cuFloatComplex *gpu_mem[4];
 __constant__ cuFloatComplex *gpu_pointer[4];
@@ -97,6 +129,34 @@ __global__ void ApplyValuesC01(int const block_size, int const repeat_count, int
 	for (op_index = 0; op_index < op_count; op_index++){
 		__syncthreads();
 
+		if (op[op_index].kind == OP_FUSED){
+			// Cada amplitude do bloco é multiplicada por uma fase que só depende
+			// do índice. Os termos vão pra shared memory uma vez por bloco; um
+			// termo cujos bits de fora da região não batem com este bloco vira
+			// "nunca" (lmask = ~0, lval = -1) em vez de um desvio por amplitude.
+			__shared__ int fused_lmask[FUSED_MAX_TERMS];
+			__shared__ int fused_lval[FUSED_MAX_TERMS];
+			__shared__ int fused_steps[FUSED_MAX_TERMS];
+			int term_start = op[op_index].term_start, term_count = op[op_index].term_count;
+			for (int t = thread_id; t < term_count; t += block_size){
+				DEV_TERM term = d_terms[term_start + t];
+				bool active = ((block_base & term.omask) == term.oval);
+				fused_lmask[t] = active ? term.lmask : ~0;
+				fused_lval[t] = active ? term.lval : -1;
+				fused_steps[t] = term.steps;
+			}
+			__syncthreads();
+
+			int region_size = 2 * block_size * repeat_count;
+			for (int p = thread_id; p < region_size; p += block_size){
+				int steps = 0;
+				for (int t = 0; t < term_count; t++)
+					steps += ((p & fused_lmask[t]) == fused_lval[t]) ? fused_steps[t] : 0;
+				shared_amplitudes[p] = cuCmulf(shared_amplitudes[p], d_phase_table[steps & (FUSED_PHASE_STEPS - 1)]);
+			}
+			continue;
+		}
+
 		target_bit_mask = 1 << op[op_index].arg[SHIFT];
 
 		if (((block_base & op[op_index].arg[CTRL_MASK]) == op[op_index].arg[CTRL_VALUE])){
@@ -130,6 +190,7 @@ __global__ void ApplyValuesC01(int const block_size, int const repeat_count, int
 //Kernel para execução com múltiplas GPUs se comunicando usando DMA (Direct Memory Access)
 void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int gpu_count, int block_size, int repeat_count, int coalesced_bits, int iterations){
 	DEV_OP operators[OPS_BLOCK];
+	static DEV_TERM host_terms[MAX_FUSED_TERMS];	// static: ~460 KB, grande demais pra pilha
 
 	error_check_count = 0;
 
@@ -246,9 +307,48 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 			// de 1 GPU) — não corrigido às cegas.
 			is_peer = ((region_start_bit + (block_region_size - coalesced_bits)) > (qubits-gpu_count+1));
 
+			int term_cursor = 0;
 			for (int batch_index = 0; batch_index < op_count; batch_index++){
-				memcpy(operators[batch_index].matrix, pts[op_index+batch_index]->matrix, 4*sizeof(float complex)); error();
-				pts[op_index+batch_index]->setArgsGPU(operators[batch_index].arg, region_start_bit, block_region_size, coalesced_bits);
+				PT *term = pts[op_index+batch_index];
+				if (term->phase_terms){
+					const std::vector<PhaseTerm> &terms = *term->phase_terms;
+					operators[batch_index].kind = OP_FUSED;
+					operators[batch_index].term_start = term_cursor;
+					operators[batch_index].term_count = (int) terms.size();
+					for (size_t t = 0; t < terms.size(); t++){
+						// separa os bits do termo em "fora da região" (omask/oval) e
+						// "dentro" (lmask/lval, no índice da shared memory): bit global
+						// g < coalesced_bits -> local g; g na janela [region_start_bit,
+						// region_start_bit + extra) -> local coalesced_bits + (g - region_start_bit)
+						DEV_TERM &dev = host_terms[term_cursor];
+						dev.omask = dev.oval = 0;
+						dev.lmask = dev.lval = 0;
+						for (int bit = 0; bit < 40; bit++){
+							long bit_mask = 1L << bit;
+							if (!(terms[t].mask & bit_mask)) continue;
+							bool wanted = (terms[t].value & bit_mask) != 0;
+							if (bit < coalesced_bits){
+								dev.lmask |= (1 << bit);
+								if (wanted) dev.lval |= (1 << bit);
+							}
+							else if (bit >= region_start_bit && bit < region_start_bit + (block_region_size - coalesced_bits)){
+								int local = coalesced_bits + (bit - region_start_bit);
+								dev.lmask |= (1 << local);
+								if (wanted) dev.lval |= (1 << local);
+							}
+							else{
+								dev.omask |= bit_mask;
+								if (wanted) dev.oval |= bit_mask;
+							}
+						}
+						dev.steps = (int) terms[t].steps;
+						term_cursor++;
+					}
+					continue;
+				}
+				operators[batch_index].kind = OP_STD;
+				memcpy(operators[batch_index].matrix, term->matrix, 4*sizeof(float complex)); error();
+				term->setArgsGPU(operators[batch_index].arg, region_start_bit, block_region_size, coalesced_bits);
 			}
 
 			if (is_peer){
@@ -261,6 +361,18 @@ void GpuExecution01(float* state, PT **pts, int qubits, int gpu_region_bits, int
 			for (int device_index = 0; device_index < gpu_count; device_index++){
 				cudaSetDevice(device_index); error();
 				cudaMemcpyToSymbol(op, operators, op_count*sizeof(DEV_OP)); error();
+				if (term_cursor > 0){
+					if (!phase_table_uploaded){
+						// primeira porta fundida do processo: tabela de fases em todas as GPUs usadas
+						for (int table_device = 0; table_device < gpu_count; table_device++){
+							cudaSetDevice(table_device); error();
+							cudaMemcpyToSymbol(d_phase_table, PhaseTable(), FUSED_PHASE_STEPS*sizeof(cuFloatComplex)); error();
+						}
+						cudaSetDevice(device_index); error();
+						phase_table_uploaded = true;
+					}
+					cudaMemcpyToSymbol(d_terms, host_terms, term_cursor*sizeof(DEV_TERM)); error();
+				}
 			}
 
 			for (int device_index = 0; device_index < gpu_count; device_index++){

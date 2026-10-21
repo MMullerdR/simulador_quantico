@@ -16,6 +16,7 @@ void seed_rng(unsigned long seed){
 PT::PT(){
 	matrix = NULL;
 	control_bit_positions = control_rest = NULL;
+	phase_terms = NULL;
 }
 
 PT::~PT(){
@@ -26,11 +27,46 @@ PT::~PT(){
 	// Gates::~Gates() (ver docs/07, item 3).
 	if (control_bit_positions) free(control_bit_positions);
 	if (control_rest) free(control_rest);
+	if (phase_terms) delete phase_terms;
+}
+
+void ApplyFusedPhase(float complex *state, const PT *term, long mask, long id){
+	const float complex *table = PhaseTable();
+	const std::vector<PhaseTerm> &terms = *term->phase_terms;
+	size_t term_count = terms.size();
+
+	long sub_index = 0;
+	do{
+		long index = id | sub_index;
+		long steps = 0;
+		for (size_t t = 0; t < term_count; t++)
+			if ((index & terms[t].mask) == terms[t].value) steps += terms[t].steps;
+		state[index] *= table[steps & (FUSED_PHASE_STEPS - 1)];
+		sub_index = (sub_index - mask) & mask;
+	} while (sub_index != 0);
+}
+
+const float complex* PhaseTable(){
+	static std::vector<float complex> table;
+	static bool ready = [](){
+		table.resize(FUSED_PHASE_STEPS);
+		for (long step = 0; step < FUSED_PHASE_STEPS; step++){
+			double angle = 2.0 * M_PI * (double) step / (double) FUSED_PHASE_STEPS;
+			table[step] = (float) cos(angle) + (float) sin(angle) * I;
+		}
+		return true;
+	}();
+	(void) ready;
+	return &table[0];
 }
 
 // Classifica a matriz 2x2 da porta pra escolher o caminho de execução
 // mais barato (ver enum DENSE/DIAG_PRI/DIAG_SEC em common.h).
 long PT::matrixType(){
+	if (phase_terms){
+		fprintf(stderr, "erro interno: matrixType() chamado num PT de fase fundida\n");
+		exit(1);
+	}
 	if ((matrix[1] == 0.0) && (matrix[2] == 0.0)) return DIAG_PRI;
 	else if ((matrix[0] == 0.0) && (matrix[3] == 0.0)) return DIAG_SEC;
 

@@ -286,10 +286,20 @@ void DGM::validateTuning(){
 // reordenadas pra caberem mais por lote da GPU (menos passadas sobre o
 // vetor de estado). Só é seguro chamar com pts[] exclusivo de quem chama:
 // o modo de regiões do t_HYBRID tem threads de CPU lendo o mesmo array.
+//
+// Antes disso, corridas de portas de fase (Z, R1-R3, rotações da QFT do Shor)
+// viram uma porta só (item 27): GPU_FUSE=0 desliga.
 void DGM::scheduleForGpu(){
+	static bool fuse_enabled = !(getenv("GPU_FUSE") != NULL && getenv("GPU_FUSE")[0] == '0');
 	static bool enabled = !(getenv("GPU_SCHEDULE") != NULL && getenv("GPU_SCHEDULE")[0] == '0');
-	if (!enabled) return;
-	ScheduleForBatching(pts, gpu_coalesced_bits, gpu_region_bits - gpu_coalesced_bits, GpuMaxBatchOps());
+	if (!pts) return;
+
+	if (fuse_enabled){
+		FusePhaseRuns(vec_pts);
+		pts = &vec_pts[0];
+	}
+	if (enabled)
+		ScheduleForBatching(pts, gpu_coalesced_bits, gpu_region_bits - gpu_coalesced_bits, GpuMaxBatchOps());
 }
 
 float complex* DGM::execute(int iterations){
@@ -324,6 +334,10 @@ void DGM::CountOps(int iterations){
 	dense = main_diag = sec_diag = c_dense = c_main_diag = c_sec_diag = 0;
 
 	for (int pt_index = 0; pts[pt_index]!=NULL; pt_index++){
+		if (pts[pt_index]->phase_terms){	// porta de fase fundida: conta como diagonal
+			main_diag++;
+			continue;
+		}
 		long matrix_type = pts[pt_index]->matrixType();
 		switch (matrix_type){
 			case DENSE:

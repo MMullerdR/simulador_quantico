@@ -7,7 +7,9 @@
 //     t_CPU na ordem reordenada tem que dar o mesmo estado que na ordem
 //     original -- confere a regra de comutação numericamente, sem GPU;
 //  3. t_GPU contra t_CPU, só quando o build tem kernel.cu de verdade
-//     (GpuMinFreeBytes >= 0; o stub devolve -1).
+//     (GpuMinFreeBytes >= 0; o stub devolve -1);
+//  4. FusePhaseRuns (portas de fase fundidas): t_CPU e t_PAR_CPU depois da
+//     fusão contra o t_CPU na lista original.
 //
 // Grupo 1 em detalhe: os dois precisam produzir o mesmo vetor de estado
 // pra qualquer circuito. Parte de um estado aleatório (não de |0...0>)
@@ -78,6 +80,38 @@ static void register_test_gates(DGM &dgm){
 	dgm.gates.addGate("U", cos_b, sin_b * phase, -sin_b * conjf(phase), cos_b);
 	dgm.gates.addGate("DG", phase, 0.0f, 0.0f, conjf(phase) * phase * phase);
 	dgm.gates.addGate("AD", 0.0f, phase, conjf(phase) * 0.6f, 0.0f);
+	// PH: diag(1, e^{i*2*pi*37/2^16}) -- múltiplo do passo de fase fundida,
+	// elegível. PHN: ângulo que NÃO é múltiplo, tem que ficar como porta normal.
+	dgm.gates.addGate("PH", 1.0f, 0.0f, 0.0f, cosf(2 * M_PI * 37.0 / 65536.0) + sinf(2 * M_PI * 37.0 / 65536.0) * I);
+	dgm.gates.addGate("PHN", 1.0f, 0.0f, 0.0f, cosf(0.123456f) + sinf(0.123456f) * I);
+}
+
+// Step rico em portas de fase (corridas longas para a fusão): várias portas de
+// fase soltas, uma porta de fase controlada, ou (de vez em quando) uma porta
+// que quebra a corrida.
+static string random_phase_step(int qubits, mt19937 &rng){
+	static const char *PHASES[] = {"Z", "R1", "R2", "R3", "PH", "PH", "PHN"};
+	vector <string> tokens(qubits, "ID");
+	int kind = rng() % 10;
+	if (kind < 4){
+		int gate_count = 1 + rng() % 4;
+		for (int i = 0; i < gate_count; i++)
+			tokens[rng() % qubits] = PHASES[rng() % 7];
+	}
+	else if (kind < 8){
+		int target = rng() % qubits;
+		tokens[target] = string("Target1(") + PHASES[rng() % 7] + ")";
+		int control_count = 1 + rng() % 3;
+		for (int i = 0; i < control_count; i++){
+			int control = rng() % qubits;
+			if (control == target) continue;
+			tokens[control] = (rng() % 4) ? "Control1(1)" : "Control1(0)";
+		}
+	}
+	else{
+		tokens[rng() % qubits] = (rng() % 2) ? "H" : "X";
+	}
+	return concatena(tokens, qubits);
 }
 
 static double max_state_diff(DGM &a, DGM &b, long &worst){
@@ -185,10 +219,10 @@ static bool run_schedule_case(int qubits, int coalesced_bits, int extra_bits, in
 }
 
 // Grupo 3: t_GPU (com a reordenação ligada, que é o padrão) contra t_CPU.
-static bool run_gpu_case(int qubits, int coalesced_bits, int region_bits, int block_size, int repeat_count, int step_count, unsigned seed){
+static bool run_gpu_case(int qubits, int coalesced_bits, int region_bits, int block_size, int repeat_count, int step_count, unsigned seed, bool phase_rich = false){
 	mt19937 rng(seed);
 	vector <string> steps;
-	for (int i = 0; i < step_count; i++) steps.push_back(random_step(qubits, rng));
+	for (int i = 0; i < step_count; i++) steps.push_back(phase_rich ? random_phase_step(qubits, rng) : random_step(qubits, rng));
 
 	DGM ref, gpu;
 	ref.qubits = gpu.qubits = qubits;
@@ -221,6 +255,48 @@ static bool run_gpu_case(int qubits, int coalesced_bits, int region_bits, int bl
 			<< ": maior diferença " << max_diff << " no índice " << worst << endl;
 	ref.freeMemory();
 	gpu.freeMemory();
+	return ok;
+}
+
+// Grupo 4: portas de fase fundidas (CPU). fuse_exec = backend que roda a lista
+// fundida (t_CPU ou t_PAR_CPU); a referência é sempre o t_CPU sem fusão.
+static bool run_fuse_case(int qubits, int fuse_exec, int region_bits, int coalesced_bits, int step_count, unsigned seed, long *absorbed_total){
+	mt19937 rng(seed);
+	vector <string> steps;
+	for (int i = 0; i < step_count; i++) steps.push_back(random_phase_step(qubits, rng));
+
+	DGM ref, fused;
+	ref.qubits = fused.qubits = qubits;
+	ref.exec_type = t_CPU;
+	fused.exec_type = fuse_exec;
+	fused.thread_count = 2;
+	fused.cpu_region_bits = region_bits;
+	fused.cpu_coalesced_bits = coalesced_bits;
+	ref.allocateMemory();
+	fused.allocateMemory();
+	register_test_gates(ref);
+	register_test_gates(fused);
+
+	mt19937 state_rng(seed ^ 0x27d4eb2fu);
+	fill_random_state(ref, state_rng);
+	for (long i = 0; i < (1L << qubits); i++) fused.state[i] = ref.state[i];
+
+	ref.setFunction(steps);
+	fused.setFunction(steps);
+	*absorbed_total += FusePhaseRuns(fused.vec_pts);
+	fused.pts = &fused.vec_pts[0];
+
+	ref.execute(1);
+	fused.execute(1);
+
+	long worst;
+	double max_diff = max_state_diff(ref, fused, worst);
+	bool ok = max_diff < 1e-5;
+	if (!ok)
+		cout << "FAIL fusao qubits=" << qubits << " exec=" << fuse_exec << " region=" << region_bits << " coalesced=" << coalesced_bits
+			<< " seed=" << seed << ": maior diferença " << max_diff << " no índice " << worst << endl;
+	ref.freeMemory();
+	fused.freeMemory();
 	return ok;
 }
 
@@ -268,6 +344,22 @@ int main(){
 	cout << (schedule_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << schedule_cases << " circuitos, ScheduleForBatching preserva o resultado" << endl;
 	all_ok = all_ok && schedule_ok;
 
+	bool fuse_ok = true;
+	int fuse_cases = 0;
+	long absorbed_total = 0;
+	for (unsigned seed = 1; seed <= 6; seed++){
+		fuse_ok = run_fuse_case(10, t_CPU, 14, 11, 120, seed * 5003, &absorbed_total) && fuse_ok;
+		fuse_ok = run_fuse_case(12, t_PAR_CPU, 8, 4, 120, seed * 5003 + 1, &absorbed_total) && fuse_ok;
+		fuse_ok = run_fuse_case(11, t_PAR_CPU, 6, 3, 120, seed * 5003 + 2, &absorbed_total) && fuse_ok;
+		fuse_cases += 3;
+	}
+	if (absorbed_total < 100){
+		cout << "FAIL fusao: poucas portas absorvidas (" << absorbed_total << "), o teste não está exercitando a fusão" << endl;
+		fuse_ok = false;
+	}
+	cout << (fuse_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << fuse_cases << " circuitos, portas de fase fundidas (" << absorbed_total << " portas absorvidas)" << endl;
+	all_ok = all_ok && fuse_ok;
+
 	if (GpuMinFreeBytes(1) >= 0){
 		bool gpu_ok = true;
 		int gpu_cases = 0;
@@ -276,7 +368,8 @@ int main(){
 		for (const GpuCombo &combo : gpu_combos){
 			for (unsigned seed = 1; seed <= 4; seed++){
 				gpu_ok = run_gpu_case(combo.qubits, combo.coalesced, combo.region, combo.block, combo.repeat, 120, seed * 7001 + combo.qubits) && gpu_ok;
-				gpu_cases++;
+				gpu_ok = run_gpu_case(combo.qubits, combo.coalesced, combo.region, combo.block, combo.repeat, 120, seed * 7001 + combo.qubits + 1, true) && gpu_ok;
+				gpu_cases += 2;
 			}
 		}
 		cout << (gpu_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << gpu_cases << " circuitos aleatórios, t_GPU vs t_CPU" << endl;

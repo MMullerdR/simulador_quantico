@@ -1016,6 +1016,72 @@ isso o `SHOR_AQFT=0`.
 circuito exato sem os passos de rotação de nível > `m`, na mesma ordem, e que o
 grau 0 volta ao exato (88 casos).
 
+## 27. [CORRIGIDO] Portas de fase do Shor viravam uma passada de kernel cada — fusão em `t_GPU`
+
+**Onde:** `src/core/gate_fuse.cpp` (`FusePhaseRuns`, novo), `PT::phase_terms` e
+`PhaseTerm` em `include/core/common.h`, `ApplyFusedPhase`/`PhaseTable` em
+`src/core/common.cpp`, kernel `ApplyValuesC01` em `src/core/kernel.cu`,
+`DGM::scheduleForGpu()` em `src/core/dgm_core.cpp`.
+
+~85% das portas do Shor são `diag(1, e^{iθ})` (rotações da QFT, Z, R1-R3), e
+corridas delas são consecutivas (média de 6,8 portas por corrida no Shor 25,
+medido nas listas reais). Elas comutam entre si, então uma corrida vira **uma**
+porta: `amplitude[idx] *= e^{i·fase(idx)}`, com
+`fase = Σ steps` dos termos cujo `(idx & mask) == value`, em unidades de
+2π/2^16. `steps` é inteiro, então a soma é exata e a exponencial sai de uma
+tabela de 65536 entradas. Só são fundidas portas cujo ângulo é múltiplo de
+2π/2^16 dentro de 0,02 passo (o resto continua como porta normal). Reduz as
+portas do circuito exato do Shor 25 em 3,7x (50 mil para 13,6 mil nas 6
+primeiras chamadas, simulado sobre as listas reais).
+
+Só o `t_GPU` (e o `t_HYBRID` quando delega à GPU) funde por padrão, depois da
+reordenação do item 24; `GPU_FUSE=0` desliga. O `t_CPU` e o `t_PAR_CPU` entendem
+a porta fundida (caminho escalar com a tabela), mas não a usam: o laço AVX2 do
+item 23 já faz uma porta de fase em ~0,05 ns por amplitude, mais barato que
+uma consulta de tabela por amplitude. O modo de regiões do `t_HYBRID` não
+projeta portas fundidas (aborta com mensagem se receber uma), e como ele nunca
+passa por `scheduleForGpu()` isso não acontece.
+
+**A primeira versão ficou mais lenta** (Shor 25 15,6 s contra 13,5 s sem
+fusão; Shor 21 1,02 contra 0,86 s): cada termo lia 24 bytes da memória global
+por amplitude, com contas de 64 bits. A versão atual separa cada termo, no
+host e por lote, em bits **fora** da região do bloco (conferidos uma vez por
+bloco contra `block_base`; um termo que não bate vira "nunca") e bits
+**dentro** (reindexados para a shared memory, 32 bits), copia os termos para a
+shared memory uma vez por bloco e soma `steps` sem desvio.
+
+Medido na qflex, mesmo binário com `GPU_FUSE=1` contra `GPU_FUSE=0`, com a
+QFT aproximada do item 26 ligada nos dois:
+
+| caso | sem fusão | com fusão |
+|---|---|---|
+| `shor.out 21` | 0,87 s | 0,84 s (-3%) |
+| `shor.out 25` | 14,5 s | 13,1 s (-10%) |
+| `shor.out 27` | 82,7 s | 75,5 s (-9%) |
+
+A redução de portas (3,7x) rende bem menos que isso porque o tempo restante é
+dominado por outra coisa: nas medidas anteriores (item 24), com as portas
+desligadas no kernel o tempo já era 43-68% do total (passadas sobre o estado,
+cópias host/GPU por rodada, `measure()` no host). Para referência, o `shor.out
+27` em GPU levava 274 s antes do item 22; o acumulado até aqui é 112 s (item
+22), 102 s (item 24), 82,7 s (item 26) e 75,5 s (este item).
+
+**Bug achado pelo smoke test no caminho:** a primeira versão trocava o
+armazenamento de `vec_pts` por um novo e o `t_HYBRID` delegado à GPU, que guarda
+o parâmetro `pts` (esconde o membro `DGM::pts`), passou a ler memória liberada
+(7 falhas no smoke test, "sem saída"). `FusePhaseRuns` agora reescreve a lista
+no lugar e só a encolhe, então nenhum ponteiro guardado fica inválido.
+
+**Testes:** `tests/test_cpu_parallel.cpp` (`make test`) ganhou (a) 18 circuitos
+ricos em portas de fase (inclusive um ângulo que não é múltiplo do passo, que
+tem que ficar como porta normal), `t_CPU` e `t_PAR_CPU` depois da fusão contra
+o `t_CPU` na lista original, e (b) casos ricos em fase no grupo `t_GPU`
+contra `t_CPU`. Conferido por mutação: somar um passo a mais no kernel ou no
+caminho de CPU faz os testes falharem.
+
+**Custo/benefício:** ~250 linhas e um novo tipo de PT por -9 a -10% a 25-27
+qubits (-3% a 21). Fica ligado por padrão; `GPU_FUSE=0` desliga.
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
