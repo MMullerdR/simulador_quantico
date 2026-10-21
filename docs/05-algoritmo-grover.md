@@ -43,18 +43,23 @@ de Grover.
 ## 4. O difusor (inversão sobre a média) — `grover_step`
 
 ```c
-for (i = 1; i < qubits; i++){ H(i); X(i); }
-CZ (Z multi-controlado sobre todos os qubits de busca)
-for (i = qubits-1; i >= 1; i--){ X(i); H(i); }
+for (i = 1; i < qubits; i++) H(i);
+X(qubits-1);
+CZ (Z multi-controlado, controles com valor 0, nos qubits de busca)
+X(qubits-1);
+for (i = qubits-1; i >= 1; i--) H(i);
 ```
 
-Isso é a forma padrão de implementar o difusor `2|s><s| - I`: mudar de base
-para que o estado `|00...0>` vire `|11...1>` (via `H` seguido de `X` em cada
-qubit), aplicar um `Z` multi-controlado (`ControledZ`,
-[lib_grover.cpp:91](../src/algorithms/lib_grover.cpp#L91), que inverte a
-fase *apenas* de `|11...1>`), e desfazer a mudança de base. O efeito líquido
-é inverter a fase de todo estado exceto o `|00...0>` original, o que
-equivale a refletir as amplitudes em torno da média.
+Isso implementa o difusor `2|s><s| - I` como `H^n (inverte a fase de
+|00...0>) H^n`. A forma de livro faria `X` em cada qubit antes e depois de
+um `Z` multi-controlado de `|11...1>` para levar `|00...0>` até `|11...1>`;
+aqui os controles do `Z` valem 0 (`ControledZ`,
+[lib_grover.cpp](../src/algorithms/lib_grover.cpp)), então só o qubit alvo
+precisa do `X` antes e depois (`X Z X = diag(-1, 1)`), e o resultado é o
+mesmo operador com `2*(qubits-1)` passadas de `X` a menos sobre o vetor de
+estado (item 22 em [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)).
+O efeito líquido é inverter a fase do estado `|00...0>`, o que equivale a
+refletir as amplitudes em torno da média.
 
 ## 5. Número de iterações e execução
 

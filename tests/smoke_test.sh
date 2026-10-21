@@ -96,6 +96,16 @@ else
 		amp=$("$BIN/general.out" $combo 2>/dev/null | head -1 | awk '{print $2}')
 		check_amplitude "general.out $combo (t_GPU)" "$amp" "$expected"
 	done
+	# Menos qubits que a região de GPU padrão (12 bits): validateTuning()
+	# precisa encolher block_size/repeat_count junto, senão abortava com
+	# "Erro de tuning" (item 22 em docs/07-bugs-e-pontos-de-atencao.md).
+	for pair in "4 2 1:0.25" "6 2 1:0.125" "8 2 1:0.0625" "11 2 1:0.02209709"; do
+		combo="${pair%%:*}"
+		expected="${pair##*:}"
+		amp=$("$BIN/general.out" $combo 2>/dev/null | head -1 | awk '{print $2}')
+		check_amplitude "general.out $combo (t_GPU, menos qubits que a região)" "$amp" "$expected"
+	done
+	check_success_rate "grover.out 6 2 1 (t_GPU, menos qubits que a região)" "^Found value:" 10 7 "$BIN/grover.out" 6 2 1
 	for pair in "10 3 2:0.03125" "14 3 2:0.0078125"; do
 		combo="${pair%%:*}"
 		expected="${pair##*:}"

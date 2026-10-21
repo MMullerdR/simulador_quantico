@@ -97,7 +97,9 @@ outputs/shor.out 15 0
 potência de 2 — `DGM::validateTuning()` recusa a combinação com uma
 mensagem clara em vez de deixar a GPU acessar memória fora dos limites.
 Exemplo explorando um tuning diferente do default
-(`gpu_coalesced_bits=4, block_size=64, repeat_count=2, gpu_region_bits=8`):
+(`gpu_coalesced_bits=4, block_size=512, repeat_count=4, gpu_region_bits=12`,
+o melhor combo medido numa RTX A4500 — ver item 22 em
+[docs/07-bugs-e-pontos-de-atencao.md](docs/07-bugs-e-pontos-de-atencao.md)):
 
 ```bash
 outputs/general.out 16 2 1 128 2 9   # t_GPU, block_size=128, repeat_count=2, gpu_region_bits=9

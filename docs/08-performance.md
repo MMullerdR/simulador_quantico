@@ -23,8 +23,11 @@ performance parecida pra esse benchmark, mas não são literalmente o mesmo
 código).
 
 Hardware: AMD Ryzen 9 7900X (12 cores/24 threads), RTX 4070 (16GB VRAM),
-15GB RAM disponível pro WSL2. Tuning de GPU no default
-(`block_size=64, repeat_count=2, gpu_coalesced_bits=4, gpu_region_bits=8`).
+15GB RAM disponível pro WSL2. Tuning de GPU no default **da época**
+(`block_size=64, repeat_count=2, gpu_coalesced_bits=4, gpu_region_bits=8`;
+hoje o default é 512/4/12 e o Grover não faz mais os X do difusor, então os
+tempos de GPU e Grover desta tabela estão defasados — ver item 22 em
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)).
 
 ## Qubits pequenos a médios (10-24) — todos os backends
 

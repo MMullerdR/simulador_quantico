@@ -18,7 +18,9 @@ using namespace std;
 // igual a search_value, mas não garantido — Grover é probabilístico).
 long Grover(long qubits, long search_value, int type, int thread_count, int cpu_region_bits, int cpu_coalesced_bits, int gpu_count, int gpu_region_bits, int gpu_coalesced_bits, int block_size, int repeat_count);
 
-// Z multi-controlado sobre todos os qubits de busca — parte do difusor.
+// Z multi-controlado (controles com valor 0) sobre os qubits de busca, que
+// com um X antes e depois do qubit alvo inverte a fase de |00...0> — parte
+// do difusor.
 string ControledZ(int qubits);
 // Oráculo: inverte a fase do estado onde o registrador de busca == search_value.
 string Oracle1(long qubits, long search_value);

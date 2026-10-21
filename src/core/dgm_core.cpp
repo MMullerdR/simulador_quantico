@@ -194,7 +194,8 @@ void DGM::validateTuning(){
 	// fazia esse clamp por conta própria; agora é garantido aqui, uma vez,
 	// antes de qualquer um deles rodar.
 	if (cpu_region_bits > qubits) cpu_region_bits = qubits;
-	if (gpu_region_bits > qubits) gpu_region_bits = qubits;
+	bool gpu_region_clamped = (gpu_region_bits > qubits);
+	if (gpu_region_clamped) gpu_region_bits = qubits;
 
 	// ApplyValuesC01 (kernel.cu) copia 2*block_size*repeat_count amplitudes
 	// pra shared memory por bloco CUDA, e o endereçamento global
@@ -216,6 +217,18 @@ void DGM::validateTuning(){
 		// log2(repeat_count) e é usado como expoente de um deslocamento de
 		// bit, nunca recebe um repeat_count que não seja potência de 2 se
 		// esta checagem já passou.)
+		// Região reduzida porque o circuito tem menos qubits que o pedido:
+		// sem acompanhar block_size/repeat_count/coalesced_bits, o default
+		// (região de 12 bits) fazia qualquer circuito de GPU com menos de
+		// 12 qubits abortar logo abaixo com "Erro de tuning". Só ajusta
+		// quando foi este clamp que quebrou a relação -- uma combinação
+		// inválida pedida de propósito continua sendo recusada.
+		if (gpu_region_clamped){
+			while (2L * block_size * repeat_count > (1L << gpu_region_bits) && block_size > 1) block_size /= 2;
+			while (2L * block_size * repeat_count > (1L << gpu_region_bits) && repeat_count > 1) repeat_count /= 2;
+			if (gpu_coalesced_bits > gpu_region_bits) gpu_coalesced_bits = gpu_region_bits;
+		}
+
 		if (2L * block_size * repeat_count != (1L << gpu_region_bits)){
 			cout << "Erro de tuning: 2*block_size*repeat_count (" << (2L * block_size * repeat_count)
 				<< ") precisa ser igual a 2^gpu_region_bits (" << (1L << gpu_region_bits)

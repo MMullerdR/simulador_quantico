@@ -131,7 +131,13 @@ essa exposição segura — sem elas, um usuário passando uma combinação
 inválida por linha de comando teria o mesmo resultado do combo de teste
 que motivou a validação em primeiro lugar (`illegal memory access`).
 
-**Verificado com GPU real (RTX 4070, CUDA 13.3):** combo default
+> **Atualização (2026-10-21):** o default de `TuningDefaults` agora é
+> `block_size=512, repeat_count=4, gpu_region_bits=12` (era 64/2/8): a
+> varredura na RTX A4500 deu 2-2,5x em Shor/Grover. Abaixo fica o registro
+> original da verificação com o default antigo. Ver item 22 em
+> [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+
+**Verificado com GPU real (RTX 4070, CUDA 13.3):** combo default **da época**
 (`coalesced_bits=4, block_size=64, repeat_count=2, gpu_region_bits=8`)
 continua reproduzindo a amplitude exata esperada; um combo **novo**, nunca
 antes alcançável sem adicionar `case` e recompilar

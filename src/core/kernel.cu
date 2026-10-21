@@ -65,7 +65,7 @@ __device__ long OPEN_SPACE(long value, int from_bit, int bit_count){
 // t_repeat_count*t_block_size conhecido em tempo de compilação pra ter
 // tamanho fixo, agora é alocada dinamicamente (extern __shared__, tamanho
 // vem do terceiro argumento do <<<...>>> em GpuExecution01).
-__global__ void ApplyValuesC01(int const block_size, int const repeat_count, int const coalesced_bits, int const region_start_bit, int const extra_region_bits, int const op_count, int const rept_bits, int const gpu_slice_size, int const block_offset){
+__global__ void ApplyValuesC01(int const block_size, int const repeat_count, int const coalesced_bits, int const region_start_bit, int const extra_region_bits, int const op_count, int const rept_bits, long const gpu_slice_size, int const block_offset){
 	long local_pos, global_index0, global_index1, block = (blockIdx.x + block_offset);
 
 	int rep_index, op_index, thread_id = threadIdx.x;

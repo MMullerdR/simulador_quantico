@@ -10,10 +10,16 @@ struct TuningDefaults{
 	int cpu_region_bits = 14;
 	int cpu_coalesced_bits = 11;
 	int gpu_count = 1;
-	int gpu_region_bits = 8;
+	// 12 bits de região (bloco 512 x repeat 4 = 4096 amplitudes, 32 KB de
+	// shared memory): medido na qflex (RTX A4500) contra o antigo 8 bits
+	// (64 x 2), Shor 25 foi de 50 s pra 19,7 s e Grover 24 de 27 s pra
+	// 11,7 s. 13 bits piora (64 KB de shared memory reduz a ocupação) e
+	// gpu_coalesced_bits entre 3 e 7 quase não muda nada. Ver item 22 em
+	// docs/07-bugs-e-pontos-de-atencao.md.
+	int gpu_region_bits = 12;
 	int gpu_coalesced_bits = 4;
-	int block_size = 64;
-	int repeat_count = 2;
+	int block_size = 512;
+	int repeat_count = 4;
 };
 
 // Depois que exec_type já foi validado, decide se argv[3] é thread_count

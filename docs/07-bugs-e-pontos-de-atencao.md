@@ -699,6 +699,68 @@ certo depois das mudanças. O Grover a 31/32 qubits não foi validado até o
 fim (ver `docs/08-performance.md`); a correção de overflow a 32 qubits
 está só inspecionada no código, não exercitada de ponta a ponta.
 
+## 22. [CORRIGIDO] Tuning padrão da GPU lento, difusor do Grover com passadas de sobra, e `t_GPU` abortando com menos de 8 qubits
+
+**Onde:** `include/cli/cli_common.h` (`TuningDefaults`), `DGM::validateTuning()`
+em `src/core/dgm_core.cpp`, `Grover()`/`ControledZ()` em
+`src/algorithms/lib_grover.cpp`, `ApplyValuesC01` em `src/core/kernel.cu`.
+
+Achados numa investigação de desempenho em 2026-10-21 (qflex, RTX A4500;
+circuito/parse e `measure()` somam menos de ~5% do tempo, quase tudo é
+execução de portas). Medido antes de mexer; os três passos abaixo
+foram implementados e conferidos em GPU real.
+
+1. **Região de GPU padrão pequena demais.** O default era
+   `gpu_region_bits=8` (bloco 64 x repeat 2). Agora é 12 (bloco 512 x
+   repeat 4 = 4096 amplitudes, 32 KB de shared memory). Mesmo binário, só
+   o default mudou: Shor 21 2,07 → 0,91 s, Shor 25 50 → 19,4 s, Grover 22
+   3,2 → 1,7 s, Grover 24 27 → 11,7 s; `general.out 28` só ganha ~10%
+   (limitado por banda de memória). Região de 13 bits piora (64 KB de
+   shared memory derruba a ocupação); `gpu_coalesced_bits` entre 3 e 7
+   quase não muda nada (mantido em 4). Vale também pro `t_HYBRID`, que usa
+   os mesmos parâmetros ao delegar à GPU.
+2. **Difusor do Grover com 2*(qubits-1) passadas de X desnecessárias.** O
+   difusor era `H X ... Z-multi-controlado(|11..1>) ... X H` em cada qubit.
+   Os X só existiam pra levar |00..0> até |11..1>; o simulador já suporta
+   controle com valor 0 (`Control1(0)`, usado pelo oráculo). Agora o Z
+   multi-controlado usa controles 0 e só o qubit alvo leva um X antes e
+   outro depois (X Z X = diag(-1, 1), então a fase de |00..0> é invertida
+   exatamente como antes, sem fase global de diferença). Mesmo resultado,
+   ~45% menos passadas: Grover 18 em `t_CPU` 4,88 → 3,34 s, Grover 22 em
+   `t_PAR_CPU` com 16 threads 26,5 → 17,9 s. Somado ao passo 1, Grover 24
+   em GPU vai de 27 s a 7,7 s.
+3. **`gpu_slice_size` era `int` no kernel.** Estouraria com 2^31 ou mais
+   amplitudes por GPU (GPU de 40 GB ou mais com 32+ qubits); virou `long`.
+   Só regressão verificada, o estouro em si não foi exercitado (a GPU da
+   qflex não comporta).
+4. **Bug que o passo 1 ia ampliar: GPU com menos qubits que a região
+   abortava.** `validateTuning()` já reduzia `gpu_region_bits` para o
+   número de qubits, mas deixava `block_size`/`repeat_count` como estavam,
+   e a checagem seguinte (`2*block_size*repeat_count == 2^gpu_region_bits`)
+   abortava com "Erro de tuning". Com o default antigo isso já acontecia
+   abaixo de 8 qubits (reproduzido: `general.out 6 2 1` e `grover.out 6 2
+   1`); com o novo apareceria abaixo de 12. Agora, quando é o clamp por
+   qubits que quebra a relação, `block_size`, `repeat_count` e
+   `gpu_coalesced_bits` encolhem junto. Uma combinação inválida pedida de
+   propósito continua sendo recusada.
+
+Verificação: `make test GPU=real` na qflex (24 OK, 0 falhas, incluindo os
+casos novos de poucos qubits), `make test` no WSL (15 OK); `general.out`
+com 2 a 16 qubits em `t_PAR_CPU`/`t_GPU`/`t_HYBRID` dá a mesma amplitude;
+`grover.out 6` achou o valor em 60/60 rodadas em cada um de
+`t_CPU`/`t_PAR_CPU`/`t_GPU`/`t_HYBRID`. Não medido: o efeito do tuning novo
+numa GPU diferente da A4500 (a região ótima depende da shared memory por
+SM, ver `docs/04-gpu-cuda.md`).
+
+Ficaram de fora e medidos como sem ganho: fusão de portas diagonais
+consecutivas (sequências com o mesmo controle têm média de 1,2 portas),
+cópia assíncrona das portas pra GPU sem `cudaDeviceSynchronize` (0%),
+trocar `/` e `%` por `>>` e `&` no kernel (<2%) e paralelizar `measure()`
+(~5% do Shor 25). Ainda aberto: reescrever os loops de CPU
+(`PCpuExecution1_0`, `CpuExecution1_*`) em blocos contíguos vetorizáveis —
+num microbenchmark isolado deu 1,8x sem AVX2 e 7-8x com AVX2, mas não foi
+medido no sistema inteiro.
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em
