@@ -131,6 +131,13 @@ essa exposição segura — sem elas, um usuário passando uma combinação
 inválida por linha de comando teria o mesmo resultado do combo de teste
 que motivou a validação em primeiro lugar (`illegal memory access`).
 
+> **Agrupamento em lotes (2026-10-21):** antes de `GpuExecution01` agrupar as
+> portas em lotes (cada lote é uma passada sobre o vetor de estado), o
+> `t_GPU` reordena portas que comutam com `ScheduleForBatching`
+> (`src/core/gate_schedule.cpp`) para caberem mais portas por lote; ver item 24
+> em [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+> `GPU_SCHEDULE=0` desliga.
+>
 > **Atualização (2026-10-21):** o default de `TuningDefaults` agora é
 > `block_size=512, repeat_count=4, gpu_region_bits=12` (era 64/2/8): a
 > varredura na RTX A4500 deu 2-2,5x em Shor/Grover. Abaixo fica o registro

@@ -44,6 +44,8 @@ extern "C" bool PinHostState(void* ptr, size_t bytes);
 // GpuMinFreeBytes: menor memória livre (em bytes) entre as gpu_count GPUs,
 // ou -1 se não for possível consultar (item 17, tentativa 7).
 extern "C" long GpuMinFreeBytes(int gpu_count);
+// GpuMaxBatchOps: máximo de portas por lote de kernel (OPS_BLOCK de kernel.cu).
+extern "C" int GpuMaxBatchOps();
 extern "C" bool UnpinHostState(void* ptr);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
@@ -164,10 +166,12 @@ public:
 	void executeFunction(vector<string> steps, int iterations = 1);
 	// Despacha pts[] pro backend escolhido em exec_type.
 	float complex* execute(int iterations);
+	// Reordena pts[] pra GPU (ScheduleForBatching); GPU_SCHEDULE=0 desliga.
+	void scheduleForGpu();
 
 	// Backend t_HYBRID: um thread OpenMP comanda a GPU enquanto os
 	// demais processam regiões em CPU ao mesmo tempo.
-	void HybridExecution(PT **pts);
+	void HybridExecution(PT **pts, int iterations);
 
 	// Backend t_CPU: aplica cada PT sobre o vetor de estado inteiro,
 	// numa só thread, escolhendo CpuExecution1_1/2/3 conforme o tipo de

@@ -1,6 +1,15 @@
-// Confere o motor t_PAR_CPU (PCpuExecution1/PCpuExecution1_0, regiões com
-// loops vetorizados) contra o motor serial t_CPU (CpuExecution1_*), que
-// serve de referência: os dois precisam produzir o mesmo vetor de estado
+// Confere os motores otimizados contra o motor serial t_CPU
+// (CpuExecution1_*), que serve de referência: todos precisam produzir o
+// mesmo vetor de estado pra qualquer circuito. Três grupos de casos:
+//  1. t_PAR_CPU (PCpuExecution1/PCpuExecution1_0, regiões com loops
+//     vetorizados), inclusive com "iterations" > 1;
+//  2. ScheduleForBatching (reordenação de portas que comutam pra GPU): o
+//     t_CPU na ordem reordenada tem que dar o mesmo estado que na ordem
+//     original -- confere a regra de comutação numericamente, sem GPU;
+//  3. t_GPU contra t_CPU, só quando o build tem kernel.cu de verdade
+//     (GpuMinFreeBytes >= 0; o stub devolve -1).
+//
+// Grupo 1 em detalhe: os dois precisam produzir o mesmo vetor de estado
 // pra qualquer circuito. Parte de um estado aleatório (não de |0...0>)
 // pra que um erro de índice não passe despercebido por simetria, e
 // sorteia circuitos com portas densas (H), diagonais (Z, R1-R3),
@@ -61,7 +70,27 @@ static void fill_random_state(DGM &dgm, mt19937 &rng){
 	for (long i = 0; i < size; i++) dgm.state[i] *= scale;
 }
 
-static bool run_case(int qubits, int region_bits, int coalesced_bits, int threads, int step_count, unsigned seed){
+// Portas extras registradas em cada DGM do teste (ver comentário de PLAIN_GATES).
+static void register_test_gates(DGM &dgm){
+	float cos_a = cosf(0.7f), sin_a = sinf(0.7f), cos_b = cosf(0.3f), sin_b = sinf(0.3f);
+	float complex phase = cosf(1.1f) + sinf(1.1f) * I;
+	dgm.gates.addGate("RX", cos_a, -sin_a * I, -sin_a * I, cos_a);
+	dgm.gates.addGate("U", cos_b, sin_b * phase, -sin_b * conjf(phase), cos_b);
+	dgm.gates.addGate("DG", phase, 0.0f, 0.0f, conjf(phase) * phase * phase);
+	dgm.gates.addGate("AD", 0.0f, phase, conjf(phase) * 0.6f, 0.0f);
+}
+
+static double max_state_diff(DGM &a, DGM &b, long &worst){
+	double max_diff = 0;
+	worst = 0;
+	for (long i = 0; i < (1L << a.qubits); i++){
+		double diff = cabsf(a.state[i] - b.state[i]);
+		if (diff > max_diff){ max_diff = diff; worst = i; }
+	}
+	return max_diff;
+}
+
+static bool run_case(int qubits, int region_bits, int coalesced_bits, int threads, int step_count, unsigned seed, int iterations = 1){
 	// TEST_VERBOSE=1 mostra cada caso antes de rodar -- útil se algum travar.
 	if (getenv("TEST_VERBOSE"))
 		cerr << "caso q=" << qubits << " r=" << region_bits << " c=" << coalesced_bits << " t=" << threads << " seed=" << seed << endl;
@@ -79,14 +108,8 @@ static bool run_case(int qubits, int region_bits, int coalesced_bits, int thread
 	ref.allocateMemory();
 	par.allocateMemory();
 
-	float cos_a = cosf(0.7f), sin_a = sinf(0.7f), cos_b = cosf(0.3f), sin_b = sinf(0.3f);
-	float complex phase = cosf(1.1f) + sinf(1.1f) * I;
-	for (DGM *dgm : {&ref, &par}){
-		dgm->gates.addGate("RX", cos_a, -sin_a * I, -sin_a * I, cos_a);
-		dgm->gates.addGate("U", cos_b, sin_b * phase, -sin_b * conjf(phase), cos_b);
-		dgm->gates.addGate("DG", phase, 0.0f, 0.0f, conjf(phase) * phase * phase);
-		dgm->gates.addGate("AD", 0.0f, phase, conjf(phase) * 0.6f, 0.0f);
-	}
+	register_test_gates(ref);
+	register_test_gates(par);
 
 	mt19937 state_rng(seed ^ 0x9e3779b9u);
 	fill_random_state(ref, state_rng);
@@ -94,23 +117,110 @@ static bool run_case(int qubits, int region_bits, int coalesced_bits, int thread
 
 	ref.setFunction(steps);
 	par.setFunction(steps);
-	ref.execute(1);
-	par.execute(1);
+	ref.execute(iterations);
+	par.execute(iterations);
 
-	double max_diff = 0;
-	long worst = 0;
-	for (long i = 0; i < (1L << qubits); i++){
-		double diff = cabsf(ref.state[i] - par.state[i]);
-		if (diff > max_diff){ max_diff = diff; worst = i; }
-	}
+	long worst;
+	double max_diff = max_state_diff(ref, par, worst);
 
-	bool ok = max_diff < 2e-6;
+	bool ok = max_diff < 2e-6 * iterations;
 	if (!ok)
 		cout << "FAIL qubits=" << qubits << " region=" << region_bits << " coalesced=" << coalesced_bits
-			<< " threads=" << threads << " seed=" << seed << ": maior diferença " << max_diff
+			<< " threads=" << threads << " iterations=" << iterations << " seed=" << seed << ": maior diferença " << max_diff
 			<< " no índice " << worst << endl;
 	ref.freeMemory();
 	par.freeMemory();
+	return ok;
+}
+
+// Grupo 2: o t_CPU na ordem que ScheduleForBatching devolve precisa dar o
+// mesmo estado que na ordem original.
+static bool run_schedule_case(int qubits, int coalesced_bits, int extra_bits, int step_count, unsigned seed){
+	mt19937 rng(seed);
+	vector <string> steps;
+	for (int i = 0; i < step_count; i++) steps.push_back(random_step(qubits, rng));
+
+	DGM original, scheduled;
+	original.qubits = scheduled.qubits = qubits;
+	original.exec_type = scheduled.exec_type = t_CPU;
+	original.allocateMemory();
+	scheduled.allocateMemory();
+	register_test_gates(original);
+	register_test_gates(scheduled);
+
+	mt19937 state_rng(seed ^ 0x85ebca6bu);
+	fill_random_state(original, state_rng);
+	for (long i = 0; i < (1L << qubits); i++) scheduled.state[i] = original.state[i];
+
+	original.setFunction(steps);
+	scheduled.setFunction(steps);
+
+	long op_count = 0;
+	while (scheduled.pts[op_count] != NULL) op_count++;
+	vector <PT*> before(scheduled.pts, scheduled.pts + op_count);
+
+	ScheduleForBatching(scheduled.pts, coalesced_bits, extra_bits, GpuMaxBatchOps());
+
+	// tem que ser uma permutação dos mesmos PT
+	vector <PT*> after(scheduled.pts, scheduled.pts + op_count);
+	vector <PT*> sorted_before(before), sorted_after(after);
+	sort(sorted_before.begin(), sorted_before.end());
+	sort(sorted_after.begin(), sorted_after.end());
+	bool ok = (sorted_before == sorted_after) && scheduled.pts[op_count] == NULL;
+	if (!ok) cout << "FAIL schedule: a saída não é uma permutação da entrada (seed=" << seed << ")" << endl;
+
+	original.execute(1);
+	scheduled.execute(1);
+
+	long worst;
+	double max_diff = max_state_diff(original, scheduled, worst);
+	if (max_diff >= 1e-5){
+		cout << "FAIL schedule qubits=" << qubits << " coalesced=" << coalesced_bits << " extra=" << extra_bits
+			<< " seed=" << seed << ": maior diferença " << max_diff << " no índice " << worst << endl;
+		ok = false;
+	}
+	original.freeMemory();
+	scheduled.freeMemory();
+	return ok;
+}
+
+// Grupo 3: t_GPU (com a reordenação ligada, que é o padrão) contra t_CPU.
+static bool run_gpu_case(int qubits, int coalesced_bits, int region_bits, int block_size, int repeat_count, int step_count, unsigned seed){
+	mt19937 rng(seed);
+	vector <string> steps;
+	for (int i = 0; i < step_count; i++) steps.push_back(random_step(qubits, rng));
+
+	DGM ref, gpu;
+	ref.qubits = gpu.qubits = qubits;
+	ref.exec_type = t_CPU;
+	gpu.exec_type = t_GPU;
+	gpu.gpu_coalesced_bits = coalesced_bits;
+	gpu.gpu_region_bits = region_bits;
+	gpu.block_size = block_size;
+	gpu.repeat_count = repeat_count;
+	ref.allocateMemory();
+	gpu.allocateMemory();
+	register_test_gates(ref);
+	register_test_gates(gpu);
+
+	mt19937 state_rng(seed ^ 0xc2b2ae35u);
+	fill_random_state(ref, state_rng);
+	for (long i = 0; i < (1L << qubits); i++) gpu.state[i] = ref.state[i];
+
+	ref.setFunction(steps);
+	gpu.setFunction(steps);
+	ref.execute(1);
+	gpu.execute(1);
+
+	long worst;
+	double max_diff = max_state_diff(ref, gpu, worst);
+	bool ok = max_diff < 1e-5;
+	if (!ok)
+		cout << "FAIL gpu qubits=" << qubits << " coalesced=" << coalesced_bits << " region=" << region_bits
+			<< " block=" << block_size << " repeat=" << repeat_count << " seed=" << seed
+			<< ": maior diferença " << max_diff << " no índice " << worst << endl;
+	ref.freeMemory();
+	gpu.freeMemory();
 	return ok;
 }
 
@@ -137,6 +247,44 @@ int main(){
 		}
 	}
 
+	// iterations > 1 (o Grover repete o passo por execute(iterations))
+	for (unsigned seed = 1; seed <= 4; seed++){
+		all_ok = run_case(12, 8, 4, 2, 25, seed * 104729, 3) && all_ok;
+		all_ok = run_case(10, 14, 11, 3, 25, seed * 104729 + 1, 4) && all_ok;
+		case_count += 2;
+	}
 	cout << (all_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << case_count << " circuitos aleatórios, t_PAR_CPU vs t_CPU" << endl;
+
+	bool schedule_ok = true;
+	int schedule_cases = 0;
+	struct SchedCombo{ int qubits, coalesced, extra; };
+	SchedCombo sched_combos[] = {{10, 2, 3}, {10, 3, 4}, {12, 4, 8}, {12, 1, 2}, {11, 0, 3}, {13, 4, 8}};
+	for (const SchedCombo &combo : sched_combos){
+		for (unsigned seed = 1; seed <= 5; seed++){
+			schedule_ok = run_schedule_case(combo.qubits, combo.coalesced, combo.extra, 150, seed * 6007 + combo.qubits) && schedule_ok;
+			schedule_cases++;
+		}
+	}
+	cout << (schedule_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << schedule_cases << " circuitos, ScheduleForBatching preserva o resultado" << endl;
+	all_ok = all_ok && schedule_ok;
+
+	if (GpuMinFreeBytes(1) >= 0){
+		bool gpu_ok = true;
+		int gpu_cases = 0;
+		struct GpuCombo{ int qubits, coalesced, region, block, repeat; };
+		GpuCombo gpu_combos[] = {{10, 2, 5, 8, 2}, {12, 3, 6, 16, 2}, {12, 4, 8, 64, 2}, {13, 4, 12, 512, 4}, {14, 4, 10, 128, 4}, {14, 2, 7, 16, 4}};
+		for (const GpuCombo &combo : gpu_combos){
+			for (unsigned seed = 1; seed <= 4; seed++){
+				gpu_ok = run_gpu_case(combo.qubits, combo.coalesced, combo.region, combo.block, combo.repeat, 120, seed * 7001 + combo.qubits) && gpu_ok;
+				gpu_cases++;
+			}
+		}
+		cout << (gpu_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << gpu_cases << " circuitos aleatórios, t_GPU vs t_CPU" << endl;
+		all_ok = all_ok && gpu_ok;
+	}
+	else{
+		cout << "(sem GPU de verdade neste build: casos de t_GPU pulados)" << endl;
+	}
+
 	return all_ok ? 0 : 1;
 }

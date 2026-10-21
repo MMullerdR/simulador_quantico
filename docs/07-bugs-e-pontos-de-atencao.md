@@ -203,7 +203,13 @@ agora retorna `long result` (o timing migrou pra `grover.cpp`, mesmo
 padrão que `Shor()`/`shor.cpp` já usavam), e `grover.cpp` imprime se
 encontrou o valor buscado.
 
-## 13. Multi-GPU (`gpu_count > 1`): nunca testado com hardware real — um bug corrigido, um suspeito documentado
+## 13. [ARQUIVADO] Multi-GPU (`gpu_count > 1`): nunca testado com hardware real — um bug corrigido, um suspeito documentado
+
+> **Arquivado em 2026-10-21 por decisão do Ramiro:** não há previsão de ter uma
+> máquina com várias GPUs, então o item fica como registro e **não será
+> trabalhado**. O código de `gpu_count > 1` continua como está, sem teste, e a
+> suspeita sobre `is_peer` abaixo continua sem verificação. Quem um dia tiver 3+
+> GPUs deve começar por aqui.
 
 **Onde:** `src/core/kernel.cu` (`GpuExecution01`),
 `src/core/dgm_core.cpp` (`DGM::validateTuning()`).
@@ -868,6 +874,94 @@ expostos por esta mudança):
 antigos de propósito, como referência do teste acima. Não medido: CPUs sem
 AVX2 (só a versão genérica é exercitada lá, a mesma do MinGW), Intel, e
 `t_HYBRID` em máquinas onde o modelo de custo parta do valor inicial.
+
+## 24. [CORRIGIDO] Passadas da GPU no Shor: portas que comutam não eram agrupadas; e o que NÃO ajudou
+
+**Onde:** `src/core/gate_schedule.cpp` (`ScheduleForBatching`, novo),
+`DGM::scheduleForGpu()` em `src/core/dgm_core.cpp`, chamada de `DGM::execute()`
+(`t_GPU`) e do desvio "delegado à GPU" de `DGM::HybridExecution`.
+
+Pergunta de partida: dá pra reduzir as passadas da GPU sobre o vetor de
+estado? Medido antes de mexer (qflex, A4500, `GpuExecution01` contado por
+instrumentação descartável):
+
+| caso | lotes (passadas) | portas por lote | com todas as portas desligadas no kernel |
+|---|---|---|---|
+| `shor.out 21` | 594 | 150 | 0,58 s de 1,02 s |
+| `shor.out 25` | ~5800 | 32 | 8,2 s de 19 s |
+| `grover.out 24` | ~9100 | 12,5 | 5,2 s de 7,7 s |
+
+Ou seja, mesmo sem executar nenhuma porta o custo das passadas (leitura e
+escrita do estado por lote, mais cópia host/GPU e launch) já é 43-68% do
+tempo. Reduzir lotes ajuda; reduzir o custo por porta não.
+
+- **Grover:** não há o que ganhar. A sequência H..H, X, Z, X, H..H é uma cadeia
+  de dependências (nenhuma porta comuta com a vizinha), e uma região de 12 bits
+  (4 coalescidos + 8 de janela) cobre no máximo 8 bits altos por lote. Simulei
+  o agrupamento com reordenação sobre o Grover real: 4551 lotes antes e depois.
+- **Shor:** portas de fase e controles são diagonais e comutam entre si, mas o
+  agrupamento só olhava a ordem em que as portas chegam. Reordenando portas que
+  comutam (dependência por qubit: uma porta com alvo não diagonal em um qubit
+  espera todas as anteriores que tocam esse qubit; portas diagonais e
+  controles só esperam o último alvo não diagonal), a simulação offline do
+  mesmo laço de lotes deu `shor 25`: 5798 -> 2200 lotes; `shor 21`: 594 -> 378.
+  Implementado em C++ com o mesmo critério de janela do kernel.
+
+Efeito medido (`GPU_SCHEDULE=0` desliga, pra comparar): `shor.out 21`
+1,018 -> 0,974 s (4%), `shor.out 25` 19,04 -> 17,34 s (9%), `shor.out 27`
+112,4 -> 101,8 s (9%), Grover sem diferença. É bem menos que a redução de
+lotes (-62%) porque o custo passa a ser de computação nas portas, não de
+passadas. Pra referência, `shor.out 27` levava 274 s antes do item 22.
+
+Só vale chamar a reordenação onde `pts[]` é exclusivo de quem chama: no modo
+de regiões do `t_HYBRID` threads de CPU leem o mesmo array enquanto a GPU
+trabalha (a lista da GPU ali é outra, projetada por região), então ela fica
+fora desse caminho.
+
+**Tentado e descartado (medido): especializar o kernel por tipo de matriz.**
+`ApplyValuesC01` paga 4 produtos complexos por par mesmo em portas diagonais ou
+X. Tipei as portas no host (fase com `m00=1`, diagonal, troca, anti-diagonal) e
+despachei por `switch` no kernel: nenhuma diferença (Shor 21 1,02 -> 1,06 s,
+Grover 24 7,7 -> 8,9 s, ou seja, ligeiramente pior). Não commitado.
+
+**Testes:** `tests/test_cpu_parallel.cpp` ganhou (a) `t_CPU` na ordem
+reordenada contra a ordem original, 30 circuitos aleatórios com janelas
+pequenas pra forçar muitos lotes (confere a regra de comutação
+numericamente, roda também em `GPU=stub`); (b) `t_GPU` contra `t_CPU`, 24
+circuitos, só com kernel real. Por mutação: ignorar as portas diagonais
+anteriores quando uma porta não diagonal chega faz os dois grupos falharem;
+tratar a anti-diagonal como diagonal fez o grupo de `t_GPU` falhar (o grupo
+da reordenação nesse caso não foi conferido).
+
+---
+
+## 25. [CORRIGIDO] Grover guardava centenas de milhares de `PT` idênticos (um por iteração)
+
+**Onde:** `Grover()` em `src/algorithms/lib_grover.cpp`; `PCpuExecution1` e
+`DGM::HybridExecution` em `src/core/dgm_par_exec.cpp`.
+
+`setFunction(grover_step, iteration_count, false)` replicava (e re-parseava) o
+passo de Grover `iteration_count` vezes: a 31 qubits são ~25 mil iterações x
+~120 portas = ~3 milhões de `PT` (~255 MB, a ~85 B cada; medido no `grover.out
+22`: 53 mil portas, ~4,5 MB). Só `execute(iteration_count)` com uma cópia do
+passo seria o mais simples, mas **custou 12% na GPU e 5% na CPU** (Grover 24
+7,7 -> 8,6 s; Grover 22 em 16 threads 6,96 -> 7,33 s): com a lista contínua o
+agrupamento por lote/região funde o fim de uma iteração com o começo da
+seguinte, e cada iteração separada perde essa fusão. A solução é um
+meio-termo: o passo é replicado em blocos de ~20000 portas (a emenda entre
+blocos é rara) e o bloco é repetido por `execute(blocos)`. Memória limitada ao
+bloco, independente de quantos qubits; tempo igual ao anterior (Grover 22 em
+16 threads 6,93 s contra 6,96 s, Grover 24 em GPU 7,78 s contra 7,7 s).
+
+Pra isso `PCpuExecution1` e `HybridExecution` passaram a respeitar o parâmetro
+`iterations` (antes `PCpuExecution1` o ignorava e o híbrido nem o recebia;
+`CpuExecution1` e `GpuExecution01` já respeitavam). Coberto por
+`tests/test_cpu_parallel.cpp` (casos com `iterations` 3 e 4 contra `t_CPU`;
+conferido por mutação) e pelas taxas de sucesso do Grover no smoke test, que
+passam pelos quatro backends.
+
+Não medido: o ganho de memória a 28+ qubits (o Grover leva horas lá); o número
+de 255 MB é a conta 3 milhões x 85 B, e os 85 B vêm do `grover.out 22`.
 
 ---
 

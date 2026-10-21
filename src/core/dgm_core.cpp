@@ -282,6 +282,16 @@ void DGM::validateTuning(){
 	}
 }
 
+// Item 24 em docs/07-bugs-e-pontos-de-atencao.md: portas que comutam são
+// reordenadas pra caberem mais por lote da GPU (menos passadas sobre o
+// vetor de estado). Só é seguro chamar com pts[] exclusivo de quem chama:
+// o modo de regiões do t_HYBRID tem threads de CPU lendo o mesmo array.
+void DGM::scheduleForGpu(){
+	static bool enabled = !(getenv("GPU_SCHEDULE") != NULL && getenv("GPU_SCHEDULE")[0] == '0');
+	if (!enabled) return;
+	ScheduleForBatching(pts, gpu_coalesced_bits, gpu_region_bits - gpu_coalesced_bits, GpuMaxBatchOps());
+}
+
 float complex* DGM::execute(int iterations){
 	validateTuning();
 
@@ -295,10 +305,11 @@ float complex* DGM::execute(int iterations){
 			PCpuExecution1(state, pts, qubits, thread_count, cpu_coalesced_bits, cpu_region_bits, iterations);
 			break;
 		case t_GPU:
+			scheduleForGpu();
 			result = GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
 			break;
 		case t_HYBRID:
-			HybridExecution(pts);
+			HybridExecution(pts, iterations);
 			break;
 		default:
 			cout << "Erro exec type" << endl;

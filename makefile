@@ -64,7 +64,7 @@ endif
 # dgm.cpp foi dividido por responsabilidade (ver docs/) e lib_shor.cpp
 # separou a matemática pura e a construção de circuito da orquestração
 # do algoritmo em si.
-CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o cli_common.o)
+CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o cli_common.o gate_schedule.o)
 
 .PHONY: all clean shor grover general test
 
@@ -123,7 +123,7 @@ $(OUT)/test_qft_addf.out: $(OUT)/test_qft_addf.o $(TEST_OBJS)
 # todos eles (PCpuExecution1/HybridExecution de dgm_par_exec.cpp,
 # GpuExecutionWrapper de kernel.o/kernel_stub.o) mesmo sem alcançar esses
 # caminhos em runtime.
-TEST_GATES_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o)
+TEST_GATES_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o gate_schedule.o)
 
 $(OUT)/test_gates.o: tests/test_gates.cpp | $(OUT)
 	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@

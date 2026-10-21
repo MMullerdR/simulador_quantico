@@ -32,6 +32,10 @@ extern "C" bool FreeGpuState(int gpu_count){
 	return false;
 }
 
+extern "C" int GpuMaxBatchOps(){
+	return 300;
+}
+
 extern "C" long GpuMinFreeBytes(int gpu_count){
 	return -1;
 }

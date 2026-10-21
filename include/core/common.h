@@ -89,6 +89,13 @@ struct PT{
 
 };
 
+// Reordena pts[] (terminado em NULL), in place, trocando portas que comutam
+// de lugar para a GPU agrupar mais portas por lote (cada lote é uma passada
+// completa sobre o vetor de estado). Preserva a ordem relativa de todo par
+// de portas que não comuta; ver src/core/gate_schedule.cpp. coalesced_bits/
+// extra_bits/max_batch descrevem o critério de lote de GpuExecution01.
+void ScheduleForBatching(PT **pts, int coalesced_bits, int extra_bits, int max_batch);
+
 // Imprime o vetor de estado inteiro (índice: parte real, parte imaginária).
 void printMem(float complex* mem, int qubits);
 // Como printMem, mas decompondo o índice em dois sub-registradores

@@ -369,6 +369,10 @@ extern "C" bool FreeGpuState(int gpu_count){
 // DGM::HybridExecution pra decidir se o vetor de estado inteiro cabe na
 // GPU -- nesse caso o modo híbrido por regiões só perde tempo copiando e
 // o caminho residente do t_GPU é mais rápido (docs/07, item 17).
+extern "C" int GpuMaxBatchOps(){
+	return OPS_BLOCK;
+}
+
 extern "C" long GpuMinFreeBytes(int gpu_count){
 	long min_free = -1;
 	for (int device_index = 0; device_index < gpu_count; device_index++){

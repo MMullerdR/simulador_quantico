@@ -94,6 +94,12 @@ memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
 
+**Atualização (2026-10-21, passadas da GPU):** portas que comutam passaram a
+ser reordenadas antes do `t_GPU` agrupá-las em lotes (item 24 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)): Shor 25
+19,0 -> 17,3 s e Shor 27 112 -> 102 s na qflex (já com o tuning do item 22;
+eram 274 s antes dele). Grover não muda.
+
 **Atualização (2026-10-21, CPU vetorizada):** os laços de `t_PAR_CPU`/
 `t_HYBRID` foram reescritos em blocos contíguos com AVX2 escolhido em
 execução (item 23 de [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)).

@@ -58,10 +58,34 @@ long Grover(long qubits, long search_value, int type, int thread_count, int cpu_
 	int iteration_count = (int) (M_PI/4.0*sqrt((double)(1L<<(qubits-1))));
 	long result = 0;
 
-	dgm.setFunction(hadamard_step);
-	dgm.setFunction(grover_step, iteration_count, false);
+	// Os PT do passo de Grover eram replicados iteration_count vezes dentro
+	// de setFunction: centenas de MB de PT idênticos a ~31 qubits (25 mil
+	// iterações x ~100 portas). Mas repetir só por execute(iterations) custou
+	// 12% na GPU e 5% na CPU (Grover 24: 7,7 -> 8,6 s), porque a lista
+	// contínua deixava o agrupamento de portas em lote/região fundir o fim de
+	// uma iteração com o começo da seguinte. Meio-termo: o passo é replicado
+	// em blocos de ~PT_BLOCK_LIMIT portas (a emenda entre blocos é rara) e o
+	// bloco é repetido por execute(blocos). Memória fica limitada ao bloco.
+	const long PT_BLOCK_LIMIT = 20000;
+	long chunk = PT_BLOCK_LIMIT / (long) grover_step.size();
+	if (chunk < 1) chunk = 1;
 
+	long first = (iteration_count < chunk) ? iteration_count : chunk;
+
+	dgm.setFunction(hadamard_step);
+	dgm.setFunction(grover_step, first, false);
 	dgm.execute(1);
+
+	long left = iteration_count - first;
+	if (left >= chunk){
+		dgm.setFunction(grover_step, chunk);
+		dgm.execute(left / chunk);
+		left %= chunk;
+	}
+	if (left > 0){
+		dgm.setFunction(grover_step, left);
+		dgm.execute(1);
+	}
 
 	for (int qubit_index = 1; qubit_index < qubits; qubit_index++) {
 		result = (result << 1) | dgm.measure(qubit_index);

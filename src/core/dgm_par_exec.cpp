@@ -80,6 +80,10 @@ static RegionPlan compute_region(PT **pts, long op_start, long op_search_end, lo
 // DGM::validateTuning(), chamado no início de DGM::execute() antes de
 // despachar pra cá (ver docs/07-bugs-e-pontos-de-atencao.md, item 6).
 void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_count, int coalesced_bits, int region_bits, int iterations){
+	// "iterations" repete a lista de portas inteira (antes o parâmetro era
+	// ignorado aqui e quem queria repetir replicava os PT em setFunction --
+	// o Grover chegava a guardar centenas de milhares de PT idênticos).
+	for (int iteration_index = 0; iteration_index < iterations; iteration_index++){
 	long op_index = 0;
 	while (pts[op_index] != NULL){
 		long pts_start = op_index;
@@ -128,6 +132,7 @@ void PCpuExecution1(float complex *state, PT **pts, int qubits, long thread_coun
 		}
 
 		op_index = pts_end;
+	}
 	}
 }
 
@@ -492,7 +497,7 @@ static bool hybrid_cpu_may_claim(long unclaimed, long ops, long region_bits){
 // dispara o kernel, recolhe o resultado) enquanto as demais processam
 // regiões em CPU ao mesmo tempo, região "global" por região "global" —
 // ver docs/01-arquitetura-geral.md e docs/04-gpu-cuda.md.
-void DGM::HybridExecution(PT **pts){
+void DGM::HybridExecution(PT **pts, int iterations){
 	// Instrumentação opt-in (item 17 em docs/07-bugs-e-pontos-de-atencao.md)
 	// -- ligada com HYBRID_DEBUG=1 no ambiente, silenciosa por padrão. Só
 	// imprime quem processou cada região "global" (CPU de qual thread, ou
@@ -530,7 +535,8 @@ void DGM::HybridExecution(PT **pts){
 		if (hybrid_debug) fprintf(stderr, "[HYBRID] memória livre da GPU=%ld bytes, estado precisa de %ld: %s\n", free_bytes, need_bytes, fits_in_gpu ? "cabe" : "não cabe");
 	}
 	if (qubits <= qubits_limit || fits_in_gpu){
-		GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, 1);
+		scheduleForGpu();	// aqui nenhuma thread de CPU lê pts[], então pode reordenar
+		GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
 		if (hybrid_debug){
 			fprintf(stderr, "[HYBRID] qubits=%ld: %s, delegado inteiro à GPU\n", qubits, (qubits <= qubits_limit) ? "região única (<= qubits_limit)" : "estado cabe na GPU");
 		}
@@ -565,6 +571,10 @@ void DGM::HybridExecution(PT **pts){
 
 	omp_set_num_threads(thread_count);
 
+	// Modo de regiões: cada iteração percorre a lista de portas inteira
+	// (passada por passada), com o vetor de estado travado em memória uma
+	// vez só para todas elas.
+	for (int iteration_index = 0; iteration_index < iterations; iteration_index++){
 	int op_index = 0;
 	while (pts[op_index] != NULL){
 		global_op_start = op_index;
@@ -795,6 +805,7 @@ void DGM::HybridExecution(PT **pts){
 		}
 
 		op_index = global_op_end;
+	}
 	}
 
 	if (state_pinned) UnpinHostState(state);
