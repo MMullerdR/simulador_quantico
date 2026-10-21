@@ -1082,6 +1082,37 @@ caminho de CPU faz os testes falharem.
 **Custo/benefício:** ~250 linhas e um novo tipo de PT por -9 a -10% a 25-27
 qubits (-3% a 21). Fica ligado por padrão; `GPU_FUSE=0` desliga.
 
+**Atualização (corpo fundido do kernel):** depois do item 28 o `shor.out 25`
+em GPU gastava 10,1 s dos 11,0 s dentro do kernel (2112 lançamentos, 21032
+portas fundidas e 29017 normais). Desligando cada tipo de porta no kernel
+(só para medir, o resultado fica errado): carregar/gravar o bloco 2,4 s (~470
+GB/s), portas normais ~1,2 s, **portas fundidas ~5,3 s**, mais da metade. Uma
+porta fundida custava ~0,16 ms contra ~0,04 ms de uma normal, apesar de ter só
+5,5 termos em média (85% ativos no bloco). O corpo antigo percorria todos os
+termos para cada amplitude, com 3 leituras de shared memory por termo, inclusive
+termos que não valem para o bloco. Agora só os termos ativos no bloco entram
+numa lista compactada (`atomicAdd` num contador em shared; a soma de inteiros
+não depende da ordem), cada termo é um `int4` lido numa instrução e cada thread
+soma 4 amplitudes por leitura de termo (`p1/p2/p3` passam do fim da região
+quando `repeat_count` é 1, por isso as guardas `< region_size`).
+
+| `shor.out 25` (`t_GPU`) | kernel | total |
+|---|---|---|
+| antes | 10,13 s | 11,02 s |
+| depois | 8,09-8,13 s (-20%) | 8,93-8,97 s (-19%) |
+
+Testada e descartada: tabela de fase em dois níveis (256+256 entradas) na shared
+memory no lugar da tabela de 512 KB em memória global: 8,19-8,25 s, sem ganho,
+então a leitura da tabela não era o gargalo. A porta fundida ainda custa ~4x
+uma normal; o que sobra é o custo fixo por porta (3 `__syncthreads`, compactação)
+e a multiplicação por amplitude.
+
+Testes: `make test GPU=real` passa; `tests/test_cpu_parallel.cpp` ganhou dois
+combos com `repeat_count = 1`, o único caso em que as guardas novas valem.
+Conferido por mutação: sem as guardas o teste `t_GPU` contra `t_CPU` aborta com
+"illegal memory access". **Não medido:** `shor.out 27` com o corpo novo; só o
+Shor 25 foi cronometrado (2 execuções por versão).
+
 ## 28. [CORRIGIDO] Shor copiava o estado inteiro host<->GPU e media no host a cada rodada — sessão de GPU
 
 **Onde:** `GpuSessionBegin`/`GpuSessionEnd`/`GpuMeasureSums`/`GpuCollapse` em

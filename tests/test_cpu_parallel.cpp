@@ -428,7 +428,8 @@ int main(){
 		bool gpu_ok = true;
 		int gpu_cases = 0;
 		struct GpuCombo{ int qubits, coalesced, region, block, repeat; };
-		GpuCombo gpu_combos[] = {{10, 2, 5, 8, 2}, {12, 3, 6, 16, 2}, {12, 4, 8, 64, 2}, {13, 4, 12, 512, 4}, {14, 4, 10, 128, 4}, {14, 2, 7, 16, 4}};
+		GpuCombo gpu_combos[] = {{10, 2, 5, 8, 2}, {12, 3, 6, 16, 2}, {12, 4, 8, 64, 2}, {13, 4, 12, 512, 4}, {14, 4, 10, 128, 4}, {14, 2, 7, 16, 4},
+			{12, 3, 7, 64, 1}, {13, 4, 9, 256, 1}};	// repeat=1: a região tem só 2*block amplitudes, o laço fundido de 4 amplitudes por thread passa do fim
 		for (const GpuCombo &combo : gpu_combos){
 			for (unsigned seed = 1; seed <= 4; seed++){
 				gpu_ok = run_gpu_case(combo.qubits, combo.coalesced, combo.region, combo.block, combo.repeat, 120, seed * 7001 + combo.qubits) && gpu_ok;

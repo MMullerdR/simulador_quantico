@@ -131,28 +131,43 @@ __global__ void ApplyValuesC01(int const block_size, int const repeat_count, int
 
 		if (op[op_index].kind == OP_FUSED){
 			// Cada amplitude do bloco é multiplicada por uma fase que só depende
-			// do índice. Os termos vão pra shared memory uma vez por bloco; um
-			// termo cujos bits de fora da região não batem com este bloco vira
-			// "nunca" (lmask = ~0, lval = -1) em vez de um desvio por amplitude.
-			__shared__ int fused_lmask[FUSED_MAX_TERMS];
-			__shared__ int fused_lval[FUSED_MAX_TERMS];
-			__shared__ int fused_steps[FUSED_MAX_TERMS];
+			// do índice. Só os termos ativos neste bloco (bits de fora da região
+			// batendo com block_base) entram na lista compactada da shared memory;
+			// cada termo vira um int4 {lmask, lval, steps} lido numa instrução só e
+			// cada thread soma 4 amplitudes por leitura (a soma de inteiros não
+			// depende da ordem em que os termos foram compactados).
+			__shared__ int4 fused_terms[FUSED_MAX_TERMS];
+			__shared__ int fused_count;
+			if (thread_id == 0) fused_count = 0;
+			__syncthreads();
 			int term_start = op[op_index].term_start, term_count = op[op_index].term_count;
 			for (int t = thread_id; t < term_count; t += block_size){
 				DEV_TERM term = d_terms[term_start + t];
-				bool active = ((block_base & term.omask) == term.oval);
-				fused_lmask[t] = active ? term.lmask : ~0;
-				fused_lval[t] = active ? term.lval : -1;
-				fused_steps[t] = term.steps;
+				if ((block_base & term.omask) == term.oval){
+					int slot = atomicAdd(&fused_count, 1);
+					fused_terms[slot] = make_int4(term.lmask, term.lval, term.steps, 0);
+				}
 			}
 			__syncthreads();
+			int active_terms = fused_count;
+			if (active_terms == 0) continue;
 
 			int region_size = 2 * block_size * repeat_count;
-			for (int p = thread_id; p < region_size; p += block_size){
-				int steps = 0;
-				for (int t = 0; t < term_count; t++)
-					steps += ((p & fused_lmask[t]) == fused_lval[t]) ? fused_steps[t] : 0;
-				shared_amplitudes[p] = cuCmulf(shared_amplitudes[p], d_phase_table[steps & (FUSED_PHASE_STEPS - 1)]);
+			for (int p0 = thread_id; p0 < region_size; p0 += 4 * block_size){
+				int p1 = p0 + block_size, p2 = p1 + block_size, p3 = p2 + block_size;
+				int steps0 = 0, steps1 = 0, steps2 = 0, steps3 = 0;
+				#pragma unroll 2
+				for (int t = 0; t < active_terms; t++){
+					int4 term = fused_terms[t];
+					steps0 += ((p0 & term.x) == term.y) ? term.z : 0;
+					steps1 += ((p1 & term.x) == term.y) ? term.z : 0;
+					steps2 += ((p2 & term.x) == term.y) ? term.z : 0;
+					steps3 += ((p3 & term.x) == term.y) ? term.z : 0;
+				}
+				shared_amplitudes[p0] = cuCmulf(shared_amplitudes[p0], d_phase_table[steps0 & (FUSED_PHASE_STEPS - 1)]);
+				if (p1 < region_size) shared_amplitudes[p1] = cuCmulf(shared_amplitudes[p1], d_phase_table[steps1 & (FUSED_PHASE_STEPS - 1)]);
+				if (p2 < region_size) shared_amplitudes[p2] = cuCmulf(shared_amplitudes[p2], d_phase_table[steps2 & (FUSED_PHASE_STEPS - 1)]);
+				if (p3 < region_size) shared_amplitudes[p3] = cuCmulf(shared_amplitudes[p3], d_phase_table[steps3 & (FUSED_PHASE_STEPS - 1)]);
 			}
 			continue;
 		}
