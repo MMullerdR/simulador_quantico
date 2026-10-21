@@ -1113,6 +1113,22 @@ Conferido por mutação: sem as guardas o teste `t_GPU` contra `t_CPU` aborta co
 "illegal memory access". **Não medido:** `shor.out 27` com o corpo novo; só o
 Shor 25 foi cronometrado (2 execuções por versão).
 
+**Avaliado e descartado: juntar portas fundidas consecutivas num só passe.**
+Medido no `shor.out 25` (`t_GPU`): 2112 lançamentos, 21032 portas fundidas em
+21014 corridas de portas fundidas consecutivas, ou seja, só 18 junções
+possíveis (0,09%); a maior corrida teria 36 termos, abaixo do limite de 64. Quase
+toda porta fundida tem uma porta normal de cada lado: na QFT, depois de cada
+Hadamard vem a corrida de rotações que envolve o mesmo qubit, e o Hadamard
+seguinte não comuta com ela. É uma cadeia de dependência (H, fundida, H,
+fundida), então o `ScheduleForBatching` também não consegue aproximar as
+fundidas. Não foi implementado. Pela contagem de instruções, uma porta fundida
+gasta ~25 instruções por amplitude e uma normal ~12 (estimativa, não medida com
+contadores: o `ncu` não tem permissão na qflex e o `nsys` não gera relatório
+lá), então a diferença de ~4x no tempo vem do trabalho por amplitude e não de um
+custo fixo por porta. Os caminhos que sobram para reduzir isso são fundir o H com
+a porta fundida seguinte no mesmo passe sobre o par (mudança maior no kernel) ou
+trocar o circuito (Toffoli/ripple-carry, emulação da exponenciação modular).
+
 ## 28. [CORRIGIDO] Shor copiava o estado inteiro host<->GPU e media no host a cada rodada — sessão de GPU
 
 **Onde:** `GpuSessionBegin`/`GpuSessionEnd`/`GpuMeasureSums`/`GpuCollapse` em
