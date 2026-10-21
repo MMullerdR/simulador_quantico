@@ -28,7 +28,7 @@ long Grover(long qubits, long search_value, int type, int thread_count, int cpu_
 	dgm.repeat_count = repeat_count;
 
 	dgm.allocateMemory();
-	dgm.setMemoryValue(1<<(qubits-1));
+	dgm.setMemoryValue(1L<<(qubits-1));
 
 	string hadamard_step = Hadamard(qubits, 0, qubits);
 	string oracle_step = Oracle1(qubits, search_value);
@@ -50,7 +50,7 @@ long Grover(long qubits, long search_value, int type, int thread_count, int cpu_
 		grover_step.push_back(Hadamard(qubits, qubit_index, 1));
 	}
 
-	int iteration_count = (int) (M_PI/4.0*sqrt(1<<(qubits-1)));
+	int iteration_count = (int) (M_PI/4.0*sqrt((double)(1L<<(qubits-1))));
 	long result = 0;
 
 	dgm.setFunction(hadamard_step);

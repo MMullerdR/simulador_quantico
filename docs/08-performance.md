@@ -91,6 +91,18 @@ memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
 
+**Atualização (2026-10-21, qflex):** `QB_LIMIT` subiu para 33 (64 GB de
+vetor de estado; a máquina tem 125 GB de RAM, então 34 qubits — 128 GB —
+não cabe e não foi testado). `general.out 33`: `t_PAR_CPU` com 32 threads
+149 s, `t_HYBRID` 76 s (modo de regiões; pico de RSS 64 GB, a amplitude
+impressa é a mesma nos dois). Grover e Shor **não** foram rodados até o fim
+nesses tamanhos: o tempo cresce ~2,9× por qubit no Grover (22 qubits 3,2 s,
+24 qubits 27 s, 26 qubits 218 s na GPU, ou seja ~13 h a 31 qubits) e o Shor
+a 27 qubits (o maior mapeado em `shor.cpp`) já leva 274 s. A 31 qubits
+(`t_GPU`) e a 32 qubits (`t_HYBRID`, modo de regiões) o Grover foi só
+rodado por 100 s sem crash — isso mostra que aloca e progride, não que
+acha o valor.
+
 ## Como reproduzir
 
 ```bash

@@ -20,7 +20,7 @@ int main(int argc, char **argv){
 
 	int qubits = atoi(argv[1]);
 	// Sem isso, um qubits absurdo (ou negativo, por um argv malformado)
-	// tenta alocar 2^qubits complexos sem aviso nenhum — QB_LIMIT (32)
+	// tenta alocar 2^qubits complexos sem aviso nenhum — QB_LIMIT (33)
 	// já existia como campo DGM::max_qubits, mas nunca era checado contra
 	// o valor pedido de verdade.
 	if (qubits < 1 || qubits > QB_LIMIT){

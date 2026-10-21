@@ -79,7 +79,7 @@ contra o `qubits` pedido causavam deslocamento por expoente negativo
 alocado. Corrigido com um clamp (`if (region_bits > qubits) region_bits
 = qubits`) nos três pontos onde a conta aparecia.
 
-## 7. Build de `kernel.cu` anormalmente lento (`nvcc`/`cicc`) numa máquina sem GPU
+## 7. [NÃO REPRODUZIDO] Build de `kernel.cu` anormalmente lento (`nvcc`/`cicc`) numa máquina sem GPU
 
 **Onde:** `src/core/kernel.cu`, build via WSL2 sem hardware NVIDIA.
 
@@ -129,6 +129,13 @@ delas foi reproduzida/testada aqui). O item 06 (reduzir templates, ver
 item 10) segue sendo uma proposta válida por outros motivos (simplicidade,
 tempo de build em máquinas mais fracas), mas deixou de ser urgente
 **naquela máquina** especificamente.
+
+**Atualização (2026-10-21, qflex, CUDA 12.0.140, Ubuntu 24.04 nativo):**
+`touch src/core/kernel.cu && make GPU=real` recompila o `kernel.cu` em
+~2 s. Junto com os ~2,5 s da RTX 4070 acima, são duas máquinas onde o `nvcc`
+compila rápido, então o caso das 2 horas segue sendo específico daquele
+ambiente; o item fica aberto só como registro, sem nada a corrigir no
+código.
 
 **Verificado nesta máquina:** `general.out 10 2 1` (`t_GPU`) e
 `general.out 10 3 2` (`t_HYBRID`) reproduzem a amplitude uniforme exata
@@ -271,7 +278,7 @@ trocou `rand()`/`srand()` por `std::mt19937` em todo o projeto de vez.
 
 ---
 
-## 17. [PARCIALMENTE CONFIRMADO] `t_HYBRID` não bate CPU nem GPU de forma consistente — hipótese A confirmada, hipótese B refinada
+## 17. [RESOLVIDO] `t_HYBRID` não bate CPU nem GPU de forma consistente — hipótese A confirmada, hipótese B refinada
 
 **Onde:** `DGM::HybridExecution` em
 [dgm_par_exec.cpp:258-472](../src/core/dgm_par_exec.cpp#L258) — agora com
@@ -658,6 +665,37 @@ devolvia string vazia em vez de um step válido — isso zerava
 plausível pra crash ou resultado silenciosamente errado. Achado por
 inspeção de código, não por reprodução. Corrigido pra devolver um step
 `"ID"` (no-op) nesse caso em vez de string vazia.
+
+
+## 21. [CORRIGIDO] `DGM::measure()`/`colapse()` somavam probabilidades em `float`, e `Grover()`/`Shor()` usavam `1<<` em `int`
+
+**Onde:** `src/core/dgm_core.cpp` (`measure`, `colapse`),
+`src/algorithms/lib_grover.cpp`, `src/algorithms/lib_shor.cpp`.
+
+Achado na auditoria de "o que quebra acima de 30 qubits", não por um
+resultado errado visto na prática.
+
+- `measure()` acumulava `|amplitude|²` de 2^qubits termos num `float`. Um
+  `float` para de crescer quando o termo é menor que ~2^-24 da soma: com
+  2^30 amplitudes iguais, a soma de 2^30 termos de 2^-30 dá **0,015625**,
+  não 1 (conferido num programa de teste na qflex: `float=0.015625
+  double=1`). Em estados espalhados a probabilidade de cada lado do qubit
+  medido sai errada e a decisão do colapso também. A 27 qubits (o maior
+  Shor) o mesmo efeito já aparece com amplitudes uniformes (a soma trava
+  em ~0,125), então vale desconfiar de parte da taxa baixa de sucesso do
+  Shor nos tamanhos maiores — **não medido**: a taxa não foi recomparada
+  antes/depois. Corrigido com acumuladores `double` em `measure()` e
+  `colapse()`.
+- `Grover()` fazia `dgm.setMemoryValue(1<<(qubits-1))` e
+  `sqrt(1<<(qubits-1))` em `int`: a 32 qubits isso é `1<<31`, comportamento
+  indefinido (negativo na prática) → índice de estado negativo. `Shor()`
+  tinha o mesmo padrão em `1<<(bit_width+2)` (sem risco real, `bit_width` ≤
+  12, mas igualado). `DGM::setMemoryValue` agora recebe `long`.
+
+Verificação: `grover.out 26` em `t_GPU` na qflex (218 s) achou o valor
+certo depois das mudanças. O Grover a 31/32 qubits não foi validado até o
+fim (ver `docs/08-performance.md`); a correção de overflow a 32 qubits
+está só inspecionada no código, não exercitada de ponta a ponta.
 
 ---
 

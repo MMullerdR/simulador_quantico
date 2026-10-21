@@ -125,7 +125,7 @@ echo "-- grover.out: taxa de sucesso (achar search_value) em vários runs, não 
 check_success_rate "grover.out 12 0 (t_CPU)" "^Found value:" 10 7 "$BIN/grover.out" 12 0
 check_success_rate "grover.out 12 1 2 (t_PAR_CPU)" "^Found value:" 10 7 "$BIN/grover.out" 12 1 2
 
-echo "-- shor.out: pelo menos 1 sucesso em 16 runs -- fraco de propósito (algoritmo probabilístico, taxa historicamente baixa e variável, ver docs/07-bugs-e-pontos-de-atencao.md item 7), só pra pegar uma GPU calculando errado sistematicamente (0/16). 16 runs (não 8) porque com taxa de sucesso baixa até uma sequência de tentativas genuinamente independentes pode dar 0 sucessos por acaso — 16 reduz esse risco de falso alarme sem alongar demais o teste (ver srand(time(NULL)^getpid()) em shor.cpp: sem o getpid(), chamadas rápidas em sequência dentro do mesmo segundo repetiam a mesma semente, o que fazia os N runs não serem realmente independentes) --"
+echo "-- shor.out: pelo menos 1 sucesso em 16 runs -- fraco de propósito (algoritmo probabilístico, taxa historicamente baixa e variável, ver docs/07-bugs-e-pontos-de-atencao.md itens 1 e 21), só pra pegar uma GPU calculando errado sistematicamente (0/16). 16 runs (não 8) porque com taxa de sucesso baixa até uma sequência de tentativas genuinamente independentes pode dar 0 sucessos por acaso — 16 reduz esse risco de falso alarme sem alongar demais o teste (ver srand(time(NULL)^getpid()) em shor.cpp: sem o getpid(), chamadas rápidas em sequência dentro do mesmo segundo repetiam a mesma semente, o que fazia os N runs não serem realmente independentes) --"
 check_success_rate "shor.out 15 0 (t_CPU)" "^Found factors:" 16 1 "$BIN/shor.out" 15 0
 
 if [[ "$gpu_stderr" == *"kernel_stub.cpp"* ]]; then

@@ -135,7 +135,7 @@ public:
 	void allocateMemory();
 	void freeMemory();
 	// Seta state[pos] = 1 — estado inicial |pos>.
-	void setMemoryValue(int pos);
+	void setMemoryValue(long pos);
 
 	// Mede um qubit (ou vários) e colapsa o estado de acordo com o resultado.
 	int measure(int qubit_pos);

@@ -54,7 +54,7 @@ void DGM::erase(){
 void DGM::allocateMemory(){
 	state = (float complex*) calloc(1L << qubits, sizeof(float complex));
 	if (state == NULL){
-		// QB_LIMIT permite vetores de ate 32 GB (32 qubits); numa maquina com
+		// QB_LIMIT permite vetores de ate 64 GB (33 qubits); numa maquina com
 		// menos memoria o calloc falha e, sem esta checagem, o primeiro acesso
 		// a state[] seria um segfault sem nenhuma explicacao.
 		cout << "Erro: sem memoria para o vetor de estado de " << qubits << " qubits (" << ((sizeof(float complex) << qubits) >> 20) << " MB)." << endl;
@@ -67,7 +67,7 @@ void DGM::freeMemory(){
 	state = NULL;
 }
 
-void DGM::setMemoryValue(int pos){
+void DGM::setMemoryValue(long pos){
 	state[pos] = 1;
 }
 
@@ -79,7 +79,12 @@ int DGM::measure(int qubit_pos){
 	long qubit_bit_shift = (qubits - 1 - qubit_pos);
 
 	int count_one, count_zero, sample_count;
-	float zero, one, norm, random_sample;
+	// double nos acumuladores: somar 2^qubits termos minúsculos em float
+	// para de crescer quando a soma passa de ~2^-24 vezes cada termo (com
+	// 2^30 amplitudes de ~1e-9 a soma "trava" perto de 0.25), e a
+	// probabilidade medida fica errada.
+	double zero, one, norm;
+	float random_sample;
 	one = zero = 0;
 
 	//#pragma omp for;
@@ -137,7 +142,7 @@ void DGM::colapse(int qubit_pos, int value){
 	long size = 1L << qubits;
 	long qubit_bit_shift = (qubits - 1 - qubit_pos);
 
-	float probability_sum;
+	double probability_sum;
 	probability_sum = 0;
 
 	for (long state_index = 0; state_index < size; state_index++)

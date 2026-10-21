@@ -47,7 +47,7 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 	//////////////////////////////////////
 	dgm.qubits = qubits;
 	dgm.allocateMemory();
-	dgm.setMemoryValue((1<<(bit_width+2)));
+	dgm.setMemoryValue((1L<<(bit_width+2)));
 	//----------------------------------//
 
 	qft_qb = 0;
