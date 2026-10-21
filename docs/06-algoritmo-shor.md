@@ -48,7 +48,7 @@ de Griffiths–Niu / "Kitaev phase estimation" com reaproveitamento de qubit):
   seguinte, antes da próxima medição.
 
 Esse laço é o coração da função `Shor()`
-([lib_shor.cpp:39](../src/algorithms/lib_shor.cpp#L39)):
+([lib_shor.cpp:18](../src/algorithms/lib_shor.cpp#L18)):
 
 ```c
 for (i = L; i >= 0; i--){                       // L = 2n-1, ou seja, 2n rodadas
@@ -77,7 +77,7 @@ rodada seguinte via `genRot`.
 
 ## 3. `CMultMod` / `CRMultMod` — multiplicação modular controlada
 
-[lib_shor_circuits.cpp:44](../src/algorithms/lib_shor_circuits.cpp#L44). A ideia (técnica
+[lib_shor_circuits.cpp:47](../src/algorithms/lib_shor_circuits.cpp#L47). A ideia (técnica
 de Vedral–Barenco–Ekert / Beckman et al.): para multiplicar `reg2` por `a`
 módulo `N`, controlado por `ctrl`:
 
@@ -96,34 +96,40 @@ módulo `N`, controlado por `ctrl`:
 que sobrou em `reg1` depois do swap, um padrão comum em aritmética
 reversível ("compute, copy/swap, uncompute").
 
-## 4. `QFT`/`RQFT`/`QFT2` e o somador de Draper (`AddF`/`SubF`)
+## 4. `QFT`/`RQFT` e o somador de Draper (`AddF`/`SubF`)
 
 Todas em [lib_shor_circuits.cpp](../src/algorithms/lib_shor_circuits.cpp). A
 QFT aqui é implementada como a sequência padrão de `H` + portas de fase
 controladas (`R2`, `R3`, ...) entre pares de qubits do registrador — a
 construção de circuito de QFT de livro-texto. `QFT`
-([lib_shor_circuits.cpp:312](../src/algorithms/lib_shor_circuits.cpp#L312))
-e `RQFT` ([lib_shor_circuits.cpp:349](../src/algorithms/lib_shor_circuits.cpp#L349))
+([lib_shor_circuits.cpp:335](../src/algorithms/lib_shor_circuits.cpp#L335))
+e `RQFT` ([lib_shor_circuits.cpp:339](../src/algorithms/lib_shor_circuits.cpp#L339))
 são espelhos exatos um do outro (mesmo circuito, só muda o sinal da fase, o
 prefixo do nome da porta — `"R"` vs `"R'"`, necessário porque o nome vira
 chave no cache de portas da execução (`Gates &g`, ver
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md) item 5) —
 e um `reverse()` final), por isso compartilham a implementação interna
 `QFT_impl(qubits, reg, over, width, inverse, g)` e cada uma é só um wrapper
-de uma linha. `QFT2`
-([lib_shor_circuits.cpp:316](../src/algorithms/lib_shor_circuits.cpp#L316))
-é uma variante sem o qubit `over`, usada isoladamente em `ApplyQFT` (função
-de teste/benchmark) — não compartilha a implementação com `QFT`/`RQFT`.
-`QFT`/`RQFT` (com o qubit `over` extra) são as versões usadas dentro de
-`CMultMod`.
+de uma linha. (Existiu uma variante `QFT2`/`ApplyQFT`, código morto, já removida;
+item 14 de [07](07-bugs-e-pontos-de-atencao.md).) `QFT`/`RQFT` são as versões
+usadas dentro de `CMultMod`.
+
+**QFT aproximada (item 26 de [07](07-bugs-e-pontos-de-atencao.md)).**
+`QFT_impl` descarta as rotações controladas cujo nível (distância entre
+controle e alvo + 1, ângulo `2*pi/2^nível`) passa de `g_qft_degree`: elas
+mudam pouco o resultado e são a maior parte das portas. `Shor()` fixa o grau
+com `set_qft_degree`; o padrão é `ceil(log2(largura)) + 2`
+(`qft_degree_for_width`), `SHOR_AQFT=0` volta ao circuito exato e `SHOR_AQFT=N`
+fixa o grau. A taxa de sucesso medida a 19 e 21 qubits ficou igual à do
+circuito exato; **não** foi medida a 25 qubits ou mais.
 
 O ponto chave: **depois de uma QFT, somar uma constante `num` a um
 registrador vira apenas uma sequência de portas de fase `Rk` em cada qubit**
 (o "somador de Draper", puramente em portas diagonais de fase — daí porque
 `AddF`/`SubF` só criam portas do tipo `DIAG_PRI`, o tipo mais barato de
 executar, ver [03](03-motor-de-execucao-cpu.md)). `AddF`
-([lib_shor_circuits.cpp:230](../src/algorithms/lib_shor_circuits.cpp#L230))
-e `SubF` ([lib_shor_circuits.cpp:255](../src/algorithms/lib_shor_circuits.cpp#L255))
+([lib_shor_circuits.cpp:229](../src/algorithms/lib_shor_circuits.cpp#L229))
+e `SubF` ([lib_shor_circuits.cpp:254](../src/algorithms/lib_shor_circuits.cpp#L254))
 são, pelo mesmo motivo que `QFT`/`RQFT`, espelhos exatos (sinal da fase e
 prefixo `"ADD_"`/`"SUB_"` do nome da porta) e compartilham a implementação
 `AddSubF_impl(qubits, reg, over, value, width, controlled, subtract, g)`. Ela
@@ -135,7 +141,7 @@ análogos `Sub`) são as mesmas portas com um ou dois controles extra
 amarrados.
 
 `C2AddMod`/`C2SubMod`
-([lib_shor_circuits.cpp:97](../src/algorithms/lib_shor_circuits.cpp#L97))
+([lib_shor_circuits.cpp:100](../src/algorithms/lib_shor_circuits.cpp#L100))
 combinam `AddF`/`SubF` com o qubit `over` para implementar soma **modular**
 (soma `a`, subtrai `N`, verifica overflow via `over_bool`, soma `N` de volta
 condicionalmente) — o gadget clássico de soma modular reversível. Ao
@@ -148,7 +154,7 @@ espelhamento de sinal.
 
 Depois das `2n` rodadas, `res` contém a fase medida (em binário, invertida
 bit a bit por `revert_bits`). O resto de `Shor()`
-([lib_shor.cpp:123](../src/algorithms/lib_shor.cpp#L123)) é **matemática
+([lib_shor.cpp:120](../src/algorithms/lib_shor.cpp#L120)) é **matemática
 clássica pura**, sem nenhum qubit envolvido:
 
 1. `quantum_frac_approx` — aproximação por frações contínuas, para
@@ -174,3 +180,15 @@ corrigido, ver [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md),
 item 1. Vale ler mesmo assim antes de mexer em `genRot`/`Gates::list`, pelo
 motivo raiz explicado ali (nomes de porta como chave num cache — hoje por
 execução, ver item 5).
+
+## 7. Desempenho em GPU: fusão de fases e sessão residente
+
+Cerca de 85% das portas do Shor são rotações controladas (diagonais) da QFT/RQFT
+e dos somadores. Em `t_GPU` elas são fundidas em poucas portas de fase por
+`FusePhaseRuns` e a execução usa o estado residente na GPU: `Shor()` chama
+`dgm.beginGpuSession()` logo depois de `setMemoryValue`, o estado sobe uma vez e
+o `measure()` de cada uma das `2n` rodadas roda na GPU (`GPU_FUSE=0` e
+`GPU_RESIDENT=0` desligam). Ver [04](04-gpu-cuda.md), seções 7 e 8, e os itens 27
+e 28 de [07](07-bugs-e-pontos-de-atencao.md). Medido na qflex: `shor.out 25`
+em GPU foi de 50,5 s para ~8,95 s e o `shor.out 27` de 279 s para ~43,7 s no
+total das otimizações ([08](08-performance.md)).

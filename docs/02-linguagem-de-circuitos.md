@@ -27,7 +27,7 @@ grupo diferentes.
 
 ### Exemplo: CNOT
 
-`gates.cpp::CNot(qubits, ctrl, target, cv)` ([gates.cpp:71](../src/core/gates.cpp#L71))
+`gates.cpp::CNot(qubits, ctrl, target, cv)` ([gates.cpp:69](../src/core/gates.cpp#L69))
 gera, para `qubits=3, ctrl=0, target=2, cv=1`:
 
 ```
@@ -61,7 +61,7 @@ independentemente por `genGroups`.
 
 ## 2. `DGM::genGroups` — de string para grupos
 
-[dgm_parser.cpp:60](../src/core/dgm_parser.cpp#L60). Recebe um step (string), separa
+[dgm_parser.cpp:70](../src/core/dgm_parser.cpp#L70). Recebe um step (string), separa
 por vírgula (`Tokenize`) e percorre token a token, acumulando um
 `map<long, Group>` (grupo → controles e alvos):
 
@@ -75,13 +75,13 @@ por vírgula (`Tokenize`) e percorre token a token, acumulando um
 
 ## 3. `DGM::genPTs` — de grupos para `PT`
 
-[dgm_parser.cpp:107](../src/core/dgm_parser.cpp#L107). Para cada grupo:
+[dgm_parser.cpp:118](../src/core/dgm_parser.cpp#L118). Para cada grupo:
 
 1. Calcula `group_control_mask` e `group_control_value` (inteiros de `qubits` bits) a partir das
    posições e valores dos controles daquele grupo — convertendo a posição no
    circuito para o bit de deslocamento (`qubits - pos - 1`, a mesma convenção
    do estado, ver [01](01-arquitetura-geral.md)).
-2. Para cada alvo do grupo, cria um `struct PT` ([common.h:49](../include/core/common.h#L49)):
+2. Para cada alvo do grupo, cria um `struct PT` ([common.h:79](../include/core/common.h#L79)):
    - `matrix` = a matriz 2x2 da porta (`Gates::getMatrix(nome)`);
    - `span_start_bit`/`target_bit` = bit de deslocamento do qubit alvo no vetor de estado;
    - `control_mask`/`control_value`/`control_count` = o controle calculado acima;
@@ -91,17 +91,23 @@ Um `PT` ("Pauli Term"/porta compilada) é a unidade mínima que o motor de
 execução sabe aplicar: **uma matriz 2x2 em um qubit alvo, opcionalmente
 condicionada a um padrão de bits de controle**.
 
+Há uma exceção que o parser não produz: antes de rodar em `t_GPU`,
+`FusePhaseRuns` pode trocar uma corrida de portas de fase por **um único `PT`
+fundido** (`PT::phase_terms` não nulo, uma lista de `PhaseTerm`), que o kernel
+trata de outro jeito; ver [04](04-gpu-cuda.md), seção 7.
+
 ## 4. Circuitos com vários steps e repetição
 
 Um circuito completo pode ter vários steps separados por `;`
 (`DGM::setFunction(string function, ...)` faz `Tokenize(function, steps, ";")`,
-[dgm_parser.cpp:26](../src/core/dgm_parser.cpp#L26)), ou já vir como
+[dgm_parser.cpp:32](../src/core/dgm_parser.cpp#L32)), ou já vir como
 `vector<string>` (um item = um step). `setFunction` monta, para cada step, os
 `PT`s daquele step, ordena (`increasing`/`decreasing`, alternando a cada step
 — uma heurística de ordenação para melhorar localidade/coalescimento) e
 concatena tudo em `vec_pts`. O parâmetro `it` repete a sequência inteira de
-steps `it` vezes (usado por Grover para repetir o bloco oráculo+difusão
-`num_of_it` vezes sem precisar gerar a string várias vezes).
+steps `it` vezes (Grover repete o bloco oráculo+difusão por esse
+parâmetro, mas em blocos de ~20000 portas e não de uma vez só; ver
+[05](05-algoritmo-grover.md), seção 5).
 
 O array final `pts` é **terminado por `NULL`**: todo laço de execução no
 motor (`while (pts[i] != NULL)`) depende disso.

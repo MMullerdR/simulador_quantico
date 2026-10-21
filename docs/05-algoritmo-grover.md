@@ -32,7 +32,7 @@ superposição uniforme.
 
 ## 3. O oráculo — `Oracle1`
 
-[lib_grover.cpp:75](../src/algorithms/lib_grover.cpp#L75). Monta um step
+[lib_grover.cpp:97](../src/algorithms/lib_grover.cpp#L97). Monta um step
 onde cada qubit do registrador de busca é um **controle** (com valor = o bit
 correspondente de `value`) do mesmo grupo, e o qubit 0 é o **alvo** com
 porta `X`. Ou seja: "se o registrador de busca == `value`, aplique X no
@@ -64,10 +64,13 @@ refletir as amplitudes em torno da média.
 ## 5. Número de iterações e execução
 
 ```c
-int iteration_count = (int)(M_PI/4.0*sqrt(1<<(qubits-1)));
+int iteration_count = (int)(M_PI/4.0*sqrt(1L<<(qubits-1)));
+long chunk = PT_BLOCK_LIMIT / grover_step.size();         // PT_BLOCK_LIMIT = 20000 portas
 dgm.setFunction(hadamard_step);                          // prepara superposição inicial
-dgm.setFunction(grover_step, iteration_count, false);     // repete oráculo+difusor N vezes
+dgm.setFunction(grover_step, first, false);               // first = min(iteration_count, chunk)
 dgm.execute(1);
+// o resto: dgm.setFunction(grover_step, chunk); dgm.execute(left / chunk);
+// e as iterações que sobram numa última execução
 ```
 
 `M_PI/4*sqrt(N)` é exatamente o número ótimo de iterações do Grover para um
@@ -77,6 +80,14 @@ que já estava montado (a preparação `hadamard_step`), só emendar as
 repetições do passo de amplificação (ver `DGM::setFunction`, que faz
 `vec_pts.pop_back()` para remover o `NULL` sentinela antes de emendar mais
 `PT`s — [02](02-linguagem-de-circuitos.md)).
+
+**Por que em blocos (item 25 de [07](07-bugs-e-pontos-de-atencao.md)):**
+replicar o passo `iteration_count` vezes dentro de `setFunction` gera centenas
+de MB de `PT` idênticos perto de 31 qubits (25 mil iterações x ~100 portas), mas
+repetir só por `execute(iterations)` custou 12% na GPU e 5% na CPU, porque a lista
+contínua deixava o agrupamento fundir o fim de uma iteração com o começo da
+seguinte. O meio-termo é replicar o passo em blocos de ~20000 portas e repetir o
+bloco por `execute(blocos)`; a memória fica limitada ao bloco.
 
 ## 6. Medição
 
