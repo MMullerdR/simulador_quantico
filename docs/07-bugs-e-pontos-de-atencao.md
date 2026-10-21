@@ -682,10 +682,12 @@ resultado errado visto na prática.
   double=1`). Em estados espalhados a probabilidade de cada lado do qubit
   medido sai errada e a decisão do colapso também. A 27 qubits (o maior
   Shor) o mesmo efeito já aparece com amplitudes uniformes (a soma trava
-  em ~0,125), então vale desconfiar de parte da taxa baixa de sucesso do
-  Shor nos tamanhos maiores — **não medido**: a taxa não foi recomparada
-  antes/depois. Corrigido com acumuladores `double` em `measure()` e
-  `colapse()`.
+  em ~0,125). Medido na qflex: 20 rodadas alternadas de `shor.out 25 2 1`
+  com o build antigo (`62ddb7b`) e o novo deram **18/20 nos dois**, ou seja,
+  o `float` não prejudicava a taxa de sucesso do Shor a 25 qubits (a 27
+  qubits não foi medido). Corrigido mesmo assim, com acumuladores `double`
+  em `measure()` e `colapse()`, porque a soma está errada por construção
+  nos estados que a travam.
 - `Grover()` fazia `dgm.setMemoryValue(1<<(qubits-1))` e
   `sqrt(1<<(qubits-1))` em `int`: a 32 qubits isso é `1<<31`, comportamento
   indefinido (negativo na prática) → índice de estado negativo. `Shor()`
