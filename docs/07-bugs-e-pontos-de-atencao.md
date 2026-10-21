@@ -918,6 +918,17 @@ de regiões do `t_HYBRID` threads de CPU leem o mesmo array enquanto a GPU
 trabalha (a lista da GPU ali é outra, projetada por região), então ela fica
 fora desse caminho.
 
+**Avaliado para a CPU e descartado (simulação, 2026-10-21):** a mesma
+reordenação não serve ao `t_PAR_CPU`. Com `cpu_region_bits=14` e
+`cpu_coalesced_bits=11` (3 alvos distintos acima da faixa baixa), o Shor já cabe em
+poucas passadas porque quase todos os alvos caem nos bits baixos: `shor 21`
+72 passadas (~1270 portas cada) e `shor 25` 132 passadas, e a reordenação não
+muda nenhuma (razão 1,00x); o Grover (6826 passadas, 7,7 portas por passada) é
+uma cadeia de dependências, também 1,00x. Também simulei janelas de 8 bits
+**não contíguos** na GPU (em vez dos 8 consecutivos do kernel): depois da
+reordenação dá 2068 lotes no `shor 25`, contra 2200 com a janela contígua, ou
+seja, nada que justifique generalizar o `OPEN_SPACE` do kernel.
+
 **Tentado e descartado (medido): especializar o kernel por tipo de matriz.**
 `ApplyValuesC01` paga 4 produtos complexos por par mesmo em portas diagonais ou
 X. Tipei as portas no host (fase com `m00=1`, diagonal, troca, anti-diagonal) e
