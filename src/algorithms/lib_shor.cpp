@@ -44,6 +44,15 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 	}
 	qubits = 2*bit_width+3;
 
+	// QFT aproximada (item 26 em docs/07-bugs-e-pontos-de-atencao.md): as
+	// rotações de ângulo pequeno da QFT quase não mudam o resultado e são a
+	// maior parte das portas do circuito. SHOR_AQFT=0 volta ao circuito
+	// exato; SHOR_AQFT=N fixa o grau; sem a variável vale o padrão por largura.
+	{
+		const char *aqft_env = getenv("SHOR_AQFT");
+		set_qft_degree(aqft_env ? atoi(aqft_env) : qft_degree_for_width((int) bit_width));
+	}
+
 	//////////////////////////////////////
 	dgm.qubits = qubits;
 	dgm.allocateMemory();

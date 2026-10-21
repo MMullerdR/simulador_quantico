@@ -265,7 +265,25 @@ vector <string> SubF(int qubits, int reg, int over, long value_to_sub, int width
 // prefixo do nome da porta ("R" vs "R'" — precisa ser diferente porque
 // os nomes viram chaves no cache de portas da execução, e addGate não
 // sobrescreve, ver docs/07 item 1) e no reverse() final do inverso.
+// Grau da QFT aproximada (0 = exata). Estado global de propósito: QFT_impl é
+// chamada de dentro de C2AddMod/CMultMod/..., e passar o grau por todas essas
+// assinaturas mudaria metade de lib_shor.h pra um parâmetro que só Shor() sabe.
+static int g_qft_degree = 0;
+
+void set_qft_degree(int degree){
+	g_qft_degree = (degree > 0) ? degree : 0;
+}
+
+int qft_degree_for_width(int width){
+	int log2_ceil = 0;
+	while ((1 << log2_ceil) < width) log2_ceil++;
+	return log2_ceil + 2;
+}
+
 vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse, Gates &g){
+	// Nível de uma rotação controlada = distância entre controle e alvo + 1
+	// (ângulo 2*pi/2^nível); acima de g_qft_degree ela é descartada.
+	int max_level = (g_qft_degree > 0) ? g_qft_degree : width + 2;
 	string joined_step, name;
 	vector <string> steps;
 	string prefix = inverse ? "R'" : "R";
@@ -283,6 +301,7 @@ vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse,
 
 	steps.push_back(Hadamard(qubits, over, 1));
 	for (int control_qubit_index = 0; control_qubit_index < width; control_qubit_index++){
+		if (control_qubit_index + 2 > max_level) continue;
 		step_ops[control_qubit_index+reg] = "Control1(1)";
 		step_ops[over] = "Target1(" + prefix + int2str(control_qubit_index+2) + ")";
 
@@ -296,6 +315,7 @@ vector <string> QFT_impl(int qubits, int reg, int over, int width, bool inverse,
 		steps.push_back(Hadamard(qubits, target_qubit_index+reg, 1));
 
 		for (int control_qubit_index = target_qubit_index+1; control_qubit_index < width; control_qubit_index++){
+			if (control_qubit_index - target_qubit_index + 1 > max_level) continue;
 			step_ops[control_qubit_index+reg] = "Control1(1)";
 			step_ops[target_qubit_index+reg] = "Target1(" + prefix + int2str(control_qubit_index-target_qubit_index+1) + ")";
 

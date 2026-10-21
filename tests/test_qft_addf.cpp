@@ -164,6 +164,23 @@ static bool cmp(const vector<string>&a, const vector<string>&b, const string &la
 	return true;
 }
 
+// Remove de uma lista de passos da QFT exata os que são rotações controladas
+// ("Target1(R<nível>)" ou "Target1(R'<nível>)") de nível > degree.
+static vector<string> drop_levels(const vector<string> &steps, int degree){
+	vector<string> kept;
+	for (size_t i = 0; i < steps.size(); i++){
+		size_t pos = steps[i].find("Target1(R");
+		if (pos != string::npos){
+			size_t digits = pos + 9;
+			if (steps[i][digits] == '\'') digits++;
+			int level = atoi(steps[i].c_str() + digits);
+			if (level > degree) continue;
+		}
+		kept.push_back(steps[i]);
+	}
+	return kept;
+}
+
 int main(){
 	bool all_ok = true;
 	int case_count = 0;
@@ -185,6 +202,26 @@ int main(){
 		all_ok = cmp(RQFT(qubits,reg,over,width,g), OLD_RQFT(qubits,reg,over,width), "RQFT") && all_ok;
 		case_count += 2;
 	}
+
+	// QFT aproximada: com grau m, QFT/RQFT têm que ser exatamente o circuito
+	// exato sem os passos de rotação controlada de nível > m (mesma ordem).
+	// Grau 0 volta ao exato.
+	for (int i = 0; i < 3; i++){
+		int qubits=cases[i][0], reg=cases[i][1], over=cases[i][2], width=cases[i][3];
+		int degrees[3] = {2, 3, 4};
+		for (int di = 0; di < 3; di++){
+			int degree = degrees[di];
+			set_qft_degree(degree);
+			all_ok = cmp(QFT(qubits,reg,over,width,g), drop_levels(OLD_QFT(qubits,reg,over,width), degree), "QFT aproximada") && all_ok;
+			all_ok = cmp(RQFT(qubits,reg,over,width,g), drop_levels(OLD_RQFT(qubits,reg,over,width), degree), "RQFT aproximada") && all_ok;
+			case_count += 2;
+		}
+		set_qft_degree(0);
+		all_ok = cmp(QFT(qubits,reg,over,width,g), OLD_QFT(qubits,reg,over,width), "QFT (grau 0 = exata)") && all_ok;
+		case_count++;
+	}
+	all_ok = (qft_degree_for_width(6) == 5 && qft_degree_for_width(9) == 6 && qft_degree_for_width(12) == 6 && qft_degree_for_width(17) == 7) && all_ok;
+	case_count++;
 
 	long values[5] = {5, 13, 57, 0, 1023};
 	int widths[3] = {4, 6, 8};

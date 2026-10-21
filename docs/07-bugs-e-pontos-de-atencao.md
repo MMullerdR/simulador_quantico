@@ -974,6 +974,48 @@ passam pelos quatro backends.
 Não medido: o ganho de memória a 28+ qubits (o Grover leva horas lá); o número
 de 255 MB é a conta 3 milhões x 85 B, e os 85 B vêm do `grover.out 22`.
 
+## 26. [CORRIGIDO] Shor: ~85% das portas eram rotações da QFT — QFT aproximada
+
+**Onde:** `QFT_impl` em `src/algorithms/lib_shor_circuits.cpp`
+(`set_qft_degree`, `qft_degree_for_width`), `Shor()` em
+`src/algorithms/lib_shor.cpp`, teste em `tests/test_qft_addf.cpp`.
+
+Contagem de portas do circuito do Shor (25 qubits = registrador de largura 11):
+cada soma modular (`C2AddMod`) refaz **quatro** QFTs/QFTs inversas (78 portas
+cada) e só ~65 portas de somadores e controles; ~85% das portas são rotações
+controladas, 75% delas com um controle. Rotações de ângulo pequeno quase não
+mudam o resultado (a QFT aproximada de Coppersmith/Barenco é padrão para o
+Shor), então `QFT`/`RQFT` agora descartam as rotações de nível maior que um
+grau `m` (ângulo < 2π/2^m). Padrão: `m = ceil(log2(largura)) + 2` (6 para
+largura 9 a 16, 5 para 8). `SHOR_AQFT=0` volta ao circuito exato; `SHOR_AQFT=N` fixa o
+grau. O grau é estado global do módulo (`set_qft_degree`) porque `QFT_impl` é
+chamada de dentro de `C2AddMod`/`CMultMod` e passar o grau por todas essas
+assinaturas mudaria metade do `lib_shor.h`.
+
+**Taxa de sucesso** (execuções em `t_GPU`; o Shor é probabilístico, então
+medi com muitas rodadas — com 40 rodadas a variação de amostragem enganava):
+
+| qubits (largura) | exato | grau 7 | 6 | 5 | 4 | padrão |
+|---|---|---|---|---|---|---|
+| 19 (largura 8) | 88/200 | 88 | 87 | 87 | 90 | — |
+| 21 (largura 9) | 154/200 | 164 | 165 | 157 | 158 | — |
+| 23 (largura 10) | 97/100 | — | — | — | — | 100/100 |
+| 25 (largura 11) | 21/30 | — | — | — | — | 24/30 |
+
+**Tempo** (padrão contra `SHOR_AQFT=0`): Shor 21 em GPU 1,03 -> 0,86 s, em
+`t_PAR_CPU` com 16 threads 2,64 -> 2,12 s; Shor 25 em GPU 17,4 -> 13,9 s. Em
+`shor 25` o tempo por grau foi 17,4 s (exato), 14,1 (6), 12,9 (5), 11,6 (4),
+10,3 (3).
+
+**Não medido:** taxa de sucesso a 27 qubits ou mais, e do grau 3 com amostra
+grande; a teoria pede ~log2(largura)+2, e o padrão segue isso. O circuito deixa
+de ser exatamente o da literatura quando o grau é menor que a largura+1, por
+isso o `SHOR_AQFT=0`.
+
+**Testes:** `test_qft_addf` confere que, com grau `m`, `QFT`/`RQFT` são o
+circuito exato sem os passos de rotação de nível > `m`, na mesma ordem, e que o
+grau 0 volta ao exato (88 casos).
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em

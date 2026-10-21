@@ -25,6 +25,15 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 // nesse cache, ver gates.h.
 // QFT/RQFT (Fourier direta/inversa, com registrador auxiliar "over")
 // compartilham a mesma implementação interna, só o sinal da fase muda.
+//
+// QFT aproximada: set_qft_degree(m) faz QFT/RQFT (e tudo que as chama, como
+// CMultMod) descartarem as rotações controladas de nível maior que m (ângulo
+// menor que 2*pi/2^m). m = 0 (padrão) é a QFT exata, igual ao circuito
+// original. Shor() escolhe o grau a cada chamada (qft_degree_for_width,
+// SHOR_AQFT no ambiente). Ver item 26 em docs/07-bugs-e-pontos-de-atencao.md.
+void set_qft_degree(int degree);
+// Grau padrão para um registrador de "width" qubits: ceil(log2(width)) + 2.
+int qft_degree_for_width(int width);
 vector <string> QFT(int qubits, int reg, int over, int width, Gates &g);
 vector <string> RQFT(int qubits, int reg, int over, int width, Gates &g);
 // Troca reg1<->reg2 (width qubits), controlada por "ctrl", via 3 CNOTs.
