@@ -497,6 +497,15 @@ static bool hybrid_cpu_may_claim(long unclaimed, long ops, long region_bits){
 	return (double)unclaimed * est_gpu >= hybrid_est_cpu_ns(ops, region_bits);
 }
 
+bool DGM::hybridDelegatesToGpu(){
+	const long qubits_limit = 20;	// mesmo valor de HybridExecution
+	if (qubits <= qubits_limit) return true;
+	if (getenv("HYBRID_FORCE_REGIONS") != NULL && getenv("HYBRID_FORCE_REGIONS")[0] == '1') return false;
+	long free_bytes = GpuMinFreeBytes(gpu_count);
+	long need_bytes = ((1L << qubits) * (long) sizeof(float complex)) / gpu_count + (512L << 20);
+	return free_bytes >= 0 && free_bytes >= need_bytes;
+}
+
 // Backend t_HYBRID: a thread OpenMP 0 comanda a GPU (projeta o estado,
 // dispara o kernel, recolhe o resultado) enquanto as demais processam
 // regiões em CPU ao mesmo tempo, região "global" por região "global" —
@@ -532,17 +541,18 @@ void DGM::HybridExecution(PT **pts, int iterations){
 	// este desvio de "cabe na GPU" (pra medir/comparar o modo de regiões).
 	bool fits_in_gpu = false;
 	static bool force_regions = (getenv("HYBRID_FORCE_REGIONS") != NULL && getenv("HYBRID_FORCE_REGIONS")[0] == '1');
-	if (qubits > qubits_limit && !force_regions){
+	if (qubits > qubits_limit && !force_regions && !gpu_resident){
 		long free_bytes = GpuMinFreeBytes(gpu_count);
 		long need_bytes = (mem_size * (long)sizeof(float complex)) / gpu_count + (512L << 20);	// + folga pro contexto/kernels
 		fits_in_gpu = (free_bytes >= 0 && free_bytes >= need_bytes);
 		if (hybrid_debug) fprintf(stderr, "[HYBRID] memória livre da GPU=%ld bytes, estado precisa de %ld: %s\n", free_bytes, need_bytes, fits_in_gpu ? "cabe" : "não cabe");
 	}
-	if (qubits <= qubits_limit || fits_in_gpu){
+	if (qubits <= qubits_limit || fits_in_gpu || gpu_resident){
 		scheduleForGpu();	// aqui nenhuma thread de CPU lê pts[], então pode reordenar
 		// FusePhaseRuns reescreve vec_pts no lugar, então o parâmetro pts (que
 		// esconde o membro this->pts) continua apontando pra lista certa.
-		GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
+		// estado residente na GPU (sessão): NULL = já está lá, sem cópia
+		GpuExecutionWrapper(gpu_resident ? NULL : state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
 		if (hybrid_debug){
 			fprintf(stderr, "[HYBRID] qubits=%ld: %s, delegado inteiro à GPU\n", qubits, (qubits <= qubits_limit) ? "região única (<= qubits_limit)" : "estado cabe na GPU");
 		}

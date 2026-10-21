@@ -32,6 +32,20 @@ extern "C" bool FreeGpuState(int gpu_count){
 	return false;
 }
 
+extern "C" bool GpuSessionBegin(float complex *state, int qubits, int gpu_count){
+	return false;
+}
+
+extern "C" void GpuSessionEnd(float complex *state, int qubits, bool copy_back){
+}
+
+extern "C" void GpuMeasureSums(int qubits, int bit_shift, double *zero_sum, double *one_sum){
+	*zero_sum = *one_sum = 0.0;
+}
+
+extern "C" void GpuCollapse(int qubits, int bit_shift, int measured_bit, double norm){
+}
+
 extern "C" int GpuMaxBatchOps(){
 	return 300;
 }

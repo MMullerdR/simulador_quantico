@@ -57,6 +57,10 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 	dgm.qubits = qubits;
 	dgm.allocateMemory();
 	dgm.setMemoryValue((1L<<(bit_width+2)));
+	// Estado residente na GPU durante as rodadas (sem copiar o estado inteiro
+	// host<->GPU em cada uma e com o measure() na GPU); no-op fora de
+	// t_GPU/t_HYBRID.
+	dgm.beginGpuSession();
 	//----------------------------------//
 
 	qft_qb = 0;

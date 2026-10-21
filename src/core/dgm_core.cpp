@@ -17,6 +17,7 @@ DGM::DGM(){
 	exec_type = t_CPU;
 	factor = 1;
 	gpu_count = 1;
+	gpu_resident = false;
 }
 
 // RAII: state é sempre de posse exclusiva da DGM que o alocou
@@ -63,6 +64,7 @@ void DGM::allocateMemory(){
 }
 
 void DGM::freeMemory(){
+	endGpuSession(false);	// sessão de GPU aberta: libera o estado da GPU também
 	if (state) free(state);
 	state = NULL;
 }
@@ -87,12 +89,17 @@ int DGM::measure(int qubit_pos){
 	float random_sample;
 	one = zero = 0;
 
-	//#pragma omp for;
-	for (long state_index = 0; state_index < size; state_index++){
-		if ((state_index >> qubit_bit_shift) & 1)
-			one += pow(crealf(state[state_index]), 2.0) + pow(cimagf(state[state_index]), 2.0);
-		else
-			zero += pow(crealf(state[state_index]), 2.0) + pow(cimagf(state[state_index]), 2.0);
+	if (gpu_resident){
+		GpuMeasureSums(qubits, qubit_bit_shift, &zero, &one);
+	}
+	else{
+		//#pragma omp for;
+		for (long state_index = 0; state_index < size; state_index++){
+			if ((state_index >> qubit_bit_shift) & 1)
+				one += pow(crealf(state[state_index]), 2.0) + pow(cimagf(state[state_index]), 2.0);
+			else
+				zero += pow(crealf(state[state_index]), 2.0) + pow(cimagf(state[state_index]), 2.0);
+		}
 	}
 
 	long measured_bit;
@@ -124,6 +131,11 @@ int DGM::measure(int qubit_pos){
 		measured_bit = 0;
 	}
 
+	if (gpu_resident){
+		GpuCollapse(qubits, qubit_bit_shift, (int) measured_bit, norm);
+		return measured_bit;
+	}
+
 	long low_bits_mask;
 	low_bits_mask = (1L << qubit_bit_shift) - 1;
 	#pragma omp for
@@ -139,6 +151,7 @@ int DGM::measure(int qubit_pos){
 // Força o qubit "qubit_pos" a valer "value", zerando as amplitudes
 // incompatíveis e renormalizando o resto (colapso sem medir de fato).
 void DGM::colapse(int qubit_pos, int value){
+	endGpuSession(true);	// este caminho opera no vetor de estado do host
 	long size = 1L << qubits;
 	long qubit_bit_shift = (qubits - 1 - qubit_pos);
 
@@ -160,6 +173,7 @@ void DGM::colapse(int qubit_pos, int value){
 // Mede vários qubits sem colapsar o estado: devolve a distribuição de
 // probabilidade sobre as combinações desses qubits.
 map <long, float> DGM::measure(vector<int> qubit_positions){
+	endGpuSession(true);	// este caminho lê o vetor de estado do host
 	long qubit_positions_mask = 0;
 
 	for (int i = 0; i < qubit_positions.size(); i++) qubit_positions_mask = qubit_positions_mask | (1L <<(qubits - 1 - qubit_positions[i]));
@@ -302,6 +316,23 @@ void DGM::scheduleForGpu(){
 		ScheduleForBatching(pts, gpu_coalesced_bits, gpu_region_bits - gpu_coalesced_bits, GpuMaxBatchOps());
 }
 
+// Sessão de GPU (item 28): ver o comentário em dgm.h.
+bool DGM::beginGpuSession(){
+	static bool enabled = !(getenv("GPU_RESIDENT") != NULL && getenv("GPU_RESIDENT")[0] == '0');
+	if (!enabled || gpu_resident || state == NULL || gpu_count != 1) return false;
+	if (exec_type != t_GPU && !(exec_type == t_HYBRID && hybridDelegatesToGpu())) return false;
+
+	if (!GpuSessionBegin(state, qubits, gpu_count)) return false;
+	gpu_resident = true;
+	return true;
+}
+
+void DGM::endGpuSession(bool copy_back){
+	if (!gpu_resident) return;
+	GpuSessionEnd(state, qubits, copy_back);
+	gpu_resident = false;
+}
+
 float complex* DGM::execute(int iterations){
 	validateTuning();
 
@@ -316,7 +347,9 @@ float complex* DGM::execute(int iterations){
 			break;
 		case t_GPU:
 			scheduleForGpu();
-			result = GpuExecutionWrapper(state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
+			// estado residente na GPU: NULL = "já está lá" (sem cópia host<->GPU)
+			result = GpuExecutionWrapper(gpu_resident ? NULL : state, pts, qubits, gpu_coalesced_bits, gpu_region_bits, gpu_count, block_size, repeat_count, iterations);
+			if (gpu_resident) result = state;
 			break;
 		case t_HYBRID:
 			HybridExecution(pts, iterations);

@@ -1082,6 +1082,67 @@ caminho de CPU faz os testes falharem.
 **Custo/benefício:** ~250 linhas e um novo tipo de PT por -9 a -10% a 25-27
 qubits (-3% a 21). Fica ligado por padrão; `GPU_FUSE=0` desliga.
 
+## 28. [CORRIGIDO] Shor copiava o estado inteiro host<->GPU e media no host a cada rodada — sessão de GPU
+
+**Onde:** `GpuSessionBegin`/`GpuSessionEnd`/`GpuMeasureSums`/`GpuCollapse` em
+`src/core/kernel.cu` (stubs em `kernel_stub.cpp`), `DGM::beginGpuSession()`/
+`endGpuSession()` e o ramo de GPU em `DGM::measure()` em
+`src/core/dgm_core.cpp`, `DGM::HybridExecution` em `src/core/dgm_par_exec.cpp`,
+`Shor()` em `src/algorithms/lib_shor.cpp`.
+
+O Shor roda `2*largura` rodadas, cada uma `executeFunction` + `measure`. Em
+`t_GPU` cada `executeFunction` fazia `cudaMalloc` + cópia do estado inteiro pra
+GPU, os kernels, cópia de volta e `cudaFree`; e o `measure()` percorria o vetor
+de estado inteiro no host duas vezes (soma das probabilidades e colapso). Nas
+medidas do item 24 isso aparecia como parte do piso de ~43-68% do tempo.
+
+Agora o Shor abre uma **sessão de GPU** (`dgm.beginGpuSession()`): o estado
+sobe uma vez, `execute()` passa a chamar o kernel com `state = NULL` ("já está
+lá", o mesmo contrato que o modo de regiões do híbrido usa) e `measure()` roda
+na GPU: um kernel de redução soma `|a|^2` em `double` (256 threads x 512
+blocos, soma dos blocos em ordem fixa no host, determinística) e outro faz o
+colapso com o mesmo mapeamento do host (a metade medida, dividida por `norm`,
+vai pra metade com o bit em 0; a outra zera, o qubit medido volta a |0>). O
+sorteio da medição continua no host com o mesmo `g_rng`. A sessão termina no
+destrutor da `DGM`; `colapse()` e `measure(vector)` (que usam o host) encerram
+a sessão copiando o estado de volta antes.
+
+Escopo: só `gpu_count == 1` (o multi-GPU está arquivado, item 13), `t_GPU` e
+`t_HYBRID` quando ele delegaria à GPU (`DGM::hybridDelegatesToGpu`, mesma regra
+de `HybridExecution`); precisa de memória livre = estado + 512 MB, senão
+`beginGpuSession()` devolve false e o caminho com cópia por execução segue como
+estava. Só o Shor usa; o Grover roda um `execute` grande e `qubits-1`
+`measure`, e as cópias ali somem diante de horas de cálculo. `GPU_RESIDENT=0`
+desliga.
+
+Medido na qflex, mesmo binário, `GPU_RESIDENT=1` contra `0` (com QFT
+aproximada e fusão ligadas nos dois):
+
+| caso | sem sessão | com sessão |
+|---|---|---|
+| `shor.out 21` | 0,81 s | 0,72 s (-11%) |
+| `shor.out 25` | 12,9 s | 10,9-11,0 s (-15%) |
+| `shor.out 27` | 76,2 s | 55,1 s (-28%) |
+| `shor.out 25 3 4` (híbrido delegado) | 12,8 s | 11,1 s (-13%) |
+
+O ganho cresce com o tamanho porque a cópia e o `measure` no host crescem com
+2^qubits. Acumulado do Shor em GPU nesta sessão: `shor.out 27` 279 s no começo
+das otimizações -> 55 s; `shor.out 25` 50,5 s -> 10,9 s.
+
+**Testes:** `tests/test_cpu_parallel.cpp` (só com kernel real) ganhou 12
+sessões de 6 rodadas "circuito aleatório + medição de um qubit aleatório" no
+`t_GPU` residente contra o `t_CPU`, com `g_rng` re-semeado igual antes de cada
+medição: o bit medido tem que ser igual e o estado final (copiado de volta)
+tem que bater em 1e-5, com circuitos comuns e ricos em fase (cobre também a
+fusão sobre estado residente). Por mutação: trocar zero/um na soma, não zerar a
+outra metade ou não renormalizar no colapso fazem o teste falhar. A taxa de
+sucesso do Shor com e sem sessão ficou dentro do ruído (Shor 19, 150 rodadas:
+83 contra 67; Shor 21, 30 rodadas: 23 contra 27, em sentidos opostos); a
+equivalência bit a bit com a mesma amostra é o que o teste acima garante.
+
+**Não testado:** o caminho de recusa por falta de memória (estado perto da
+capacidade da GPU) e a sessão com `gpu_count > 1` (recusada de propósito).
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em

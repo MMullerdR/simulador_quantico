@@ -94,6 +94,13 @@ memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
 
+**Atualização (2026-10-21, estado residente):** o Shor em `t_GPU` mantém o
+estado na GPU entre as rodadas e mede lá (item 28 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md);
+`GPU_RESIDENT=0` desliga): `shor.out 25` 12,9 -> 10,9 s e `shor.out 27`
+76,2 -> 55,1 s. Contra o começo das otimizações da sessão (`62ddb7b`), o Shor 27
+em GPU foi de 279 s para 55 s.
+
 **Atualização (2026-10-21, Shor):** QFT aproximada (item 26 de
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md); `SHOR_AQFT=0`
 volta ao circuito exato) e fusão de portas de fase na GPU (item 27;

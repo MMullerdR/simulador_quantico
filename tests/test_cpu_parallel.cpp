@@ -9,7 +9,10 @@
 //  3. t_GPU contra t_CPU, só quando o build tem kernel.cu de verdade
 //     (GpuMinFreeBytes >= 0; o stub devolve -1);
 //  4. FusePhaseRuns (portas de fase fundidas): t_CPU e t_PAR_CPU depois da
-//     fusão contra o t_CPU na lista original.
+//     fusão contra o t_CPU na lista original;
+//  5. sessão de GPU (estado residente + measure/colapso na GPU), só com
+//     kernel de verdade: várias rodadas "executa + mede" contra o t_CPU, com a
+//     mesma semente de medição.
 //
 // Grupo 1 em detalhe: os dois precisam produzir o mesmo vetor de estado
 // pra qualquer circuito. Parte de um estado aleatório (não de |0...0>)
@@ -300,6 +303,67 @@ static bool run_fuse_case(int qubits, int fuse_exec, int region_bits, int coales
 	return ok;
 }
 
+// Grupo 5: sessão de GPU. Mesmas rodadas (circuito aleatório + medição de um
+// qubit aleatório) no t_CPU e num t_GPU com a sessão aberta; g_rng é
+// re-semeado igual antes de cada medição, então os dois sorteiam a mesma
+// amostra e têm que dar o mesmo bit, e o estado final (copiado de volta) tem
+// que bater.
+static bool run_session_case(int qubits, int rounds, unsigned seed, bool phase_rich){
+	mt19937 rng(seed);
+
+	DGM ref, gpu;
+	ref.qubits = gpu.qubits = qubits;
+	ref.exec_type = t_CPU;
+	gpu.exec_type = t_GPU;
+	gpu.gpu_coalesced_bits = 4;
+	gpu.gpu_region_bits = 8;
+	gpu.block_size = 64;
+	gpu.repeat_count = 2;
+	ref.allocateMemory();
+	gpu.allocateMemory();
+	register_test_gates(ref);
+	register_test_gates(gpu);
+
+	mt19937 state_rng(seed ^ 0x165667b1u);
+	fill_random_state(ref, state_rng);
+	for (long i = 0; i < (1L << qubits); i++) gpu.state[i] = ref.state[i];
+
+	if (!gpu.beginGpuSession()){
+		cout << "FAIL sessao: beginGpuSession() não abriu a sessão (qubits=" << qubits << ")" << endl;
+		return false;
+	}
+
+	bool ok = true;
+	for (int round = 0; round < rounds && ok; round++){
+		vector <string> steps;
+		for (int i = 0; i < 30; i++) steps.push_back(phase_rich ? random_phase_step(qubits, rng) : random_step(qubits, rng));
+		ref.executeFunction(steps);
+		gpu.executeFunction(steps);
+
+		int measured_qubit = rng() % qubits;
+		seed_rng(seed * 31 + round);
+		int bit_ref = ref.measure(measured_qubit);
+		seed_rng(seed * 31 + round);
+		int bit_gpu = gpu.measure(measured_qubit);
+		if (bit_ref != bit_gpu){
+			cout << "FAIL sessao qubits=" << qubits << " seed=" << seed << " rodada=" << round
+				<< ": bit medido difere (cpu=" << bit_ref << ", gpu=" << bit_gpu << ")" << endl;
+			ok = false;
+		}
+	}
+
+	gpu.endGpuSession(true);
+	long worst;
+	double max_diff = max_state_diff(ref, gpu, worst);
+	if (max_diff >= 1e-5){
+		cout << "FAIL sessao qubits=" << qubits << " seed=" << seed << ": estado final difere " << max_diff << " no índice " << worst << endl;
+		ok = false;
+	}
+	ref.freeMemory();
+	gpu.freeMemory();
+	return ok;
+}
+
 int main(){
 	struct Combo{ int qubits, region_bits, coalesced_bits, threads; };
 	// (qubits, region, coalesced, threads): região menor que os qubits
@@ -374,6 +438,18 @@ int main(){
 		}
 		cout << (gpu_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << gpu_cases << " circuitos aleatórios, t_GPU vs t_CPU" << endl;
 		all_ok = all_ok && gpu_ok;
+
+		bool session_ok = true;
+		int session_cases = 0;
+		int session_qubits[4] = {10, 12, 14, 16};
+		for (int qi = 0; qi < 4; qi++){
+			for (unsigned seed = 1; seed <= 3; seed++){
+				session_ok = run_session_case(session_qubits[qi], 6, seed * 9001 + session_qubits[qi], seed == 2) && session_ok;
+				session_cases++;
+			}
+		}
+		cout << (session_ok ? "OK" : "FAIL") << " test_cpu_parallel: " << session_cases << " sessões de GPU (6 rodadas executa+mede), t_GPU residente vs t_CPU" << endl;
+		all_ok = all_ok && session_ok;
 	}
 	else{
 		cout << "(sem GPU de verdade neste build: casos de t_GPU pulados)" << endl;

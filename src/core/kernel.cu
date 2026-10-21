@@ -481,6 +481,123 @@ extern "C" bool FreeGpuState(int gpu_count){
 // DGM::HybridExecution pra decidir se o vetor de estado inteiro cabe na
 // GPU -- nesse caso o modo híbrido por regiões só perde tempo copiando e
 // o caminho residente do t_GPU é mais rápido (docs/07, item 17).
+// ---------------------------------------------------------------------------
+// Sessão de GPU (item 28): estado residente + measure/colapso na GPU
+// ---------------------------------------------------------------------------
+static bool gpu_session_active = false;
+#define REDUCE_THREADS 256
+#define REDUCE_BLOCKS 512
+static double *session_partials = NULL;	// REDUCE_BLOCKS * 2 doubles, na GPU
+
+extern "C" bool GpuSessionBegin(float complex *state, int qubits, int gpu_count){
+	if (gpu_session_active || gpu_state_ready || gpu_count != 1) return false;
+
+	size_t bytes = (size_t) sizeof(cuFloatComplex) << qubits;
+	size_t free_bytes = 0, total_bytes = 0;
+	if (cudaSetDevice(0) != cudaSuccess || cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess){
+		cudaGetLastError();
+		return false;
+	}
+	if (free_bytes < bytes + (512UL << 20)) return false;	// + folga pro contexto/kernels
+
+	if (cudaMalloc(&gpu_mem[0], bytes) != cudaSuccess){
+		cudaGetLastError();
+		return false;
+	}
+	cudaMemcpy(gpu_mem[0], state, bytes, cudaMemcpyHostToDevice); error();
+	cudaMemcpyToSymbol(gpu_pointer, gpu_mem, sizeof(cuFloatComplex*)); error();
+	cudaMalloc(&session_partials, REDUCE_BLOCKS * 2 * sizeof(double)); error();
+
+	gpu_session_active = true;
+	return true;
+}
+
+extern "C" void GpuSessionEnd(float complex *state, int qubits, bool copy_back){
+	if (!gpu_session_active) return;
+	if (copy_back){
+		size_t bytes = (size_t) sizeof(cuFloatComplex) << qubits;
+		cudaMemcpy(state, gpu_mem[0], bytes, cudaMemcpyDeviceToHost); error();
+	}
+	cudaFree(gpu_mem[0]); error();
+	cudaFree(session_partials); error();
+	gpu_mem[0] = NULL;
+	session_partials = NULL;
+	gpu_session_active = false;
+}
+
+// Redução em double: cada thread soma |a|^2 dos seus elementos (passo = grade
+// inteira, leituras consecutivas por warp), o bloco reduz na shared memory e
+// grava duas somas parciais (bit == 0, bit == 1); o host soma os blocos em
+// ordem fixa, então o resultado é determinístico.
+__global__ void MeasureSumsKernel(const cuFloatComplex *state, long size, int bit_shift, double *partials){
+	__shared__ double zero_sums[REDUCE_THREADS];
+	__shared__ double one_sums[REDUCE_THREADS];
+
+	double zero = 0.0, one = 0.0;
+	long stride = (long) gridDim.x * blockDim.x;
+	for (long index = (long) blockIdx.x * blockDim.x + threadIdx.x; index < size; index += stride){
+		cuFloatComplex value = state[index];
+		double probability = (double) value.x * value.x + (double) value.y * value.y;
+		if ((index >> bit_shift) & 1) one += probability;
+		else zero += probability;
+	}
+
+	zero_sums[threadIdx.x] = zero;
+	one_sums[threadIdx.x] = one;
+	__syncthreads();
+	for (int half = blockDim.x / 2; half > 0; half >>= 1){
+		if (threadIdx.x < half){
+			zero_sums[threadIdx.x] += zero_sums[threadIdx.x + half];
+			one_sums[threadIdx.x] += one_sums[threadIdx.x + half];
+		}
+		__syncthreads();
+	}
+	if (threadIdx.x == 0){
+		partials[2 * blockIdx.x] = zero_sums[0];
+		partials[2 * blockIdx.x + 1] = one_sums[0];
+	}
+}
+
+extern "C" void GpuMeasureSums(int qubits, int bit_shift, double *zero_sum, double *one_sum){
+	long size = 1L << qubits;
+	MeasureSumsKernel<<<REDUCE_BLOCKS, REDUCE_THREADS>>>(gpu_mem[0], size, bit_shift, session_partials); error();
+
+	double host_partials[REDUCE_BLOCKS * 2];
+	cudaMemcpy(host_partials, session_partials, sizeof(host_partials), cudaMemcpyDeviceToHost); error();
+
+	double zero = 0.0, one = 0.0;
+	for (int block = 0; block < REDUCE_BLOCKS; block++){
+		zero += host_partials[2 * block];
+		one += host_partials[2 * block + 1];
+	}
+	*zero_sum = zero;
+	*one_sum = one;
+}
+
+// Mesmo mapeamento de DGM::measure no host: para cada par (bit == 0, bit == 1),
+// pos recebe a amplitude da metade medida dividida por norm e a metade com o bit
+// em 1 zera -- o qubit medido volta a |0>, pronto pra ser reaproveitado pela
+// estimação de fase semiclássica do Shor.
+__global__ void CollapseKernel(cuFloatComplex *state, long size, int bit_shift, int measured_bit, double norm){
+	long half_size = size >> 1;
+	long low_mask = (1L << bit_shift) - 1;
+	long stride = (long) gridDim.x * blockDim.x;
+	for (long pair = (long) blockIdx.x * blockDim.x + threadIdx.x; pair < half_size; pair += stride){
+		long pos = (pair << 1) - (pair & low_mask);
+		cuFloatComplex value = state[pos | ((long) measured_bit << bit_shift)];
+		state[pos] = make_cuFloatComplex((float) (value.x / norm), (float) (value.y / norm));
+		state[pos | (1L << bit_shift)] = make_cuFloatComplex(0.0f, 0.0f);
+	}
+}
+
+extern "C" void GpuCollapse(int qubits, int bit_shift, int measured_bit, double norm){
+	long size = 1L << qubits;
+	long blocks = (size / 2 + REDUCE_THREADS - 1) / REDUCE_THREADS;
+	if (blocks > 65535L * 16) blocks = 65535L * 16;
+	CollapseKernel<<<(unsigned int) blocks, REDUCE_THREADS>>>(gpu_mem[0], size, bit_shift, measured_bit, norm); error();
+	cudaDeviceSynchronize(); error();
+}
+
 extern "C" int GpuMaxBatchOps(){
 	return OPS_BLOCK;
 }

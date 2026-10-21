@@ -46,6 +46,20 @@ extern "C" bool PinHostState(void* ptr, size_t bytes);
 extern "C" long GpuMinFreeBytes(int gpu_count);
 // GpuMaxBatchOps: máximo de portas por lote de kernel (OPS_BLOCK de kernel.cu).
 extern "C" int GpuMaxBatchOps();
+// Sessão de GPU (item 28 em docs/07-bugs-e-pontos-de-atencao.md): o vetor de
+// estado inteiro fica residente na GPU entre execuções (sem cópia host<->GPU a
+// cada execute()) e o measure() roda lá. Só com 1 GPU. GpuSessionBegin devolve
+// false (nada alocado) se não couber ou não houver GPU de verdade; depois dele,
+// GpuExecutionWrapper(NULL, ...) opera sobre o estado residente.
+extern "C" bool GpuSessionBegin(float complex *state, int qubits, int gpu_count);
+// Libera o estado da GPU; copy_back copia antes para state (host).
+extern "C" void GpuSessionEnd(float complex *state, int qubits, bool copy_back);
+// Soma de |amplitude|^2 com o bit "bit_shift" do índice em 0 (zero_sum) e em 1
+// (one_sum), em double, sobre o estado residente.
+extern "C" void GpuMeasureSums(int qubits, int bit_shift, double *zero_sum, double *one_sum);
+// Colapso de DGM::measure: a metade com o bit == measured_bit, dividida por
+// norm, vai para a metade com o bit == 0; a metade com o bit == 1 zera.
+extern "C" void GpuCollapse(int qubits, int bit_shift, int measured_bit, double norm);
 extern "C" bool UnpinHostState(void* ptr);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
@@ -118,6 +132,10 @@ public:
 
 	float complex *state;
 
+	// true: o vetor de estado vive na GPU (sessão de GPU) e state (host) está
+	// desatualizado; execute() e measure() operam lá. Ver beginGpuSession().
+	bool gpu_resident;
+
 	DGM();
 	~DGM();
 
@@ -166,12 +184,22 @@ public:
 	void executeFunction(vector<string> steps, int iterations = 1);
 	// Despacha pts[] pro backend escolhido em exec_type.
 	float complex* execute(int iterations);
+	// Sessão de GPU: copia state pra GPU uma vez e passa execute()/measure()
+	// a operar sobre ele sem cópias por execução. Só para t_GPU (ou t_HYBRID que
+	// delegaria à GPU) com 1 GPU; devolve false e não faz nada nos outros casos
+	// (o caminho com cópia por execução segue valendo). GPU_RESIDENT=0 desliga.
+	bool beginGpuSession();
+	// Encerra a sessão; copy_back traz o estado de volta para state (host).
+	void endGpuSession(bool copy_back);
 	// Reordena pts[] pra GPU (ScheduleForBatching); GPU_SCHEDULE=0 desliga.
 	void scheduleForGpu();
 
 	// Backend t_HYBRID: um thread OpenMP comanda a GPU enquanto os
 	// demais processam regiões em CPU ao mesmo tempo.
 	void HybridExecution(PT **pts, int iterations);
+	// true se o t_HYBRID rodaria este circuito inteiro na GPU (mesma regra do
+	// desvio "delegado à GPU" de HybridExecution).
+	bool hybridDelegatesToGpu();
 
 	// Backend t_CPU: aplica cada PT sobre o vetor de estado inteiro,
 	// numa só thread, escolhendo CpuExecution1_1/2/3 conforme o tipo de
