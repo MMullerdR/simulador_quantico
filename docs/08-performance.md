@@ -144,6 +144,16 @@ memory", a CPU paralela leva ~85s e o `t_HYBRID` ~42s. Detalhes e a
 delegação automática à GPU quando o estado cabe: item 17, tentativa 7, em
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
 
+**Atualização (2026-10-21, emulação do Shor):** com `SHOR_EMULATE=1` a
+multiplicação modular de cada rodada é aplicada como uma permutação do estado, e
+não como circuito (item 29 de
+[07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)). Na qflex,
+circuito -> emulação: `shor.out 27` em GPU 43,5 -> 1,21 s, `shor.out 25` 8,83 ->
+0,39-0,41 s, `shor.out 21` em GPU 0,77 -> 0,14 s e em CPU com 16 threads 2,10 ->
+0,078 s, `shor.out 25` híbrido 9,01 -> 0,39 s. É um modo opcional (o padrão
+segue sendo o circuito); a tabela do resumo acima é do circuito. Os números do
+circuito só valem como motor de portas enquanto o item 30 estiver aberto.
+
 **Atualização (2026-10-21, corpo da porta fundida):** reescrito o corpo do
 kernel das portas de fase fundidas (item 27 de
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md)): `shor.out

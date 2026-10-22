@@ -87,11 +87,32 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 
 	vector <string> round_steps, sub_steps;
 
+	// SHOR_EMULATE=1: a multiplicação modular controlada de cada rodada
+	// (CMultMod + CSwapR + CRMultMod) vira uma permutação dos índices do estado
+	// (DGM::applyModMult) em vez das centenas de portas do circuito. Não é mais
+	// um circuito; o circuito segue sendo o padrão e serve de oráculo nos testes.
+	// Ver item 29 em docs/07-bugs-e-pontos-de-atencao.md.
+	const char *emulate_env = getenv("SHOR_EMULATE");
+	bool emulate_mult = (emulate_env != NULL && emulate_env[0] == '1');
+
 	for (int round_index = top_round_index; round_index >= 0; round_index--){
 		base_pow_mod = modular_pow(base_value, 1L << round_index, number_to_factor);
 		base_inv_pow_mod = modular_pow(base_inverse, 1L << round_index, number_to_factor);
 
 		round_steps.clear();
+
+		if (emulate_mult){
+			dgm.executeFunction(hadamard_step0);
+			dgm.applyModMult(qft_qb, reg1, (int) bit_width, base_pow_mod, number_to_factor);
+
+			round_steps.push_back(hadamard_step0);
+			if (measured_phase_bits) round_steps.push_back(genRot(qubits, qft_qb, measured_phase_bits, dgm.gates));
+			dgm.executeFunction(round_steps);
+
+			measured_bit = dgm.measure(qft_qb);
+			measured_phase_bits = (measured_phase_bits << 1) | measured_bit;
+			continue;
+		}
 
 		round_steps.push_back(hadamard_step0);
 

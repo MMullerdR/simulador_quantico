@@ -46,6 +46,10 @@ extern "C" void GpuMeasureSums(int qubits, int bit_shift, double *zero_sum, doub
 extern "C" void GpuCollapse(int qubits, int bit_shift, int measured_bit, double norm){
 }
 
+extern "C" bool GpuModMult(int qubits, int ctrl_shift, int reg_shift, int width, const int *gather_table, long modulus){
+	return false;
+}
+
 extern "C" int GpuMaxBatchOps(){
 	return 300;
 }

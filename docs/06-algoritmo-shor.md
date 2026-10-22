@@ -181,7 +181,7 @@ item 1. Vale ler mesmo assim antes de mexer em `genRot`/`Gates::list`, pelo
 motivo raiz explicado ali (nomes de porta como chave num cache — hoje por
 execução, ver item 5).
 
-## 7. Desempenho em GPU: fusão de fases e sessão residente
+## 7. Desempenho em GPU: fusão de fases, sessão residente e emulação
 
 Cerca de 85% das portas do Shor são rotações controladas (diagonais) da QFT/RQFT
 e dos somadores. Em `t_GPU` elas são fundidas em poucas portas de fase por
@@ -192,3 +192,14 @@ o `measure()` de cada uma das `2n` rodadas roda na GPU (`GPU_FUSE=0` e
 e 28 de [07](07-bugs-e-pontos-de-atencao.md). Medido na qflex: `shor.out 25`
 em GPU foi de 50,5 s para ~8,95 s e o `shor.out 27` de 279 s para ~43,7 s no
 total das otimizações ([08](08-performance.md)).
+
+**Emulação da multiplicação modular (item 29 de [07](07-bugs-e-pontos-de-atencao.md)).**
+Com `SHOR_EMULATE=1` a multiplicação modular controlada de cada rodada
+(`CMultMod` + `CSwapR` + `CRMultMod`) é aplicada como uma permutação dos índices
+do estado (`DGM::applyModMult`) em vez das portas do circuito. Deixa de ser um
+circuito, por isso é opcional; no `shor.out 27` em GPU: 43,5 s -> 1,2 s. O
+circuito exato é o oráculo de `tests/test_shor_emulate.cpp`.
+
+**Atenção (item 30 de [07](07-bugs-e-pontos-de-atencao.md), aberto):** `Shor()`
+passa `a` e não `a^-1` a `CRMultMod`, e `reg2` sai com lixo; o circuito com o
+inverso e a emulação concordam entre si, o circuito atual não.

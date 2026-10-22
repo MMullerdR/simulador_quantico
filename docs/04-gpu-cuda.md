@@ -236,3 +236,11 @@ Vale só para `gpu_count == 1`, `t_GPU` e `t_HYBRID` quando ele delegaria à GPU
 `beginGpuSession()` devolve `false` e vale o caminho de sempre. `GPU_RESIDENT=0`
 desliga. Detalhes e medidas: item 28 de
 [07-bugs-e-pontos-de-atencao.md](07-bugs-e-pontos-de-atencao.md).
+
+Dentro da sessão, `GpuModMult` (`ModMultKernel`) aplica a permutação de
+`DGM::applyModMult` (Shor com `SHOR_EMULATE=1`, item 29 de
+[07](07-bugs-e-pontos-de-atencao.md)): lê o estado e escreve num buffer auxiliar
+do mesmo tamanho, alocado na primeira chamada, e troca os dois ponteiros
+(`gpu_mem[0]` e o auxiliar; `gpu_pointer` é atualizado, senão os kernels
+seguintes leriam o buffer antigo). Sem memória para o auxiliar, devolve `false` e
+`applyModMult` encerra a sessão e segue no host.

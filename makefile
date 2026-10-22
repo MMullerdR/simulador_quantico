@@ -139,6 +139,15 @@ $(OUT)/test_cpu_parallel.o: tests/test_cpu_parallel.cpp | $(OUT)
 $(OUT)/test_cpu_parallel.out: $(OUT)/test_cpu_parallel.o $(TEST_GATES_OBJS) $(GPU_OBJS)
 	$(LINKER) -o $@ $^ $(LDFLAGS)
 
+# test_shor_emulate.cpp compara DGM::applyModMult (emulação da multiplicação
+# modular do Shor) contra o circuito exato; precisa também dos geradores de
+# circuito do Shor.
+$(OUT)/test_shor_emulate.o: tests/test_shor_emulate.cpp | $(OUT)
+	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@
+
+$(OUT)/test_shor_emulate.out: $(OUT)/test_shor_emulate.o $(TEST_GATES_OBJS) $(OUT)/lib_shor_circuits.o $(OUT)/lib_shor_number_theory.o $(GPU_OBJS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
+
 # gpu_hog.cu ocupa memória da GPU pro smoke test cobrir a decisão de
 # delegação do t_HYBRID com a GPU parcialmente cheia (só com GPU=real).
 ifeq ($(GPU),real)
@@ -148,10 +157,11 @@ endif
 $(OUT)/gpu_hog.out: tests/gpu_hog.cu | $(OUT)
 	$(NVCC) -o $@ $<
 
-test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out $(OUT)/test_cpu_parallel.out $(TEST_GPU_EXTRA)
+test: all $(OUT)/test_qft_addf.out $(OUT)/test_gates.out $(OUT)/test_cpu_parallel.out $(OUT)/test_shor_emulate.out $(TEST_GPU_EXTRA)
 	$(OUT)/test_qft_addf.out
 	$(OUT)/test_gates.out
 	$(OUT)/test_cpu_parallel.out
+	$(OUT)/test_shor_emulate.out
 	bash tests/smoke_test.sh
 
 clean:

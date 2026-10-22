@@ -60,6 +60,12 @@ extern "C" void GpuMeasureSums(int qubits, int bit_shift, double *zero_sum, doub
 // Colapso de DGM::measure: a metade com o bit == measured_bit, dividida por
 // norm, vai para a metade com o bit == 0; a metade com o bit == 1 zera.
 extern "C" void GpuCollapse(int qubits, int bit_shift, int measured_bit, double norm);
+// Permutação do estado residente (DGM::applyModMult): out[d] = in[src(d)], com
+// src(d) = d fora do caso controlado; no caso controlado o valor x do campo de
+// "width" bits em reg_shift vira gather_table[x] (x < modulus). Usa um buffer
+// auxiliar do tamanho do estado, alocado na primeira chamada; devolve false (sem
+// alterar nada) se não houver sessão ou memória, e o chamador volta ao host.
+extern "C" bool GpuModMult(int qubits, int ctrl_shift, int reg_shift, int width, const int *gather_table, long modulus);
 extern "C" bool UnpinHostState(void* ptr);
 extern "C" bool ProjectState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
 extern "C" bool GetState(float complex* state, int qubits, int region_size, long region_id, long region_mask, int gpu_count);
@@ -132,6 +138,10 @@ public:
 
 	float complex *state;
 
+	// Buffer auxiliar de applyModMult (mesmo tamanho de state), alocado na
+	// primeira chamada e trocado de lugar com state a cada permutação.
+	float complex *scratch_state;
+
 	// true: o vetor de estado vive na GPU (sessão de GPU) e state (host) está
 	// desatualizado; execute() e measure() operam lá. Ver beginGpuSession().
 	bool gpu_resident;
@@ -193,6 +203,14 @@ public:
 	void endGpuSession(bool copy_back);
 	// Reordena pts[] pra GPU (ScheduleForBatching); GPU_SCHEDULE=0 desliga.
 	void scheduleForGpu();
+	// Emulação (não é um circuito): se o qubit ctrl_qubit vale 1, o registrador
+	// de "width" qubits que começa em reg_first_qubit (o último é o bit menos
+	// significativo) passa de x para (multiplier * x) mod modulus, para
+	// x < modulus; os demais valores e o caso de controle 0 ficam como estão.
+	// Uma permutação dos índices do estado: uma passada, no lugar das centenas
+	// de portas do circuito de Beauregard. Exige multiplier coprimo com modulus,
+	// modulus <= 2^width <= 65536 e o controle acima do registrador no índice.
+	void applyModMult(int ctrl_qubit, int reg_first_qubit, int width, long multiplier, long modulus);
 
 	// Backend t_HYBRID: um thread OpenMP comanda a GPU enquanto os
 	// demais processam regiões em CPU ao mesmo tempo.

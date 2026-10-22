@@ -503,6 +503,7 @@ static bool gpu_session_active = false;
 #define REDUCE_THREADS 256
 #define REDUCE_BLOCKS 512
 static double *session_partials = NULL;	// REDUCE_BLOCKS * 2 doubles, na GPU
+static cuFloatComplex *session_scratch = NULL;	// buffer auxiliar de GpuModMult (tamanho do estado)
 
 extern "C" bool GpuSessionBegin(float complex *state, int qubits, int gpu_count){
 	if (gpu_session_active || gpu_state_ready || gpu_count != 1) return false;
@@ -535,6 +536,10 @@ extern "C" void GpuSessionEnd(float complex *state, int qubits, bool copy_back){
 	}
 	cudaFree(gpu_mem[0]); error();
 	cudaFree(session_partials); error();
+	if (session_scratch){
+		cudaFree(session_scratch); error();
+		session_scratch = NULL;
+	}
 	gpu_mem[0] = NULL;
 	session_partials = NULL;
 	gpu_session_active = false;
@@ -611,6 +616,51 @@ extern "C" void GpuCollapse(int qubits, int bit_shift, int measured_bit, double 
 	if (blocks > 65535L * 16) blocks = 65535L * 16;
 	CollapseKernel<<<(unsigned int) blocks, REDUCE_THREADS>>>(gpu_mem[0], size, bit_shift, measured_bit, norm); error();
 	cudaDeviceSynchronize(); error();
+}
+
+// Tabela de DGM::applyModMult: valor novo do campo -> valor de origem.
+__device__ int d_modmult_table[65536];
+
+// out[d] = in[src(d)]: fora do caso controlado (bit de controle 0, ou valor do
+// campo >= modulus) a posição fica onde está; no controlado o campo vem da
+// tabela. Cada destino é escrito uma vez, por threads consecutivas em posições
+// consecutivas.
+__global__ void ModMultKernel(const cuFloatComplex *in, cuFloatComplex *out, long size, int ctrl_shift, int reg_shift, long reg_mask, long modulus){
+	long stride = (long) gridDim.x * blockDim.x;
+	for (long dest = (long) blockIdx.x * blockDim.x + threadIdx.x; dest < size; dest += stride){
+		long src = dest;
+		if ((dest >> ctrl_shift) & 1){
+			long value = (dest >> reg_shift) & reg_mask;
+			if (value < modulus) src = (dest & ~(reg_mask << reg_shift)) | ((long) d_modmult_table[value] << reg_shift);
+		}
+		out[dest] = in[src];
+	}
+}
+
+extern "C" bool GpuModMult(int qubits, int ctrl_shift, int reg_shift, int width, const int *gather_table, long modulus){
+	if (!gpu_session_active || modulus > 65536) return false;
+
+	long size = 1L << qubits;
+	if (session_scratch == NULL){
+		if (cudaMalloc(&session_scratch, (size_t) sizeof(cuFloatComplex) * size) != cudaSuccess){
+			cudaGetLastError();
+			session_scratch = NULL;
+			return false;
+		}
+	}
+
+	cudaMemcpyToSymbol(d_modmult_table, gather_table, modulus * sizeof(int)); error();
+	long blocks = (size + REDUCE_THREADS - 1) / REDUCE_THREADS;
+	if (blocks > 65535L * 16) blocks = 65535L * 16;
+	ModMultKernel<<<(unsigned int) blocks, REDUCE_THREADS>>>(gpu_mem[0], session_scratch, size, ctrl_shift, reg_shift, (1L << width) - 1, modulus); error();
+	cudaDeviceSynchronize(); error();
+
+	// o resultado está em session_scratch: vira o estado, e o estado antigo vira o auxiliar
+	cuFloatComplex *old_state = gpu_mem[0];
+	gpu_mem[0] = session_scratch;
+	session_scratch = old_state;
+	cudaMemcpyToSymbol(gpu_pointer, gpu_mem, sizeof(cuFloatComplex*)); error();
+	return true;
 }
 
 extern "C" int GpuMaxBatchOps(){

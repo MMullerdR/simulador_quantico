@@ -1193,6 +1193,103 @@ equivalência bit a bit com a mesma amostra é o que o teste acima garante.
 **Não testado:** o caminho de recusa por falta de memória (estado perto da
 capacidade da GPU) e a sessão com `gpu_count > 1` (recusada de propósito).
 
+## 29. [CORRIGIDO] Shor: multiplicação modular emulada como permutação do estado — `SHOR_EMULATE=1`
+
+**Onde:** `DGM::applyModMult` em `src/core/dgm_core.cpp`, `GpuModMult` e
+`ModMultKernel` em `src/core/kernel.cu` (stub em `kernel_stub.cpp`), o desvio
+`SHOR_EMULATE` em `Shor()` (`src/algorithms/lib_shor.cpp`), teste em
+`tests/test_shor_emulate.cpp`.
+
+Depois dos itens 22-28 o `shor.out 27` em GPU ainda gastava ~43 s, quase tudo em
+portas: a multiplicação modular controlada de cada rodada (`CMultMod` + `CSwapR`
++ `CRMultMod`, algumas centenas de portas) faz, no fim, uma única coisa com o
+estado: se o qubit de controle vale 1, o registrador `reg1` passa de `x` para
+`(a^(2^k) * x) mod N` (para `x < N`). Isso é uma **permutação dos índices do
+vetor de estado**, e dá para aplicá-la direto em uma passada.
+
+Com `SHOR_EMULATE=1`, `Shor()` troca o circuito da multiplicação por
+`DGM::applyModMult(ctrl, primeiro_qubit_do_registrador, largura, multiplicador,
+N)`: o H do qubit de fase e o resto da rodada seguem como portas, a multiplicação
+é um "gather" (`novo[d] = antigo[origem(d)]`, cada destino escrito uma vez) com
+uma tabela de `N` entradas. No host copia blocos contíguos (OpenMP nos backends
+paralelos) e troca `state` por um buffer auxiliar do mesmo tamanho; na sessão de
+GPU (item 28) roda um kernel e troca os ponteiros dos dois buffers na GPU, e se
+não houver memória para o buffer auxiliar volta ao host. **Não é mais um
+circuito:** o simulador executa a unitária, não suas portas. Por isso fica
+desligado por padrão (o circuito continua sendo o caminho de referência) e o
+circuito exato serve de oráculo no teste. Restrições: multiplicador coprimo com
+`N`, `N <= 2^largura <= 65536` e o qubit de controle acima do registrador no
+índice; o buffer auxiliar custa mais um vetor de estado de memória.
+
+Medido na qflex (A4500, Threadripper 5955WX), circuito contra `SHOR_EMULATE=1`,
+mesma linha de comando:
+
+| caso | circuito | emulação |
+|---|---|---|
+| `shor.out 21 2 1` (GPU) | 0,77 s | 0,14 s |
+| `shor.out 25 2 1` (GPU) | 8,83 s | 0,39-0,41 s |
+| `shor.out 27 2 1` (GPU) | 43,5 s | 1,21 s (2 execuções) |
+| `shor.out 21 1 16` (CPU, 16 threads) | 2,10 s | 0,078 s |
+| `shor.out 25 3 4` (híbrido) | 9,01 s | 0,39 s |
+
+Desde o começo das otimizações da sessão (`62ddb7b`) o `shor.out 27` em GPU foi
+de 279 s para ~1,2 s. Uma execução de cada caso, sem repetições além das
+indicadas; em 3 das 12 medidas o algoritmo não achou fatores, o que o Shor
+probabilístico permite.
+
+**Testes:** `tests/test_shor_emulate.cpp` (`make test`) compara a emulação com o
+circuito exato (QFT exata) a partir de estados aleatórios com o controle e o
+registrador em qualquer valor `< N` e os auxiliares em 0: 13 pares (N, a) com N
+de 3 a 55, 2 estados cada, `t_CPU` e `t_PAR_CPU`; e, com kernel de verdade, 12
+sessões de GPU com três permutações e um H entre elas contra `t_CPU`.
+
+**Limites do que foi verificado:** só N até 55 no teste de equivalência (o
+circuito exato em N maior fica caro no `t_CPU`); a emulação foi cronometrada no
+Shor 21-27, e não a 31-33 qubits, onde o buffer auxiliar dobra a memória do
+estado.
+
+## 30. [ABERTO] Shor: `CRMultMod` recebe `a` em vez de `a^-1` e deixa lixo em `reg2`
+
+**Onde:** `Shor()` em `src/algorithms/lib_shor.cpp` (a chamada de `CRMultMod`);
+já era assim no código original (`9d36e42`, `lib_shor.cpp:676`).
+
+A rodada do Shor faz `CMultMod` (reg2 += a*x), `CSwapR` (reg1 <-> reg2) e
+`CRMultMod`, que deve devolver `reg2` a 0. Depois da troca, `reg1 = a*x` e
+`reg2 = x`, então para zerar `reg2` é preciso subtrair `a^-1 * (a*x)`. Mas
+`Shor()` passa a `CRMultMod` o próprio `base_pow_mod` (a^(2^k)), e o
+`base_inv_pow_mod` é calculado na mesma função e nunca usado (o original também
+calculava `mod_inv_a` sem usar). Com `a` em vez de `a^-1`, `reg2` fica com
+`x*(1 - a^2) mod N` em vez de 0, a não ser quando `a^2 = 1 (mod N)`: o registrador
+auxiliar sai entrelaçado com `reg1` e as rodadas seguintes somam em cima do lixo.
+
+**Como foi achado e medido** (clone da qflex, nada disto está no código):
+(1) `tests/test_shor_emulate.cpp` mostrou que o circuito com o inverso dá
+exatamente o estado da emulação (item 29), enquanto com `a`, como o `Shor()`
+faz, 20 de 26 casos divergem (diferença de amplitude de ~0,2-0,4); os 6 que
+passam são exatamente os pares com a^2 = 1 (mod N): N=3 a=2, N=15 a=11 e N=21
+a=13. (2) Em `shor.out
+15` (N=57), 150 execuções de cada, QFT exata, fração das execuções em que a fase
+medida cai a até 1/2^12 de um múltiplo de 1/r (r = ordem real de a módulo N), o
+que a estimação de fase correta produz; por acaso seria ~1%:
+
+| configuração | fase perto de j/r |
+|---|---|
+| circuito atual (subtrai a) | 10 de 150 (7%) |
+| circuito com o inverso | 36 de 150 (24%) |
+| emulação (ideal) | 40 de 150 (27%) |
+
+(3) A taxa de "Found factors" **não** mostra a diferença (q=15, 200 execuções:
+185 atual, 169 com inverso, 155 emulação; q=17, 60: 40, 43, 42): em N pequeno o
+pós-processamento acha fatores mesmo com a fase medida quase aleatória, então
+essa taxa não serve para validar o circuito. As taxas de sucesso dos itens 1, 21
+e 26 foram medidas assim.
+
+**Correção provável (não aplicada):** trocar `base_pow_mod` por `base_inv_pow_mod`
+na chamada de `CRMultMod`. Não muda o número de portas. Falta decidir antes de
+mexer (muda o resultado do Shor padrão) e conferir depois com a fase medida, e
+não só com "Found factors". A emulação do item 29 já usa a multiplicação correta,
+então `SHOR_EMULATE=1` não tem o problema.
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em

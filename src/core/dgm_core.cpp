@@ -13,6 +13,7 @@ DGM::DGM(){
 
 	pts = NULL;
 	state = NULL;
+	scratch_state = NULL;
 	print_enabled = false;
 	exec_type = t_CPU;
 	factor = 1;
@@ -67,6 +68,8 @@ void DGM::freeMemory(){
 	endGpuSession(false);	// sessão de GPU aberta: libera o estado da GPU também
 	if (state) free(state);
 	state = NULL;
+	if (scratch_state) free(scratch_state);
+	scratch_state = NULL;
 }
 
 void DGM::setMemoryValue(long pos){
@@ -331,6 +334,73 @@ void DGM::endGpuSession(bool copy_back){
 	if (!gpu_resident) return;
 	GpuSessionEnd(state, qubits, copy_back);
 	gpu_resident = false;
+}
+
+// Multiplicação modular controlada emulada como permutação dos índices do
+// estado (item 29 em docs/07-bugs-e-pontos-de-atencao.md). Escrita como
+// "gather": o estado novo na posição d vem da posição src(d) do antigo, então
+// cada destino é escrito uma vez e a troca de state por scratch_state fecha.
+void DGM::applyModMult(int ctrl_qubit, int reg_first_qubit, int width, long multiplier, long modulus){
+	if (width < 1 || width > 16 || modulus < 2 || modulus > (1L << width) || multiplier < 1 ||
+		ctrl_qubit < 0 || ctrl_qubit >= qubits || reg_first_qubit < 0 || reg_first_qubit + width > qubits ||
+		(ctrl_qubit >= reg_first_qubit && ctrl_qubit < reg_first_qubit + width)){
+		printf("ERRO: applyModMult com parâmetros inválidos (ctrl=%d, registrador=%d..%d, modulus=%ld, qubits=%d).\n",
+			ctrl_qubit, reg_first_qubit, reg_first_qubit + width - 1, modulus, qubits);
+		exit(1);
+	}
+
+	long a = multiplier % modulus;
+	long gcd_a = a, gcd_b = modulus;
+	while (gcd_b){ long rest = gcd_a % gcd_b; gcd_a = gcd_b; gcd_b = rest; }
+	if (gcd_a != 1){
+		printf("ERRO: applyModMult exige multiplicador coprimo com o módulo (%ld e %ld).\n", multiplier, modulus);
+		exit(1);
+	}
+
+	// posições de bit no índice (o qubit q é o bit qubits-1-q, ver docs/01)
+	int ctrl_shift = qubits - 1 - ctrl_qubit;
+	int reg_shift = qubits - reg_first_qubit - width;
+	if (ctrl_shift < reg_shift + width){
+		printf("ERRO: applyModMult exige o qubit de controle acima do registrador no índice (qubit de controle < primeiro do registrador).\n");
+		exit(1);
+	}
+
+	// gather[y] = x tal que (a*x) mod modulus == y
+	vector <int> gather(modulus);
+	for (long x = 0; x < modulus; x++) gather[(a * x) % modulus] = (int) x;
+
+	if (gpu_resident){
+		if (GpuModMult(qubits, ctrl_shift, reg_shift, width, &gather[0], modulus)) return;
+		endGpuSession(true);	// sem memória pro buffer auxiliar: segue no host
+	}
+
+	long size = 1L << qubits;
+	if (scratch_state == NULL){
+		scratch_state = (float complex*) malloc(size * sizeof(float complex));
+		if (scratch_state == NULL){
+			printf("ERRO: sem memória para o buffer auxiliar de applyModMult (%ld MB).\n", (long) ((size * sizeof(float complex)) >> 20));
+			exit(1);
+		}
+	}
+
+	long run = 1L << reg_shift;			// amplitudes contíguas que andam juntas
+	long reg_values = 1L << width;
+	long jobs = (size >> (reg_shift + width)) * reg_values;
+	int threads = (exec_type == t_CPU || thread_count < 1) ? 1 : (int) thread_count;
+	float complex *from = state, *to = scratch_state;
+
+	#pragma omp parallel for num_threads(threads) schedule(static)
+	for (long job = 0; job < jobs; job++){
+		long upper = job >> width, dest_x = job & (reg_values - 1);
+		long dest_base = (upper << (reg_shift + width)) | (dest_x << reg_shift);
+		long src_x = dest_x;
+		if (((dest_base >> ctrl_shift) & 1) && dest_x < modulus) src_x = gather[dest_x];
+		long src_base = dest_base ^ ((dest_x ^ src_x) << reg_shift);
+		memcpy(to + dest_base, from + src_base, run * sizeof(float complex));
+	}
+
+	state = to;
+	scratch_state = from;
 }
 
 float complex* DGM::execute(int iterations){
