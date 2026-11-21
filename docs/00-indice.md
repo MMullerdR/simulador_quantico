@@ -52,6 +52,9 @@ funciona por dentro, não apenas listar o que cada arquivo faz. Ordem sugerida d
    do C++).
 10. [10-simulador-em-blocos.md](10-simulador-em-blocos.md) — o simulador em blocos
     operacionais, com diagramas e dois exemplos (Bell e uma rodada do Shor).
+11. [11-bateria-testes-gpu.md](11-bateria-testes-gpu.md) — bateria de testes para
+    GPUs de outros fornecedores: casos, tolerâncias, critérios e modelo de registro
+    (preparada, ainda não executada).
 
 ## Mapa mental rápido
 
