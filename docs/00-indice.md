@@ -47,6 +47,11 @@ funciona por dentro, não apenas listar o que cada arquivo faz. Ordem sugerida d
 8. [08-performance.md](08-performance.md) — números de tempo de execução
    medidos com GPU real, por backend e número de qubits — quando cada
    backend vale a pena, e até onde `QB_LIMIT` aguenta na prática.
+9. [09-plano-migracao-rust.md](09-plano-migracao-rust.md) — plano de migração para
+   Rust (viabilidade, escolha da GPU portátil, riscos, boas práticas, fases e o tag
+   do C++).
+10. [10-simulador-em-blocos.md](10-simulador-em-blocos.md) — o simulador em blocos
+    operacionais, com diagramas e dois exemplos (Bell e uma rodada do Shor).
 
 ## Mapa mental rápido
 
