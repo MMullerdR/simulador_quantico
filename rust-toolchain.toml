@@ -1,0 +1,5 @@
+# "stable" ate o primeiro build verde; depois fixar a versao exata (ex.: "1.9x.y")
+# para que CI e maquinas locais compilem com o mesmo compilador.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

@@ -1,0 +1,13 @@
+[package]
+name = "hgm-gpu"
+description = "Backend de GPU portátil (wgpu + WGSL) do HybriD-GM — espaço reservado para a fase 2"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+# Sem dependências de propósito: `wgpu` só entra no spike da fase 2 (go/no-go),
+# quando houver como compilar e medir. Ver docs/09 §8.
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "hgm-core"
+description = "Tipos, catálogo de portas, parser de circuitos e a trait Backend do HybriD-GM (sem I/O e sem GPU)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+num-complex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hgm-golden.workspace = true
+
+[lints]
+workspace = true

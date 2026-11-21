@@ -1,0 +1,30 @@
+# Workspace Rust do HybriD-GM (fase 2 de docs/09-plano-migracao-rust.md).
+# O C++/CUDA continua na raiz (src/, include/, makefile) e no tag v1.1.0 /
+# branch cpp-legacy; este workspace convive com ele ate a paridade ser provada.
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+num-complex = "0.4"
+thiserror = "1"
+hgm-core = { path = "crates/hgm-core" }
+hgm-cpu = { path = "crates/hgm-cpu" }
+hgm-gpu = { path = "crates/hgm-gpu" }
+hgm-engine = { path = "crates/hgm-engine" }
+hgm-golden = { path = "crates/hgm-golden" }
+
+# unsafe so onde for justificado e isolado (modulo de regioes do hgm-cpu, fase 3);
+# ate la, proibido em todo o workspace.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

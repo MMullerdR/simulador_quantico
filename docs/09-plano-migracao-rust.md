@@ -185,7 +185,23 @@ hybrid-gm/
 ```
 
 Dependência: `cli -> algos -> engine -> {cpu, gpu} -> core`. O backend entra no
-motor por uma `trait Backend`, o que também permite plugar CUDA depois.
+motor por uma `trait Backend`, o que também permite plugar CUDA depois. A trait
+mora em `hgm-core` (não em `hgm-engine`) para que `hgm-cpu` e `hgm-gpu` a
+implementem sem dependência circular. `hgm-golden` é um crate só de testes (leitor
+de `tests/golden`), usado como `dev-dependency`.
+
+**Esqueleto (2026-11-21, compilado e testado só no qflex, Linux x86-64, rustc 1.100.0):** o workspace existe com `hgm-core`
+(catálogo de portas, parser com a ordenação por passo do C++, `Pt` e classificação,
+`StateVector`, `Backend`), `hgm-cpu` (backend serial, porta de `CpuExecution1_1/2/3`),
+`hgm-engine` (`Simulator` mínimo), `hgm-algos` (teoria dos números do Shor),
+`hgm-gpu` e `hgm-cli` (espaços reservados). Testes de paridade lêem
+`tests/golden`: parser (8 casos `pts` modo `parse`), estados (144 casos `state`) e a
+tabela de teoria dos números. Fusão de fase, agendamento, medição, backend paralelo,
+GPU e os geradores de circuito **não** foram portados. Verificado no qflex: `cargo
+test --workspace` (36 testes, todos passam; os de paridade reprovam mutações
+propositais no parser, no executor e numa matriz), `cargo clippy -- -D warnings` e
+`cargo fmt --check` limpos. **Não verificado:** Windows e macOS (o CI de
+`.github/workflows/rust.yml` fará isso no primeiro push) e qualquer GPU.
 
 ## 8. Fases
 

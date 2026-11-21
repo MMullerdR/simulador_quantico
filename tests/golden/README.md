@@ -68,7 +68,8 @@ que o C++ usa para executar.
 
 | Comparação | Tolerância |
 |---|---|
-| texto (`text`, `pts`, `table`) | igualdade exata |
+| texto (`text`, `table`) e campos inteiros de `pts` (alvo, máscara, valor, contagem, tipo, posições) | igualdade exata |
+| matrizes das linhas `pt`/`gate` | tolerância de 2e-7 por componente: `R1`..`R3` do C++ usam `cpowf` em `float`, cujos últimos bits dependem da libm (ex.: `R1` tem parte imaginária ~8e-9 em vez de 0). O Rust calcula em `f64` e arredonda; a diferença medida no cálculo é < 1e-7. Não afeta a classificação denso/diagonal |
 | `modmult` | igualdade exata (é permutação) |
 | `state`, `colapse`, `measure` (estado) em CPU serial | máx. \|diferença\| < 1e-5; o C++ e o Python independente (double) já diferem de até ~5e-6 nos casos atuais, então 1e-5 é justo, não folgado |
 | `measure`: bits | iguais (o sorteio é `uniform_real_distribution<double>` do libstdc++ sobre o MT19937: dois sorteios de 32 bits `lo + hi * 2^32`, dividido por `2^64`, convertido para `float` antes de comparar com a probabilidade do bit 0) |

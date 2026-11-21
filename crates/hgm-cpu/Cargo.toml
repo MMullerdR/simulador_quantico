@@ -1,0 +1,18 @@
+[package]
+name = "hgm-cpu"
+description = "Backend de CPU do HybriD-GM (serial; paralelo com rayon na fase 3)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+hgm-core.workspace = true
+
+[dev-dependencies]
+hgm-golden.workspace = true
+
+# Quando o módulo de regiões paralelas (único `unsafe` planejado) chegar, este
+# crate deixa de herdar `unsafe_code = "forbid"` do workspace e passa a `deny`,
+# com `#[allow(unsafe_code)]` apenas nesse módulo.
+[lints]
+workspace = true

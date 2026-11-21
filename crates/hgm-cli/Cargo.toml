@@ -1,0 +1,17 @@
+[package]
+name = "hgm-cli"
+description = "Binário do HybriD-GM em Rust (espaço reservado: shor / grover / general vêm depois)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "hgm"
+path = "src/main.rs"
+
+[dependencies]
+hgm-engine.workspace = true
+hgm-gpu.workspace = true
+
+[lints]
+workspace = true

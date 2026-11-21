@@ -1,0 +1,60 @@
+name: rust
+
+# Workspace Rust (crates/). Roda nos tres sistemas porque "funciona em qualquer SO"
+# e um dos criterios de docs/09-plano-migracao-rust.md. Os testes de paridade leem
+# tests/golden/data (gerado pelo C++ do tag v1.1.0), entao nao precisam de GPU.
+#
+# fmt e clippy (-D warnings) estavam limpos no qflex (rustc 1.100.0, Linux); Windows e
+# macOS ainda nao foram vistos. Depois do primeiro verde nos tres, fixar a versao
+# do compilador em rust-toolchain.toml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "tests/golden/**"
+      - ".github/workflows/rust.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "tests/golden/**"
+      - ".github/workflows/rust.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: toolchain
+        run: |
+          rustup toolchain install stable --profile minimal -c rustfmt -c clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: cargo test --workspace
+        run: cargo test --workspace --all-targets
+
+      - name: cargo fmt --check
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: demo do binario
+        run: cargo run -p hgm-cli

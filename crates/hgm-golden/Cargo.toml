@@ -1,0 +1,12 @@
+[package]
+name = "hgm-golden"
+description = "Leitor dos vetores de referência do C++ (tests/golden); só para testes"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+num-complex.workspace = true
+
+[lints]
+workspace = true
