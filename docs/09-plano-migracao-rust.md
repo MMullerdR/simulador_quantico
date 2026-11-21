@@ -156,8 +156,8 @@ região).
    tempos por fase (run 44909816577, `05c817b`): ~135 s para criar o contexto e **751 s na
    primeira execução do kernel de região** (circuito de 3 qubits, uma passada); daí em diante
    cada execução leva de 4 a 100 ms. É custo único, do primeiro uso no WARP, não do tamanho do
-   circuito. A sonda `examples/software_probe.rs` (workflow `gpu-software-probe`, run
-   44913362168) mostrou que depende do **tamanho do tile**: contexto mais primeira execução
+   circuito. A sonda `examples/software_probe.rs` (workflow manual `gpu-software-probe`,
+   removido depois; está em `722bed6`; run 44913362168) mostrou que depende do **tamanho do tile**: contexto mais primeira execução
    levam 1,7 s com região de 4 bits, 2,9 s com 6 (workgroup 256; 0,8 s com workgroup 64),
    6,6 s com 8, e com 12 não terminaram em 40 min (cancelados; o run anterior deu ~890 s,
    então varia muito). Não verifiquei por que o WARP é tão sensível ao tile. O `hgm-gpu`
