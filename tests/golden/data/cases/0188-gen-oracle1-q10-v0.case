@@ -1,0 +1,7 @@
+format 1
+name 0188-gen-oracle1-q10-v0
+kind text
+qft_degree 0
+call Oracle1 qubits=10 value=0
+lines 1
+Target1(X),Control1(0),Control1(0),Control1(0),Control1(0),Control1(0),Control1(0),Control1(0),Control1(0),Control1(0)

@@ -1,0 +1,7 @@
+format 1
+name 0177-gen-controledz-q3
+kind text
+qft_degree 0
+call ControledZ qubits=3
+lines 1
+ID,Control1(0),Target1(Z)

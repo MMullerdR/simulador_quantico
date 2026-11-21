@@ -1,0 +1,13 @@
+format 1
+name 0229-gen-subf-N21-deg5
+kind text
+qft_degree 5
+call SubF N21 value=3
+gate SUB_3_0 1 0 0 0 0 0 -1 -1.50995803e-07
+gate SUB_3_1 1 0 0 0 0 0 -2.26493711e-07 1
+gate SUB_3_2 1 0 0 0 0 0 -0.707106709 -0.707106888
+gate SUB_3_3 1 0 0 0 0 0 0.382683516 -0.923879564
+gate SUB_3_4 1 0 0 0 0 0 0.831469655 -0.555570245
+gate SUB_3_5 1 0 0 0 0 0 0.956940353 -0.290284663
+lines 1
+ID,ID,ID,ID,ID,ID,SUB_3_5,SUB_3_4,SUB_3_3,SUB_3_2,SUB_3_1,SUB_3_0,ID

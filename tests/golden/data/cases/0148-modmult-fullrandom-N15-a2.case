@@ -1,0 +1,7 @@
+format 1
+name 0148-modmult-fullrandom-N15-a2
+kind modmult
+qubits 11
+modmult 0 1 4 2 15
+init file cases/0148-modmult-fullrandom-N15-a2.init.f32
+final file cases/0148-modmult-fullrandom-N15-a2.final.f32

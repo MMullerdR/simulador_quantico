@@ -1,0 +1,29 @@
+format 1
+name 0096-grover-q4-v5
+kind state
+qubits 4
+iterations 1
+init basis 8
+steps 21
+H,H,H,H
+Target1(X),Control1(1),Control1(0),Control1(1)
+ID,H,ID,ID
+ID,ID,H,ID
+ID,ID,ID,H
+ID,ID,ID,X
+ID,Control1(0),Control1(0),Target1(Z)
+ID,ID,ID,X
+ID,ID,ID,H
+ID,ID,H,ID
+ID,H,ID,ID
+Target1(X),Control1(1),Control1(0),Control1(1)
+ID,H,ID,ID
+ID,ID,H,ID
+ID,ID,ID,H
+ID,ID,ID,X
+ID,Control1(0),Control1(0),Target1(Z)
+ID,ID,ID,X
+ID,ID,ID,H
+ID,ID,H,ID
+ID,H,ID,ID
+final file cases/0096-grover-q4-v5.final.f32

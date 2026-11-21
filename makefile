@@ -66,7 +66,7 @@ endif
 # do algoritmo em si.
 CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o cli_common.o gate_schedule.o gate_fuse.o)
 
-.PHONY: all clean shor grover general test
+.PHONY: all clean shor grover general test golden
 
 all: shor grover general
 
@@ -147,6 +147,17 @@ $(OUT)/test_shor_emulate.o: tests/test_shor_emulate.cpp | $(OUT)
 
 $(OUT)/test_shor_emulate.out: $(OUT)/test_shor_emulate.o $(TEST_GATES_OBJS) $(OUT)/lib_shor_circuits.o $(OUT)/lib_shor_number_theory.o $(GPU_OBJS)
 	$(LINKER) -o $@ $^ $(LDFLAGS)
+
+# Vetores de referencia para a migracao em Rust (docs/09, fase 1): roda o
+# t_CPU e grava tests/golden/data (formato em tests/golden/README.md).
+$(OUT)/export_golden.o: tests/golden/export_golden.cpp | $(OUT)
+	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@
+
+$(OUT)/export_golden.out: $(OUT)/export_golden.o $(CORE_OBJS) $(GPU_OBJS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
+
+golden: $(OUT)/export_golden.out
+	$(OUT)/export_golden.out tests/golden/data
 
 # gpu_hog.cu ocupa memória da GPU pro smoke test cobrir a decisão de
 # delegação do t_HYBRID com a GPU parcialmente cheia (só com GPU=real).

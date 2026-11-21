@@ -1,0 +1,21 @@
+format 1
+name 0234-gen-cswapr-N21
+kind text
+qft_degree 0
+call CSwapR N21
+lines 15
+ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID,ID,ID,ID
+Control1(1),Target1(X),ID,ID,ID,ID,ID,Control1(1),ID,ID,ID,ID,ID
+ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID,ID,ID,ID
+ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID,ID,ID
+Control1(1),ID,Target1(X),ID,ID,ID,ID,ID,Control1(1),ID,ID,ID,ID
+ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID,ID,ID
+ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID,ID
+Control1(1),ID,ID,Target1(X),ID,ID,ID,ID,ID,Control1(1),ID,ID,ID
+ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID,ID
+ID,ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID
+Control1(1),ID,ID,ID,Target1(X),ID,ID,ID,ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID,ID
+ID,ID,ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID
+Control1(1),ID,ID,ID,ID,Target1(X),ID,ID,ID,ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,Target1(X),ID

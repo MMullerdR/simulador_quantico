@@ -1,0 +1,12 @@
+format 1
+name 0235-gen-swapover-N21
+kind text
+qft_degree 0
+call SwapOver N21 reg=reg1
+lines 6
+ID,Target1(X),ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,ID,ID
+ID,Control1(1),ID,ID,ID,Target1(X),ID,ID,ID,ID,ID,ID,ID
+ID,Target1(X),ID,ID,ID,Control1(1),ID,ID,ID,ID,ID,ID,ID
+ID,ID,Target1(X),ID,Control1(1),ID,ID,ID,ID,ID,ID,ID,ID
+ID,ID,Control1(1),ID,Target1(X),ID,ID,ID,ID,ID,ID,ID,ID
+ID,ID,Target1(X),ID,Control1(1),ID,ID,ID,ID,ID,ID,ID,ID

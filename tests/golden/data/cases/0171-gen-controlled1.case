@@ -1,0 +1,7 @@
+format 1
+name 0171-gen-controlled1
+kind text
+qft_degree 0
+call Controlled1 qubits=3 ctrl=2 target=0 op=H cv=1
+lines 1
+Target1(H),ID,Control1(1)

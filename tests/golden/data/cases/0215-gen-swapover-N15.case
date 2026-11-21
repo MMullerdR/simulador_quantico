@@ -1,0 +1,12 @@
+format 1
+name 0215-gen-swapover-N15
+kind text
+qft_degree 0
+call SwapOver N15 reg=reg1
+lines 6
+ID,Target1(X),ID,ID,Control1(1),ID,ID,ID,ID,ID,ID
+ID,Control1(1),ID,ID,Target1(X),ID,ID,ID,ID,ID,ID
+ID,Target1(X),ID,ID,Control1(1),ID,ID,ID,ID,ID,ID
+ID,ID,Target1(X),Control1(1),ID,ID,ID,ID,ID,ID,ID
+ID,ID,Control1(1),Target1(X),ID,ID,ID,ID,ID,ID,ID
+ID,ID,Target1(X),Control1(1),ID,ID,ID,ID,ID,ID,ID

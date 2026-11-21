@@ -1,0 +1,7 @@
+format 1
+name 0179-gen-controledz-q4
+kind text
+qft_degree 0
+call ControledZ qubits=4
+lines 1
+ID,Control1(0),Control1(0),Target1(Z)

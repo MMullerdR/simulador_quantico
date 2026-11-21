@@ -1,0 +1,54 @@
+format 1
+name 0084-random-q6-s3
+kind state
+qubits 6
+iterations 2
+init file shared/rand6-s23.f32
+gate AD 0 0 0.453596085 0.891207397 0.272157669 -0.534724474 0 0
+gate DG 0.453596085 0.891207397 0 0 0 0 0.453596085 0.891207397
+gate PH 1 0 0 0 0 0 0.999993682 0.00354732317
+gate PHN 1 0 0 0 0 0 0.992388964 0.12314263
+gate RX 0.764842212 0 -0 -0.64421767 -0 -0.64421767 0.764842212 0
+gate U 0.955336511 0 0.134046808 0.263369799 -0.134046808 0.263369799 0.955336511 0
+steps 40
+ID,R2,ID,DG,ID,ID
+R2,ID,R1,ID,R1,ID
+ID,AD,ID,ID,ID,Y
+ID,ID,DG,ID,ID,ID
+ID,ID,ID,Control1(1),Control1(1),Target1(Y)
+DG,ID,ID,ID,ID,ID
+ID,ID,Control1(1),Target1(Z),Control1(1),ID
+ID,ID,RX,ID,ID,ID
+Control1(1),ID,Target1(R3),Control1(1),Control1(1),ID
+ID,ID,Control1(0),ID,Control1(1),Target1(H)
+ID,Control1(1),ID,ID,Target1(AD),ID
+ID,ID,ID,ID,RX,ID
+ID,ID,ID,Target1(R1),Control1(0),Control1(0)
+ID,ID,ID,ID,Control1(1),Target1(AD)
+ID,ID,Control1(1),Control1(0),Target1(U),ID
+ID,ID,ID,H,ID,ID
+ID,Control1(1),ID,ID,ID,Target1(H)
+Control1(1),ID,Target1(R3),Control1(0),ID,ID
+ID,ID,Target1(Z),Control1(1),ID,ID
+ID,ID,ID,RX,ID,U
+AD,R2,Y,ID,ID,ID
+ID,ID,ID,ID,U,U
+Control1(0),Control1(1),ID,Target1(U),ID,ID
+R1,AD,ID,ID,ID,ID
+ID,Control1(0),ID,Control1(0),ID,Target1(X)
+Target1(R1),Control1(0),ID,ID,ID,Control1(1)
+ID,Z,ID,ID,ID,ID
+ID,ID,Control1(1),ID,Target1(DG),ID
+ID,ID,Control1(0),ID,ID,Target1(RX)
+ID,ID,RX,ID,R3,DG
+ID,ID,Target1(R3),Control1(0),ID,ID
+ID,ID,ID,ID,Y,ID
+ID,Target1(Y),ID,Control1(1),Control1(0),ID
+Control1(0),Target1(AD),ID,ID,ID,Control1(0)
+Target1(RX),Control1(1),ID,ID,ID,ID
+ID,ID,Control1(1),ID,ID,Target1(Y)
+ID,ID,H,H,ID,ID
+ID,ID,ID,ID,X,ID
+ID,ID,ID,ID,X,ID
+RX,ID,ID,ID,ID,ID
+final file cases/0084-random-q6-s3.final.f32

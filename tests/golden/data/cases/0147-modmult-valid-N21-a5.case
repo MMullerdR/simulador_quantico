@@ -1,0 +1,7 @@
+format 1
+name 0147-modmult-valid-N21-a5
+kind modmult
+qubits 13
+modmult 0 1 5 5 21
+init file cases/0147-modmult-valid-N21-a5.init.f32
+final file cases/0147-modmult-valid-N21-a5.final.f32

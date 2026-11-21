@@ -195,7 +195,7 @@ da disponibilidade de quem vai fazer, e eu não tenho como medi-la.
 | Fase | O que entrega | Tam. | Portão para avançar |
 |---|---|---|---|
 | **0. Fechar o C++** | item 30 commitado; docs 06/07/08 atualizados; `make test GPU=real` verde; tag; branch de manutenção | P | tag criada e CI verde |
-| **1. Vetores de referência** | exportar do C++ no tag os vetores de circuitos pequenos (CPU serial) + o que for preciso dos testes de equivalência | P | Rust consegue ler e comparar |
+| **1. Vetores de referência** | **feita (2026-11-21), ver `tests/golden/README.md`**: 310 casos exportados do `v1.1.0` (estados, texto dos geradores, portas compiladas, fusão e agendamento, medição com semente, teoria dos números), conferidos por um simulador independente em Python | P | Rust consegue ler e comparar: o formato é texto e float32 binário, sem depender do C++ |
 | **2. Spike de GPU (go/no-go)** | kernel do Hadamard/porta densa + fundida em WGSL, medição em `f32` com fechamento em `f64`; medir na A4500 contra o CUDA, e em pelo menos outro fornecedor se houver hardware | M | critério 3 da seção 1; se falhar, decidir entre CUDA opcional, CubeCL ou aceitar a perda |
 | **3. Núcleo + CPU** | `hgm-core`, `hgm-cpu` (serial e paralelo), parser, fusão, agendamento, medição | G | paridade com os vetores + testes aleatórios + critério 2 |
 | **4. GPU completa** | sessão residente, lotes de portas, agendamento, medição e colapso na GPU, emulação de multiplicação modular | G | paridade GPU x CPU nas tolerâncias de hoje |

@@ -1,0 +1,10 @@
+format 1
+name 0154-measure-q8-partial-s6
+kind measure
+qubits 8
+init file shared/rand8-s52.f32
+seed 6
+measure 3 7 0 3
+bits 1 0 0
+values 0.499311179 0.473045498 0.578548133
+final file cases/0154-measure-q8-partial-s6.final.f32

@@ -1,0 +1,7 @@
+format 1
+name 0157-colapse-q8-q7-v1
+kind colapse
+qubits 8
+init file shared/rand8-s52.f32
+colapse 7 1
+final file cases/0157-colapse-q8-q7-v1.final.f32

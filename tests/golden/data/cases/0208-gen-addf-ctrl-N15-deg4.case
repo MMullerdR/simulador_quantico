@@ -1,0 +1,22 @@
+format 1
+name 0208-gen-addf-ctrl-N15-deg4
+kind text
+qft_degree 4
+call AddF(controlled) N15 value=9
+gate ADD_9_0 1 0 0 0 0 0 -1 1.50995803e-07
+gate ADD_9_1 1 0 0 0 0 0 7.54979013e-08 1
+gate ADD_9_2 1 0 0 0 0 0 0.707106829 0.707106769
+gate ADD_9_3 1 0 0 0 0 0 -0.923879623 -0.382683277
+gate ADD_9_4 1 0 0 0 0 0 -0.195090234 0.98078531
+lines 11
+ID
+ID
+ID
+ID
+ID
+Target1(ADD_9_4)
+Target1(ADD_9_3)
+Target1(ADD_9_2)
+Target1(ADD_9_1)
+Target1(ADD_9_0)
+ID

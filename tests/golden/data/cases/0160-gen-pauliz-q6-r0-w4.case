@@ -1,0 +1,7 @@
+format 1
+name 0160-gen-pauliz-q6-r0-w4
+kind text
+qft_degree 0
+call Pauli_Z qubits=6 reg=0 width=4
+lines 1
+Z,Z,Z,Z,ID,ID

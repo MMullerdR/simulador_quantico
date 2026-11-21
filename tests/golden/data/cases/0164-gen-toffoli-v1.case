@@ -1,0 +1,7 @@
+format 1
+name 0164-gen-toffoli-v1
+kind text
+qft_degree 0
+call Toffoli qubits=5 c1=4 c2=1 target=0 cv=1
+lines 1
+Target1(X),Control1(1),ID,ID,Control1(0)

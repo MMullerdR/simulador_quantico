@@ -1,0 +1,7 @@
+format 1
+name 0173-gen-controlledn-v5
+kind text
+qft_degree 0
+call ControlledN qubits=6 ctrls=5,3,1 target=0 op=Z cv=5
+lines 1
+Target1(Z),Control1(1),ID,Control1(0),ID,Control1(1)

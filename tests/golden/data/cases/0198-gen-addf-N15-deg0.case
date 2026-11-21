@@ -1,0 +1,12 @@
+format 1
+name 0198-gen-addf-N15-deg0
+kind text
+qft_degree 0
+call AddF N15 value=7
+gate ADD_7_0 1 0 0 0 0 0 -1 1.50995803e-07
+gate ADD_7_1 1 0 0 0 0 0 -2.26493711e-07 -1
+gate ADD_7_2 1 0 0 0 0 0 0.70710659 -0.707107008
+gate ADD_7_3 1 0 0 0 0 0 -0.923879564 0.382683575
+gate ADD_7_4 1 0 0 0 0 0 0.195090413 0.98078537
+lines 1
+ID,ID,ID,ID,ID,ADD_7_4,ADD_7_3,ADD_7_2,ADD_7_1,ADD_7_0,ID

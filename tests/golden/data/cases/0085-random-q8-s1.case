@@ -1,0 +1,54 @@
+format 1
+name 0085-random-q8-s1
+kind state
+qubits 8
+iterations 1
+init file shared/rand8-s21.f32
+gate AD 0 0 0.453596085 0.891207397 0.272157669 -0.534724474 0 0
+gate DG 0.453596085 0.891207397 0 0 0 0 0.453596085 0.891207397
+gate PH 1 0 0 0 0 0 0.999993682 0.00354732317
+gate PHN 1 0 0 0 0 0 0.992388964 0.12314263
+gate RX 0.764842212 0 -0 -0.64421767 -0 -0.64421767 0.764842212 0
+gate U 0.955336511 0 0.134046808 0.263369799 -0.134046808 0.263369799 0.955336511 0
+steps 40
+ID,ID,Target1(R3),ID,ID,ID,ID,ID
+ID,Target1(R2),ID,ID,ID,Control1(1),ID,Control1(0)
+ID,ID,ID,ID,ID,U,Z,ID
+AD,ID,ID,U,ID,ID,ID,ID
+ID,Control1(0),ID,ID,ID,ID,Target1(X),ID
+ID,ID,Target1(DG),Control1(1),Control1(0),ID,Control1(0),ID
+ID,ID,Control1(0),Control1(0),Control1(1),ID,ID,Target1(H)
+ID,Target1(X),Control1(1),ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,H,ID,ID,ID
+Control1(1),Target1(R3),ID,ID,ID,ID,ID,Control1(1)
+ID,Target1(R1),ID,Control1(1),ID,ID,Control1(0),Control1(0)
+ID,ID,ID,H,ID,R3,DG,ID
+H,H,ID,ID,ID,ID,ID,ID
+Control1(1),ID,ID,Control1(1),ID,ID,Target1(RX),ID
+Target1(X),ID,ID,ID,ID,Control1(0),ID,ID
+R2,R3,ID,DG,ID,ID,ID,ID
+ID,ID,Control1(0),Control1(1),ID,Control1(1),ID,Target1(AD)
+ID,Control1(0),ID,ID,Target1(H),ID,Control1(0),Control1(1)
+ID,ID,ID,R3,ID,ID,ID,ID
+ID,R3,ID,ID,ID,ID,ID,ID
+ID,ID,H,ID,ID,ID,R1,R1
+ID,R3,ID,U,ID,ID,ID,AD
+ID,ID,ID,Z,R1,ID,ID,RX
+ID,ID,ID,ID,ID,ID,ID,Target1(X)
+ID,ID,ID,R2,ID,ID,AD,ID
+ID,ID,ID,ID,X,ID,ID,ID
+ID,ID,ID,ID,ID,ID,ID,R2
+ID,ID,ID,Y,ID,ID,ID,ID
+ID,ID,ID,Target1(H),ID,Control1(0),ID,ID
+ID,ID,ID,ID,Control1(0),ID,ID,Target1(AD)
+ID,ID,ID,ID,ID,ID,ID,R2
+ID,Target1(H),ID,Control1(0),ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(X),ID,ID
+ID,ID,ID,H,ID,H,ID,R1
+ID,DG,ID,ID,H,ID,X,ID
+ID,ID,ID,ID,ID,Control1(0),ID,Target1(R2)
+ID,Control1(0),ID,Target1(R3),ID,ID,ID,ID
+ID,U,ID,U,R2,ID,ID,ID
+ID,ID,RX,Z,ID,ID,AD,ID
+ID,Control1(1),ID,Control1(1),ID,Target1(X),Control1(0),ID
+final file cases/0085-random-q8-s1.final.f32

@@ -1,0 +1,9 @@
+format 1
+name 0094-general-hadamard-q6
+kind state
+qubits 6
+iterations 3
+init basis 0
+steps 1
+H,H,H,H,H,H
+final file cases/0094-general-hadamard-q6.final.f32

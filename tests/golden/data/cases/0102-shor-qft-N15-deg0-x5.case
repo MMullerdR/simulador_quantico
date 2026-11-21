@@ -1,0 +1,26 @@
+format 1
+name 0102-shor-qft-N15-deg0-x5
+kind state
+qubits 11
+iterations 1
+qft_degree 0
+init basis 10
+gate R4 1 0 0 0 0 0 0.923879564 0.382683426
+gate R5 1 0 0 0 0 0 0.98078531 0.195090309
+steps 15
+ID,ID,ID,ID,ID,H,ID,ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R4),ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,Target1(R5),ID,ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,H,ID,ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R4),ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,H,ID,ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,ID,H,ID
+final file cases/0102-shor-qft-N15-deg0-x5.final.f32

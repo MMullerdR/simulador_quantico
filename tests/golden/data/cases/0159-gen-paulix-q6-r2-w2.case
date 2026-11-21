@@ -1,0 +1,7 @@
+format 1
+name 0159-gen-paulix-q6-r2-w2
+kind text
+qft_degree 0
+call Pauli_X qubits=6 reg=2 width=2
+lines 1
+ID,ID,X,X,ID,ID

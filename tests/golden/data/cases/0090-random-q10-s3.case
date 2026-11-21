@@ -1,0 +1,54 @@
+format 1
+name 0090-random-q10-s3
+kind state
+qubits 10
+iterations 2
+init basis 0
+gate AD 0 0 0.453596085 0.891207397 0.272157669 -0.534724474 0 0
+gate DG 0.453596085 0.891207397 0 0 0 0 0.453596085 0.891207397
+gate PH 1 0 0 0 0 0 0.999993682 0.00354732317
+gate PHN 1 0 0 0 0 0 0.992388964 0.12314263
+gate RX 0.764842212 0 -0 -0.64421767 -0 -0.64421767 0.764842212 0
+gate U 0.955336511 0 0.134046808 0.263369799 -0.134046808 0.263369799 0.955336511 0
+steps 40
+ID,ID,Control1(0),ID,ID,ID,ID,ID,ID,Target1(AD)
+ID,Control1(1),ID,Control1(0),ID,Target1(U),ID,Control1(0),ID,ID
+RX,Z,ID,ID,ID,ID,ID,ID,R3,ID
+ID,ID,ID,ID,ID,ID,ID,ID,Y,ID
+Target1(X),Control1(0),ID,ID,ID,ID,ID,ID,ID,Control1(1)
+ID,ID,ID,U,ID,R1,ID,ID,ID,ID
+ID,ID,ID,ID,ID,Control1(0),ID,ID,Target1(Z),ID
+ID,ID,ID,ID,ID,ID,ID,Z,ID,RX
+ID,Y,ID,ID,ID,ID,ID,ID,ID,ID
+ID,Control1(1),ID,ID,ID,ID,Control1(0),ID,Target1(U),ID
+Target1(Y),ID,Control1(0),Control1(0),ID,ID,ID,ID,ID,Control1(0)
+ID,ID,Control1(1),Control1(1),ID,ID,ID,Target1(DG),ID,ID
+ID,ID,ID,Control1(1),ID,Target1(AD),Control1(0),ID,ID,ID
+ID,ID,ID,Control1(1),Target1(AD),ID,ID,Control1(1),ID,ID
+ID,ID,ID,R3,ID,AD,ID,ID,RX,ID
+ID,ID,ID,ID,U,ID,Z,ID,U,ID
+ID,ID,ID,ID,ID,Target1(AD),ID,ID,Control1(0),ID
+Control1(1),ID,ID,Target1(U),Control1(1),ID,ID,ID,ID,ID
+ID,Target1(R3),ID,ID,ID,ID,ID,ID,ID,ID
+ID,ID,ID,X,ID,H,ID,DG,ID,ID
+ID,ID,ID,Control1(0),ID,Control1(1),ID,ID,ID,Target1(AD)
+ID,ID,ID,ID,ID,ID,Y,ID,ID,ID
+ID,ID,AD,RX,ID,ID,ID,ID,ID,ID
+Target1(DG),ID,Control1(1),ID,ID,Control1(0),ID,ID,ID,Control1(0)
+ID,ID,Target1(H),ID,ID,Control1(0),Control1(0),ID,ID,ID
+ID,ID,Target1(DG),ID,ID,ID,ID,Control1(0),ID,ID
+ID,ID,ID,R3,ID,ID,ID,ID,R1,ID
+Control1(0),ID,Target1(R2),ID,ID,Control1(0),ID,ID,ID,ID
+ID,Control1(1),ID,ID,ID,ID,ID,ID,Target1(R1),ID
+R3,ID,ID,ID,ID,DG,ID,ID,ID,ID
+U,ID,R2,ID,ID,ID,ID,AD,ID,ID
+ID,ID,Target1(U),ID,ID,ID,Control1(1),ID,ID,ID
+R1,ID,Y,ID,ID,ID,ID,ID,ID,ID
+ID,Target1(AD),ID,ID,Control1(0),ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,U,R3,ID,ID,ID,H
+ID,Target1(R1),ID,ID,Control1(0),Control1(0),ID,ID,ID,ID
+ID,ID,ID,ID,ID,X,ID,ID,ID,Z
+ID,ID,ID,ID,ID,ID,AD,ID,ID,ID
+ID,Control1(1),ID,Target1(H),ID,ID,Control1(0),ID,ID,ID
+ID,ID,ID,ID,Target1(Z),ID,ID,ID,ID,ID
+final file cases/0090-random-q10-s3.final.f32

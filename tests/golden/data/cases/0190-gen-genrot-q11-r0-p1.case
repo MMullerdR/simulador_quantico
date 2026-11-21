@@ -1,0 +1,8 @@
+format 1
+name 0190-gen-genrot-q11-r0-p1
+kind text
+qft_degree 0
+call genRot qubits=11 reg=0 phase_bits=1
+gate Rot_1 1 0 0 0 0 0 7.54979013e-08 -1
+lines 1
+Rot_1,ID,ID,ID,ID,ID,ID,ID,ID,ID,ID

@@ -1,0 +1,7 @@
+format 1
+name 0174-gen-concatena
+kind text
+qft_degree 0
+call concatena a,b,c,d reverse=false
+lines 1
+a,b,c,d

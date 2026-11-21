@@ -1,0 +1,7 @@
+format 1
+name 0186-gen-oracle1-q8
+kind text
+qft_degree 0
+call Oracle1 qubits=8 value=125
+lines 1
+Target1(X),Control1(1),Control1(1),Control1(1),Control1(1),Control1(1),Control1(0),Control1(1)

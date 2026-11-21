@@ -1,0 +1,9 @@
+format 1
+name 0095-general-hadamard-q8
+kind state
+qubits 8
+iterations 3
+init basis 0
+steps 1
+H,H,H,H,H,H,H,H
+final file cases/0095-general-hadamard-q8.final.f32

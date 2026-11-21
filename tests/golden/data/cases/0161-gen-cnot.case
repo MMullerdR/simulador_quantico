@@ -1,0 +1,7 @@
+format 1
+name 0161-gen-cnot
+kind text
+qft_degree 0
+call CNot qubits=4 ctrl=3 target=1 cv=1
+lines 1
+ID,Target1(X),ID,Control1(1)

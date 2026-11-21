@@ -1,0 +1,7 @@
+format 1
+name 0172-gen-controlledn-all
+kind text
+qft_degree 0
+call ControlledN qubits=6 ctrls=0,1,2,3 target=5 op=X cv=-1
+lines 1
+Control1(1),Control1(1),Control1(1),Control1(1),ID,Target1(X)

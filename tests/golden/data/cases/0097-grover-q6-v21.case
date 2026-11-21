@@ -1,0 +1,65 @@
+format 1
+name 0097-grover-q6-v21
+kind state
+qubits 6
+iterations 1
+init basis 32
+steps 57
+H,H,H,H,H,H
+Target1(X),Control1(1),Control1(0),Control1(1),Control1(0),Control1(1)
+ID,H,ID,ID,ID,ID
+ID,ID,H,ID,ID,ID
+ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,H,ID
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,ID,X
+ID,Control1(0),Control1(0),Control1(0),Control1(0),Target1(Z)
+ID,ID,ID,ID,ID,X
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,H,ID
+ID,ID,ID,H,ID,ID
+ID,ID,H,ID,ID,ID
+ID,H,ID,ID,ID,ID
+Target1(X),Control1(1),Control1(0),Control1(1),Control1(0),Control1(1)
+ID,H,ID,ID,ID,ID
+ID,ID,H,ID,ID,ID
+ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,H,ID
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,ID,X
+ID,Control1(0),Control1(0),Control1(0),Control1(0),Target1(Z)
+ID,ID,ID,ID,ID,X
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,H,ID
+ID,ID,ID,H,ID,ID
+ID,ID,H,ID,ID,ID
+ID,H,ID,ID,ID,ID
+Target1(X),Control1(1),Control1(0),Control1(1),Control1(0),Control1(1)
+ID,H,ID,ID,ID,ID
+ID,ID,H,ID,ID,ID
+ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,H,ID
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,ID,X
+ID,Control1(0),Control1(0),Control1(0),Control1(0),Target1(Z)
+ID,ID,ID,ID,ID,X
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,H,ID
+ID,ID,ID,H,ID,ID
+ID,ID,H,ID,ID,ID
+ID,H,ID,ID,ID,ID
+Target1(X),Control1(1),Control1(0),Control1(1),Control1(0),Control1(1)
+ID,H,ID,ID,ID,ID
+ID,ID,H,ID,ID,ID
+ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,H,ID
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,ID,X
+ID,Control1(0),Control1(0),Control1(0),Control1(0),Target1(Z)
+ID,ID,ID,ID,ID,X
+ID,ID,ID,ID,ID,H
+ID,ID,ID,ID,H,ID
+ID,ID,ID,H,ID,ID
+ID,ID,H,ID,ID,ID
+ID,H,ID,ID,ID,ID
+final file cases/0097-grover-q6-v21.final.f32

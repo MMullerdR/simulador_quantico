@@ -1,0 +1,7 @@
+format 1
+name 0167-gen-controlled2-v0
+kind text
+qft_degree 0
+call Controlled2 qubits=5 c1=0 c2=2 target=4 op=R2 cv=0
+lines 1
+Control1(0),ID,Control1(0),ID,Target1(R2)

@@ -1,0 +1,25 @@
+format 1
+name 0219-gen-addf-ctrl-N21-deg0
+kind text
+qft_degree 0
+call AddF(controlled) N21 value=9
+gate ADD_9_0 1 0 0 0 0 0 -1 1.50995803e-07
+gate ADD_9_1 1 0 0 0 0 0 7.54979013e-08 1
+gate ADD_9_2 1 0 0 0 0 0 0.707106829 0.707106769
+gate ADD_9_3 1 0 0 0 0 0 -0.923879623 -0.382683277
+gate ADD_9_4 1 0 0 0 0 0 -0.195090234 0.98078531
+gate ADD_9_5 1 0 0 0 0 0 0.634393334 0.773010433
+lines 13
+ID
+ID
+ID
+ID
+ID
+ID
+Target1(ADD_9_5)
+Target1(ADD_9_4)
+Target1(ADD_9_3)
+Target1(ADD_9_2)
+Target1(ADD_9_1)
+Target1(ADD_9_0)
+ID

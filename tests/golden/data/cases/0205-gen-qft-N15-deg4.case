@@ -1,0 +1,22 @@
+format 1
+name 0205-gen-qft-N15-deg4
+kind text
+qft_degree 4
+call QFT N15 reg=reg2
+gate R4 1 0 0 0 0 0 0.923879564 0.382683426
+gate R5 1 0 0 0 0 0 0.98078531 0.195090309
+lines 14
+ID,ID,ID,ID,ID,H,ID,ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R4),ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,H,ID,ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R4),ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,H,ID,ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,ID,H,ID

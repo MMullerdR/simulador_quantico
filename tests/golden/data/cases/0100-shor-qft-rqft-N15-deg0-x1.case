@@ -1,0 +1,46 @@
+format 1
+name 0100-shor-qft-rqft-N15-deg0-x1
+kind state
+qubits 11
+iterations 1
+qft_degree 0
+init basis 2
+gate R'1 1 0 0 0 0 0 -1 -1.50995803e-07
+gate R'2 1 0 0 0 0 0 7.54979013e-08 -1
+gate R'3 1 0 0 0 0 0 0.707106829 -0.707106769
+gate R'4 1 0 0 0 0 0 0.923879564 -0.382683426
+gate R'5 1 0 0 0 0 0 0.98078531 -0.195090309
+gate R4 1 0 0 0 0 0 0.923879564 0.382683426
+gate R5 1 0 0 0 0 0 0.98078531 0.195090309
+steps 30
+ID,ID,ID,ID,ID,H,ID,ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R4),ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,Target1(R5),ID,ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,H,ID,ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R4),ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,H,ID,ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R3),ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,ID,ID,ID,ID,Target1(R2),Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,ID,H,ID
+ID,ID,ID,ID,ID,ID,ID,ID,ID,H,ID
+ID,ID,ID,ID,ID,ID,ID,ID,Target1(R'2),Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,ID,H,ID,ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R'3),ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,ID,Target1(R'2),Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,ID,H,ID,ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R'4),ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,ID,Target1(R'3),ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,ID,Target1(R'2),Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,ID,H,ID,ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R'5),ID,ID,ID,Control1(1),ID
+ID,ID,ID,ID,ID,Target1(R'4),ID,ID,Control1(1),ID,ID
+ID,ID,ID,ID,ID,Target1(R'3),ID,Control1(1),ID,ID,ID
+ID,ID,ID,ID,ID,Target1(R'2),Control1(1),ID,ID,ID,ID
+ID,ID,ID,ID,ID,H,ID,ID,ID,ID,ID
+final file cases/0100-shor-qft-rqft-N15-deg0-x1.final.f32

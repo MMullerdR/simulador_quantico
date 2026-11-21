@@ -1,0 +1,7 @@
+format 1
+name 0178-gen-oracle1-q4
+kind text
+qft_degree 0
+call Oracle1 qubits=4 value=5
+lines 1
+Target1(X),Control1(1),Control1(0),Control1(1)

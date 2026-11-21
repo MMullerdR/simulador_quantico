@@ -1,0 +1,10 @@
+format 1
+name 0151-measure-q6-all-s3
+kind measure
+qubits 6
+init file shared/rand6-s51.f32
+seed 123456789
+measure 6 3 0 5 1 4 2
+bits 1 0 1 0 1 1
+values 0.524325073 0.436103433 0.609587014 0.480971634 0.448559493 0.957178533
+final file cases/0151-measure-q6-all-s3.final.f32

@@ -1,0 +1,10 @@
+format 1
+name 0153-measure-q6-repeat-s5
+kind measure
+qubits 6
+init file shared/rand6-s51.f32
+seed 5
+measure 3 1 1 1
+bits 0 0 0
+values 0.516417503 1 1
+final file cases/0153-measure-q6-repeat-s5.final.f32

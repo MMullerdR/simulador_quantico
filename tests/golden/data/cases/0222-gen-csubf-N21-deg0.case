@@ -1,0 +1,13 @@
+format 1
+name 0222-gen-csubf-N21-deg0
+kind text
+qft_degree 0
+call CSubF N21 ctrl=0 value=5
+gate SUB_5_0 1 0 0 0 0 0 -1 -1.50995803e-07
+gate SUB_5_1 1 0 0 0 0 0 7.54979013e-08 -1
+gate SUB_5_2 1 0 0 0 0 0 -0.707106948 0.70710665
+gate SUB_5_3 1 0 0 0 0 0 -0.382683367 -0.923879564
+gate SUB_5_4 1 0 0 0 0 0 0.555570364 -0.831469655
+gate SUB_5_5 1 0 0 0 0 0 0.881921291 -0.471396714
+lines 1
+Control1(1),ID,ID,ID,ID,ID,Target1(SUB_5_5),Target1(SUB_5_4),Target1(SUB_5_3),Target1(SUB_5_2),Target1(SUB_5_1),Target1(SUB_5_0),ID

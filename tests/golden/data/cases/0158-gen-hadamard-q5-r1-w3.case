@@ -1,0 +1,7 @@
+format 1
+name 0158-gen-hadamard-q5-r1-w3
+kind text
+qft_degree 0
+call Hadamard qubits=5 reg=1 width=3
+lines 1
+ID,H,H,H,ID

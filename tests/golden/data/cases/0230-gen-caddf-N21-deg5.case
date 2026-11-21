@@ -1,0 +1,13 @@
+format 1
+name 0230-gen-caddf-N21-deg5
+kind text
+qft_degree 5
+call CAddF N21 ctrl=0 value=5
+gate ADD_5_0 1 0 0 0 0 0 -1 1.50995803e-07
+gate ADD_5_1 1 0 0 0 0 0 7.54979013e-08 1
+gate ADD_5_2 1 0 0 0 0 0 -0.707106948 -0.70710665
+gate ADD_5_3 1 0 0 0 0 0 -0.382683367 0.923879564
+gate ADD_5_4 1 0 0 0 0 0 0.555570364 0.831469655
+gate ADD_5_5 1 0 0 0 0 0 0.881921291 0.471396714
+lines 1
+Control1(1),ID,ID,ID,ID,ID,Target1(ADD_5_5),Target1(ADD_5_4),Target1(ADD_5_3),Target1(ADD_5_2),Target1(ADD_5_1),Target1(ADD_5_0),ID

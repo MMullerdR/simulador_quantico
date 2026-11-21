@@ -1,0 +1,10 @@
+format 1
+name 0152-measure-q6-partial-s4
+kind measure
+qubits 6
+init file shared/rand6-s51.f32
+seed 4
+measure 2 2 4
+bits 1 0
+values 0.490439355 0.480699122
+final file cases/0152-measure-q6-partial-s4.final.f32

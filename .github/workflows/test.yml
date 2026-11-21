@@ -22,3 +22,8 @@ jobs:
 
       - name: make GPU=stub test
         run: make GPU=stub test
+
+      - name: vetores de referencia (tests/golden) conferem com o simulador em Python
+        run: |
+          pip install numpy
+          python3 tests/golden/check_golden.py

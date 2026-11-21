@@ -1,0 +1,7 @@
+format 1
+name 0146-modmult-valid-N15-a11
+kind modmult
+qubits 11
+modmult 0 1 4 11 15
+init file cases/0146-modmult-valid-N15-a11.init.f32
+final file cases/0146-modmult-valid-N15-a11.final.f32

@@ -1,0 +1,7 @@
+format 1
+name 0156-colapse-q6-q3-v1
+kind colapse
+qubits 6
+init file shared/rand6-s51.f32
+colapse 3 1
+final file cases/0156-colapse-q6-q3-v1.final.f32
