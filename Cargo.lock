@@ -304,6 +304,7 @@ dependencies = [
  "hgm-cpu",
  "hgm-engine",
  "hgm-golden",
+ "hgm-gpu",
 ]
 
 [[package]]
@@ -340,6 +341,7 @@ version = "0.1.0"
 dependencies = [
  "hgm-core",
  "hgm-cpu",
+ "hgm-gpu",
 ]
 
 [[package]]
@@ -354,7 +356,6 @@ name = "hgm-gpu"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "hgm-algos",
  "hgm-core",
  "hgm-cpu",
  "num-complex",
