@@ -4,9 +4,9 @@ name: rust
 # e um dos criterios de docs/09-plano-migracao-rust.md. Os testes de paridade leem
 # tests/golden/data (gerado pelo C++ do tag v1.1.0), entao nao precisam de GPU.
 #
-# fmt e clippy (-D warnings) estavam limpos no qflex (rustc 1.100.0, Linux); Windows e
-# macOS ainda nao foram vistos. Depois do primeiro verde nos tres, fixar a versao
-# do compilador em rust-toolchain.toml.
+# Verde nos tres sistemas desde c1a3c3f (fase 3) e em 9a125bb (fase 5, com o smoke
+# test dos executaveis). O compilador ainda e o `stable` do dia: falta fixar a versao
+# em rust-toolchain.toml.
 on:
   push:
     branches: [main]
