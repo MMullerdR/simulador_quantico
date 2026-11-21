@@ -110,7 +110,7 @@ Preencher uma linha por GPU e sistema. A única máquina com informação regist
 
 | Máquina | GPU | Sistema | API provável | Status |
 |---|---|---|---|---|
-| qflex (UFPEL) | NVIDIA RTX A4500 | Linux | CUDA (C++), Vulkan (Rust) | baseline C++: ver `tests/gpu-battery/resultados/` |
+| qflex (UFPEL) | NVIDIA RTX A4500 | Linux | CUDA (C++), Vulkan (Rust) | baseline C++: ver `tests/gpu-battery/resultados/`; Rust (spike): C1, C2, C4 (só probabilidades), R1, P2, P4, P8 medidos em 2026-11-21, ver `docs/09` §4.2; C3, C5-C9, R2-R4, P1/P3/P5-P7 não |
 | máquina de desenvolvimento (a que rodou o `coleta-ambiente.sh`) | Intel UHD Graphics (integrada, driver 32.0.101.7085, Vulkan 1.4) | Windows 11 | Vulkan / DX12 | não testada; memória compartilhada com o sistema, sujeita a R2/R3 |
 | (acrescentar) | | | | não testada |
 

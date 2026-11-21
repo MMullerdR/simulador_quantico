@@ -106,6 +106,61 @@ Nenhum desses itens inviabiliza a porta. Os que podem custar desempenho
 banda de memória, o que ajuda a paridade, mas **isso é uma expectativa, não um
 resultado medido**.
 
+### 4.2 Resultado do spike (fase 2, 2026-11-21)
+
+Medido só na qflex: RTX A4500, Vulkan, driver 580.178.04, `wgpu` 30.0.2, rustc 1.100.0.
+Código em `crates/hgm-gpu` (`examples/spike.rs`, `examples/grover_bench.rs`,
+`tests/parity.rs`). **Uma GPU, um fornecedor, um sistema.**
+
+| Medida | Rust (wgpu/WGSL) | C++ CUDA `v1.1.0` |
+|---|---|---|
+| Banda de cópia (P8), buffer de 512 MiB | 599 GB/s | não medida |
+| Custo de uma porta dentro de uma região (H, 26 qubits, 7800 portas) | 0,181 ms | 0,181 ms (4,7 ms por camada de 26 H, inclinação entre 90 e 300 iterações) |
+| `general 26` (H x3), só kernels | 16,5 ms (3 passadas, com agendamento por comutação); 26,9 ms (9 passadas, sem); 140 ms (uma porta por dispatch, sem região) | não medido isolado |
+| `general 26`, processo inteiro como o `general.out` (estado no host, cópia para a GPU e de volta) | 0,92 a 0,97 s | 0,58 a 0,70 s (baseline: 0,61 s) |
+| mesmo, com o estado **residente** na GPU (lê 1 amplitude) | 0,24 a 0,28 s | não existe no `general.out` |
+| Grover 24 qubits (2274 iterações), tempo total | 8,0 s (7,95 a 8,27 s variando coalescida e lote; região de 11 bits: 8,9 s), probabilidade do valor 0,9994 | 8,34 s (inclui as 23 medições qubit a qubit; o Rust não mediu) |
+
+Corretude: 13 circuitos aleatórios (3 a 22 qubits, várias regiões e coalescidas, inclusive
+só passadas globais) dão no máximo 2,0e-7 de diferença para a CPU serial (tolerância
+1e-5); a soma de medição (`f32` por workgroup, fechada em `f64`) tem erro relativo
+< 1e-6 contra `f64` no host em 3 tamanhos; 50 execuções do mesmo circuito dão o
+mesmo estado bit a bit (R1 de `docs/11`).
+
+O que o kernel precisa para andar como o CUDA, e que o spike confirmou: a **região em memória
+de workgroup** (5x mais rápida que uma porta por dispatch no Hadamard), o agendamento por
+comutação (`schedule_for_batching` do núcleo, 9 para 3 passadas) e controles fora da região
+tratados como condição sobre o endereço-base da região (sem isso o Grover não cabe em
+região).
+
+**Achados que limitam o desenho** (nenhum bloqueia, todos têm custo):
+
+1. **Estado máximo de 27 qubits por binding** nesta GPU: o limite de binding é 2147483644
+   bytes, 4 a menos que os 2 GiB de 28 qubits. O C++ chega a 31 qubits na GPU. Passar disso
+   exige dividir o estado em vários buffers/bindings (`GpuError::StateTooLarge` hoje).
+2. **Vários dispositivos vivos no mesmo processo, destruídos ao mesmo tempo, travaram ou
+   derrubaram o processo** (7 de 10 execuções com 4 threads; também com uma `Instance`
+   compartilhada, aí com falha de segmentação). Um único contexto compartilhado entre threads
+   não teve o problema. Regra do `hgm-gpu`: um `GpuContext` por processo. Não investiguei se
+   a causa é o wgpu ou o driver.
+3. O caminho de cópia do estado inteiro (host <-> GPU) do wgpu ficou 1,5 a 1,6x acima do
+   `cudaMemcpy` do `general.out` (subida 0,18 s, descida 0,24 s para 512 MiB depois de evitar
+   uma cópia extra). Some quando o estado fica residente, que é o desenho planejado, mas só
+   existe como medida, não como Backend.
+4. A tentativa de uma segunda implementação (lavapipe, Vulkan por software do Mesa, na
+   própria qflex) falhou ao abrir o dispositivo ("Parent device is lost"). **Nenhuma outra
+   implementação de Vulkan, nem DX12 nem Metal, foi verificada.**
+
+**Não está no spike:** portas de fase fundida, emulação de `modmult`, sessão residente com
+medição e colapso na GPU, a implementação da trait `Backend`, Shor, estados acima de 27
+qubits, o limite por submissão no Windows (os dispatches já saem em comandos de até 512, mas
+não foi testado lá) e qualquer GPU que não seja a A4500.
+
+**Leitura contra o critério 3** (tempo na A4500 até 1,5x o do CUDA): nos kernels e no Grover 24
+a razão ficou perto de 1,0; no `general` com cópia completa do estado ficou em 1,5 a 1,6x, por
+causa da cópia. Minha recomendação é **seguir para a fase 4** com os itens 1 e 2 acima como
+riscos declarados e o item 4 como lacuna, mas a decisão do portão é sua.
+
 ## 5. Riscos e mitigação
 
 | Risco | Probabilidade/impacto | Mitigação |
@@ -212,7 +267,7 @@ da disponibilidade de quem vai fazer, e eu não tenho como medi-la.
 |---|---|---|---|
 | **0. Fechar o C++** | item 30 commitado; docs 06/07/08 atualizados; `make test GPU=real` verde; tag; branch de manutenção | P | tag criada e CI verde |
 | **1. Vetores de referência** | **feita (2026-11-21), ver `tests/golden/README.md`**: 310 casos exportados do `v1.1.0` (estados, texto dos geradores, portas compiladas, fusão e agendamento, medição com semente, teoria dos números), conferidos por um simulador independente em Python | P | Rust consegue ler e comparar: o formato é texto e float32 binário, sem depender do C++ |
-| **2. Spike de GPU (go/no-go)** | kernel do Hadamard/porta densa + fundida em WGSL, medição em `f32` com fechamento em `f64`; medir na A4500 contra o CUDA, e em pelo menos outro fornecedor se houver hardware | M | critério 3 da seção 1; se falhar, decidir entre CUDA opcional, CubeCL ou aceitar a perda |
+| **2. Spike de GPU (go/no-go)** | kernel do Hadamard/porta densa + fundida em WGSL, medição em `f32` com fechamento em `f64`; medir na A4500 contra o CUDA, e em pelo menos outro fornecedor se houver hardware | M | critério 3 da seção 1; se falhar, decidir entre CUDA opcional, CubeCL ou aceitar a perda. **Feito no código (2026-11-21), só na A4500/Vulkan: ver §4.2** (paridade com o CUDA nos kernels e no Grover 24; limites e lacunas listados lá); decisão do portão pendente |
 | **3. Núcleo + CPU** | `hgm-core`, `hgm-cpu` (serial e paralelo), parser, fusão, agendamento, medição | G | paridade com os vetores + testes aleatórios + critério 2. **Feita no código (2026-11-21), verificada só no Linux x86-64 (qflex); ainda sem commit.** Paridade: estado até 5,7e-7 do C++ (4,3e-6 com fusão), paralelo idêntico ao serial em circuitos aleatórios, medição/colapso/`modmult` exatos nos vetores. Critério 2: com cargas sintéticas de 18 a 26 qubits o Rust ficou mais rápido que o C++ do `v1.1.0` (26 qubits, 16 threads: 0,43 s contra 0,76 s no Hadamard, 0,56 contra 0,89 s na mistura), com o mesmo checksum. Ressalvas: 3 cargas sintéticas, uma máquina, sem Windows/macOS, sem GPU. A fusão de fase na CPU ajuda a carga mista e atrapalha a de fases puras, então fica desligada por padrão (o C++ também só funde no caminho de GPU). O modo híbrido (`parent_mask`/`op_search_end` do `computeRegion`) não foi portado: é da fase 6 |
 | **4. GPU completa** | sessão residente, lotes de portas, agendamento, medição e colapso na GPU, emulação de multiplicação modular | G | paridade GPU x CPU nas tolerâncias de hoje |
 | **5. Algoritmos e CLI** | Grover, Shor (com a correção do item 30 e a emulação), general; binários e `SimConfig` | M | os 3 executáveis reproduzem os resultados do smoke test. **Feita e enviada (9a125bb, 2026-11-21); CI verde em Linux, Windows e macOS (testes de paridade e smoke test dos executáveis nos 3).** `hgm-algos`: Grover (blocos de iterações), Shor (circuito e emulação, com o `a^-1` do item 30) e `general`; `hgm-cli`: três executáveis com os argumentos posicionais dos `*.out`, `HGM_SEED` fixa a semente, tipos de execução 2 e 3 recusados. Paridade com o C++: 88 casos de texto dos geradores (linhas idênticas, matrizes até 3e-7), 49 circuitos regenerados pelo Rust e simulados contra o estado do C++ (até 5,5e-6) e **108 execuções completas semeadas** (40 Grover, 68 Shor) com o mesmo valor ou os mesmos fatores, na mesma ordem, no serial e no paralelo. Isso exigiu portar a `uniform_int_distribution` do libstdc++ (sorteio da base). `tests/smoke_test_rust.sh` porta a parte de CPU do smoke test (amplitudes, Grover >= 7/10, Shor >= 1/16) e passou. Mutação (três rodadas de mutações propositais em Grover/Shor, cada sobrevivente analisado): os que sobraram viraram testes, exceto 3 do Shor que são equivalentes porque a correção de fase do C++ é uma operação nula (**item 31 de `docs/07`**, reproduzido de propósito) e uma mutação do grau padrão da QFT, que ganhou teste direto; também são equivalentes a ordem dos bits medidos e o limite do período no Shor. Não rodei uma 4ª rodada depois desses testes novos. Ressalvas: só CPU, e o smoke test de GPU/híbrido não foi portado; as taxas de sucesso do Shor/Grover no smoke test variam por execução (limiares fracos de propósito) |

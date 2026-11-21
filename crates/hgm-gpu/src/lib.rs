@@ -1,15 +1,29 @@
-//! Backend de GPU portátil (wgpu + WGSL). **Ainda vazio.**
+//! Backend de GPU portátil (wgpu + WGSL): **spike da fase 2** de
+//! `docs/09-plano-migracao-rust.md` (go/no-go).
 //!
-//! A fase 2 de `docs/09-plano-migracao-rust.md` é o spike go/no-go: kernel de porta
-//! densa e de fase fundida em WGSL, medição com soma em `f32` fechada em `f64`, e
-//! comparação com o CUDA na A4500 (e em GPUs de outros fornecedores quando houver
-//! hardware, ver `docs/11`). Este crate existe agora só para fixar o lugar no
-//! workspace e a direção da dependência (`engine -> gpu -> core`).
+//! O que já existe, para medir o que o portão pede (tempo na RTX A4500 contra o CUDA do
+//! `v1.1.0`, ver `docs/11`):
 //!
-//! Limitações já conhecidas do WGSL que o desenho precisa respeitar (`docs/09` §5):
-//! sem `f64` portátil, índice `u32` (logo no máximo 32 qubits na GPU), memória de
-//! workgroup padrão de 16 KiB (o kernel CUDA usa 32 KiB) e sem memória fixada (o
-//! modo híbrido é o risco).
+//! - `plan`: agrupa as portas em passadas de região (memória de workgroup) como o
+//!   `ApplyValuesC01` do CUDA, mais um modelo em CPU dos kernels para testar sem GPU;
+//! - `shaders`: os kernels em WGSL (região, global, medição, cópia de banda);
+//! - `context`: dispositivo, pipelines, execução, leitura e medição (soma em `f32` por
+//!   workgroup, fechada em `f64` no host).
+//!
+//! O que **não** existe ainda (fase 4): portas de fase fundida, `modmult` emulado,
+//! sessão residente entre algoritmos, colapso na GPU, estados acima de 27 qubits (limite
+//! de binding da A4500; ver `docs/09` §4.2) e a implementação da trait `Backend`. Limites
+//! do WGSL (`docs/09` §4.1): sem `f64`, índice `u32` (no máximo 31 qubits aqui) e memória
+//! de workgroup pelo limite do adaptador.
+//!
+//! **Um `GpuContext` por processo.** Vários dispositivos destruídos ao mesmo tempo
+//! travaram ou derrubaram o processo na A4500 (`examples/stress.rs`).
 
-/// Estado do crate, para o CLI/testes poderem dizer a verdade sobre ele.
-pub const STATUS: &str = "não implementado (fase 2 do plano de migração)";
+pub mod context;
+pub mod error;
+pub mod plan;
+pub mod shaders;
+
+pub use context::{GpuContext, GpuOptions, GpuState, PreparedRun, RunStats, RunTuning};
+pub use error::{GpuError, Result};
+pub use plan::GpuGate;
