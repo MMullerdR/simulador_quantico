@@ -1,0 +1,54 @@
+outputs/test_qft_addf.out
+OK test_qft_addf: 88 casos comparados
+outputs/test_gates.out
+OK test_gates: 32 casos executados
+outputs/test_cpu_parallel.out
+OK test_cpu_parallel: 98 circuitos aleatórios, t_PAR_CPU vs t_CPU
+OK test_cpu_parallel: 30 circuitos, ScheduleForBatching preserva o resultado
+OK test_cpu_parallel: 18 circuitos, portas de fase fundidas (2227 portas absorvidas)
+OK test_cpu_parallel: 64 circuitos aleatórios, t_GPU vs t_CPU
+OK test_cpu_parallel: 12 sessões de GPU (6 rodadas executa+mede), t_GPU residente vs t_CPU
+outputs/test_shor_emulate.out
+OK test_shor_emulate: 26 casos, circuito exato x emulação (t_CPU) e t_PAR_CPU x t_CPU
+OK test_shor_emulate: 12 sessões de GPU (3 permutações com H entre elas), t_GPU residente x t_CPU
+bash tests/smoke_test.sh
+-- general.out (t_PAR_CPU): H em N qubits, amplitude uniforme 1/sqrt(2^N) --
+OK   general.out 10 1 2 (0.031250 ~ 0.03125)
+OK   general.out 10 1 4 (0.031250 ~ 0.03125)
+OK   general.out 14 1 2 (0.007812 ~ 0.0078125)
+OK   general.out 18 1 4 (0.001953 ~ 0.001953125)
+-- GPU=real detectado: t_GPU/t_HYBRID conferidos com o mesmo valor exato do t_PAR_CPU --
+OK   general.out 10 2 1 (t_GPU) (0.031250 ~ 0.03125)
+OK   general.out 14 2 1 (t_GPU) (0.007812 ~ 0.0078125)
+OK   general.out 18 2 1 (t_GPU) (0.001953 ~ 0.001953125)
+OK   general.out 4 2 1 (t_GPU, menos qubits que a região) (0.250000 ~ 0.25)
+OK   general.out 6 2 1 (t_GPU, menos qubits que a região) (0.125000 ~ 0.125)
+OK   general.out 8 2 1 (t_GPU, menos qubits que a região) (0.062500 ~ 0.0625)
+OK   general.out 11 2 1 (t_GPU, menos qubits que a região) (0.022097 ~ 0.02209709)
+OK   grover.out 6 2 1 (t_GPU, menos qubits que a região) (10/10 >= 7/10 esperado)
+OK   general.out 10 3 2 (t_HYBRID) (0.031250 ~ 0.03125)
+OK   general.out 14 3 2 (t_HYBRID) (0.007812 ~ 0.0078125)
+-- t_HYBRID acima de 20 qubits: delegação (estado cabe na GPU) e modo de regiões forçado --
+OK   general.out 22 3 4 (t_HYBRID, delegado à GPU) (0.000488 ~ 0.00048828125)
+OK   general.out 22 3 4 (t_HYBRID, modo de regiões) (0.000488 ~ 0.00048828125)
+OK   general.out 24 3 4 (t_HYBRID, delegado à GPU) (0.000244 ~ 0.000244140625)
+OK   general.out 24 3 4 (t_HYBRID, modo de regiões) (0.000244 ~ 0.000244140625)
+-- grover.out: taxa de sucesso (achar search_value) em vários runs, não só 'sem crash' --
+OK   grover.out 12 0 (t_CPU) (10/10 >= 7/10 esperado)
+OK   grover.out 12 1 2 (t_PAR_CPU) (10/10 >= 7/10 esperado)
+-- shor.out: pelo menos 1 sucesso em 16 runs -- fraco de propósito (algoritmo probabilístico, taxa historicamente baixa e variável, ver docs/07-bugs-e-pontos-de-atencao.md itens 1 e 21), só pra pegar uma GPU calculando errado sistematicamente (0/16). 16 runs (não 8) porque com taxa de sucesso baixa até uma sequência de tentativas genuinamente independentes pode dar 0 sucessos por acaso — 16 reduz esse risco de falso alarme sem alongar demais o teste (ver srand(time(NULL)^getpid()) em shor.cpp: sem o getpid(), chamadas rápidas em sequência dentro do mesmo segundo repetiam a mesma semente, o que fazia os N runs não serem realmente independentes) --
+OK   shor.out 15 0 (t_CPU) (14/16 >= 1/16 esperado)
+OK   shor.out 15 0 (t_CPU, SHOR_EMULATE=1) (13/16 >= 1/16 esperado)
+OK   grover.out 12 2 1 (t_GPU) (10/10 >= 7/10 esperado)
+OK   grover.out 12 3 2 (t_HYBRID) (10/10 >= 7/10 esperado)
+OK   shor.out 15 2 1 (t_GPU) (14/16 >= 1/16 esperado)
+OK   shor.out 15 3 2 (t_HYBRID) (13/16 >= 1/16 esperado)
+OK   shor.out 15 2 1 (t_GPU, SHOR_EMULATE=1) (14/16 >= 1/16 esperado)
+OK   shor.out 21 2 1 (t_GPU, SHOR_EMULATE=1) (7/8 >= 1/8 esperado)
+-- t_HYBRID com a GPU parcialmente ocupada: a decisão cabe/não cabe segue a memória livre --
+OK   t_HYBRID 24 qubits com ~450 MB livres: decisão "não cabe"
+OK   general.out 24 3 4 com ~450 MB livres na GPU (0.000244 ~ 0.000244140625)
+OK   t_HYBRID 24 qubits com ~3000 MB livres: decisão "cabe"
+OK   general.out 24 3 4 com ~3000 MB livres na GPU (0.000244 ~ 0.000244140625)
+OK   grover.out 21 3 4 (t_HYBRID, modo de regiões) (3/3 >= 2/3 esperado)
+OK   shor.out 21 3 4 (t_HYBRID, modo de regiões) (sem crash)
