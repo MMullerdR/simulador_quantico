@@ -74,10 +74,15 @@ fn random_amplitudes(rng: &mut Lcg, qubits: usize) -> Vec<C32> {
 /// `examples/stress.rs`). Estáticos não são destruídos, então não há `drop`.
 fn gpu() -> Option<&'static GpuContext> {
     static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
+    let started = std::time::Instant::now();
     CONTEXT
         .get_or_init(|| match GpuContext::new(GpuOptions::default()) {
             Ok(context) => {
-                println!("GPU: {}", context.describe());
+                println!(
+                    "GPU: {} (contexto criado em {:.2?})",
+                    context.describe(),
+                    started.elapsed()
+                );
                 Some(context)
             }
             Err(error) => {
@@ -136,6 +141,7 @@ fn gpu_matches_serial_cpu_on_random_circuits() {
         if qubits > max_qubits {
             continue;
         }
+        let combo_started = std::time::Instant::now();
         let mut rng = Lcg(1000 + index as u64);
         let steps: Vec<String> = (0..40).map(|_| random_step(&mut rng, qubits)).collect();
         let program = compile_steps(&steps, 2, &GateCatalog::with_base_gates()).unwrap();
@@ -151,8 +157,13 @@ fn gpu_matches_serial_cpu_on_random_circuits() {
             .execute(&mut cpu_state, &program, 1)
             .unwrap();
 
+        let cpu_time = combo_started.elapsed();
+
         let gates = gates_of(&program, 1).unwrap();
+        let upload_started = std::time::Instant::now();
         let gpu_state = context.state_from(qubits as u32, &initial).unwrap();
+        let upload_time = upload_started.elapsed();
+        let run_started = std::time::Instant::now();
         let stats = context
             .execute(
                 &gpu_state,
@@ -163,7 +174,17 @@ fn gpu_matches_serial_cpu_on_random_circuits() {
                 },
             )
             .unwrap();
+        let run_time = run_started.elapsed();
+        let read_started = std::time::Instant::now();
         let got = context.read_state(&gpu_state).unwrap();
+        // Tempo por fase: no CI do Windows (WARP) a soma dos combos levou ~14 minutos.
+        println!(
+            "  {qubits}q região={region_bits} coalescida={coalesced_bits}: CPU {cpu_time:.2?}, \
+             envio {upload_time:.2?}, execução {run_time:.2?} ({}+{} passadas), leitura {:.2?}",
+            stats.region_passes,
+            stats.global_passes,
+            read_started.elapsed()
+        );
 
         let diff = max_diff(cpu_state.as_slice(), &got);
         worst = worst.max(diff);
