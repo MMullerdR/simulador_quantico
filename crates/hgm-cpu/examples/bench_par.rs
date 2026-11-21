@@ -32,7 +32,12 @@ fn workload_steps(name: &str, qubits: usize) -> Vec<String> {
                 if target == control {
                     target = (target + 1) % qubits;
                 }
-                tokens[control] = if s % 2 == 1 { "Control1(1)" } else { "Control1(0)" }.to_owned();
+                tokens[control] = if s % 2 == 1 {
+                    "Control1(1)"
+                } else {
+                    "Control1(0)"
+                }
+                .to_owned();
                 tokens[target] = format!("Target1({})", gates[s % 4]);
                 steps.push(tokens.join(","));
             }
@@ -44,7 +49,9 @@ fn workload_steps(name: &str, qubits: usize) -> Vec<String> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 6 {
-        eprintln!("uso: bench_par QUBITS CARGA THREADS REGIAO COALESCIDA REPS [serial] [otimizado]");
+        eprintln!(
+            "uso: bench_par QUBITS CARGA THREADS REGIAO COALESCIDA REPS [serial] [otimizado]"
+        );
         std::process::exit(2);
     }
     let qubits: usize = args[0].parse().expect("QUBITS");
@@ -78,7 +85,9 @@ fn main() {
     };
 
     let start = Instant::now();
-    backend.execute(&mut state, &program, reps).expect("executar");
+    backend
+        .execute(&mut state, &program, reps)
+        .expect("executar");
     let seconds = start.elapsed().as_secs_f64();
 
     let probe = 12345 % (1usize << qubits);
@@ -88,9 +97,7 @@ fn main() {
         .as_slice()
         .iter()
         .enumerate()
-        .map(|(i, a)| {
-            f64::from(a.re) * (i % 7 + 1) as f64 + f64::from(a.im) * (i % 5 + 1) as f64
-        })
+        .map(|(i, a)| f64::from(a.re) * (i % 7 + 1) as f64 + f64::from(a.im) * (i % 5 + 1) as f64)
         .sum();
     println!(
         "tempo_s={seconds:.6} a0={:.7},{:.7} a1={:.7},{:.7} checksum={checksum:.6}",

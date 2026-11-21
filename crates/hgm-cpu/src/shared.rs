@@ -150,8 +150,15 @@ pub fn par_for_each_region<F>(state: &mut [C32], qubits: u32, mask: u64, work: F
 where
     F: Fn(&mut RegionView<'_>) + Sync + Send,
 {
-    assert_eq!(state.len(), 1usize << qubits, "vetor de estado com tamanho errado");
-    assert!(mask < (1u64 << qubits) || qubits >= 64, "máscara fora dos qubits");
+    assert_eq!(
+        state.len(),
+        1usize << qubits,
+        "vetor de estado com tamanho errado"
+    );
+    assert!(
+        mask < (1u64 << qubits) || qubits >= 64,
+        "máscara fora dos qubits"
+    );
 
     let regions = 1u64 << (qubits - mask.count_ones());
     let ptr = SendPtr(state.as_mut_ptr());

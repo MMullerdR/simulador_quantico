@@ -75,7 +75,9 @@ fn compare_pt(index: usize, pt: &Pt, line: &str) -> Result<(), String> {
 /// Compara uma fase fundida com a linha `fused N MASK VALUE STEPS ...` (exata).
 fn compare_fused(index: usize, op: &Op, line: &str) -> Result<(), String> {
     let Op::FusedPhase(fused) = op else {
-        return Err(format!("op {index}: esperava `pt`, mas o Rust tem fase fundida"));
+        return Err(format!(
+            "op {index}: esperava `pt`, mas o Rust tem fase fundida"
+        ));
     };
     let numbers = parse_floats(
         line.strip_prefix("fused ")

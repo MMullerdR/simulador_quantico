@@ -80,7 +80,10 @@ mod tests {
     fn dense_matches_the_complex_formula() {
         let h = std::f32::consts::FRAC_1_SQRT_2;
         let m = [c(h, 0.0), c(h, 0.0), c(h, 0.0), c(-h, 0.0)];
-        let (mut a, mut b) = (vec![c(1.0, 0.0), c(0.0, 1.0)], vec![c(0.0, 0.0), c(1.0, 0.0)]);
+        let (mut a, mut b) = (
+            vec![c(1.0, 0.0), c(0.0, 1.0)],
+            vec![c(0.0, 0.0), c(1.0, 0.0)],
+        );
         dense(&mut a, &mut b, &m);
         assert!((a[0].re - h).abs() < 1e-7 && (b[0].re - h).abs() < 1e-7);
         assert!((a[1].re - h).abs() < 1e-7 && (a[1].im - h).abs() < 1e-7);

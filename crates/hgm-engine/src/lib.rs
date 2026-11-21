@@ -82,8 +82,7 @@ impl Simulator {
         if self.fuse_phase {
             program.ops = fuse_phase_runs(program.ops).0;
         }
-        self.backend
-            .execute(&mut self.state, &program, repetitions)
+        self.backend.execute(&mut self.state, &program, repetitions)
     }
 
     /// Mede um qubit, colapsando o estado (`DGM::measure(int)`).
@@ -168,9 +167,7 @@ mod tests {
         let run = |fuse| {
             let mut simulator = Simulator::new(parallel(), 3).unwrap();
             simulator.set_fuse_phase(fuse);
-            simulator
-                .run("H,H,H;Z,R1,R2;R3,Z,R1;H,H,H", 1, 1)
-                .unwrap();
+            simulator.run("H,H,H;Z,R1,R2;R3,Z,R1;H,H,H", 1, 1).unwrap();
             simulator.state().clone()
         };
         assert!(run(false).max_abs_diff(&run(true)) < 1e-5);

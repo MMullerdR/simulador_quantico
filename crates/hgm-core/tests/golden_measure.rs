@@ -20,7 +20,10 @@ fn load_state(case: &Case, key: &str) -> Result<StateVector, String> {
 
 fn ints(text: &str) -> Result<Vec<i64>, String> {
     text.split_whitespace()
-        .map(|t| t.parse().map_err(|e| format!("inteiro inválido `{t}`: {e}")))
+        .map(|t| {
+            t.parse()
+                .map_err(|e| format!("inteiro inválido `{t}`: {e}"))
+        })
         .collect()
 }
 

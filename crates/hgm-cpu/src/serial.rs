@@ -62,7 +62,11 @@ pub(crate) fn validate(program: &Program) -> Result<()> {
         let pt = match op {
             Op::Gate(pt) => pt,
             Op::FusedPhase(fused) => {
-                if fused.terms.iter().any(|t| t.mask >= limit || t.value & !t.mask != 0) {
+                if fused
+                    .terms
+                    .iter()
+                    .any(|t| t.mask >= limit || t.value & !t.mask != 0)
+                {
                     return Err(HgmError::PtOutOfRange("termo de fase fundida"));
                 }
                 continue;

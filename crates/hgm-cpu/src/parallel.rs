@@ -66,7 +66,8 @@ impl Backend for ParallelBackend {
         for _ in 0..repetitions {
             let mut op_index = 0;
             while op_index < ops.len() {
-                let plan = compute_region(ops, op_index, tuning.coalesced_bits, region_bits, qubits)?;
+                let plan =
+                    compute_region(ops, op_index, tuning.coalesced_bits, region_bits, qubits)?;
                 // As passadas seguintes partem do valor já reduzido (como no C++).
                 region_bits = plan.bits;
                 let batch = &ops[op_index..plan.op_end];

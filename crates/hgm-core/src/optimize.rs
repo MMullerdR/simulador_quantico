@@ -69,7 +69,10 @@ pub fn fuse_phase_runs(ops: Vec<Op>) -> (Vec<Op>, usize) {
         };
 
         let mut terms: BTreeMap<(u64, u64), u64> = BTreeMap::new();
-        terms.insert((first_term.mask, first_term.value), u64::from(first_term.steps));
+        terms.insert(
+            (first_term.mask, first_term.value),
+            u64::from(first_term.steps),
+        );
         let mut run_len = 1usize;
 
         while let Some(term) = iter.peek().and_then(term_of_op) {

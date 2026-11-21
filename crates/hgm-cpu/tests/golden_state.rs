@@ -51,8 +51,7 @@ fn check_case(case: &Case, mode: Mode, backend: &mut dyn Backend) -> Result<f32,
         catalog.add_gate(name, *matrix);
     }
 
-    let mut program =
-        compile_steps(case.block("steps"), 1, &catalog).map_err(|e| e.to_string())?;
+    let mut program = compile_steps(case.block("steps"), 1, &catalog).map_err(|e| e.to_string())?;
     let tolerance = match mode {
         Mode::Plain => STATE_TOLERANCE,
         Mode::Optimized => {
