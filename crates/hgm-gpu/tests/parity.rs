@@ -94,6 +94,13 @@ fn gpu() -> Option<&'static GpuContext> {
         .as_ref()
 }
 
+/// Adaptador que roda em CPU (rasterizador por software, como o WARP do Windows ou o
+/// lavapipe): serve para corretude, mas é ordens de grandeza mais lento, então os testes
+/// pesados encolhem (no CI do Windows a versão completa levou 15 minutos).
+fn is_software(context: &GpuContext) -> bool {
+    context.info().device_type == wgpu::DeviceType::Cpu
+}
+
 fn max_diff(a: &[C32], b: &[C32]) -> f32 {
     a.iter()
         .zip(b)
@@ -124,7 +131,11 @@ fn gpu_matches_serial_cpu_on_random_circuits() {
     ];
 
     let mut worst = 0.0f32;
+    let max_qubits = if is_software(context) { 14 } else { 22 };
     for (index, &(qubits, region_bits, coalesced_bits)) in combos.iter().enumerate() {
+        if qubits > max_qubits {
+            continue;
+        }
         let mut rng = Lcg(1000 + index as u64);
         let steps: Vec<String> = (0..40).map(|_| random_step(&mut rng, qubits)).collect();
         let program = compile_steps(&steps, 2, &GateCatalog::with_base_gates()).unwrap();
@@ -212,7 +223,8 @@ fn repeated_runs_give_identical_results() {
     let initial = random_amplitudes(&mut rng, qubits);
 
     let mut first: Option<Vec<C32>> = None;
-    for run in 0..50 {
+    let runs = if is_software(context) { 5 } else { 50 };
+    for run in 0..runs {
         let state = context.state_from(qubits as u32, &initial).unwrap();
         context
             .execute(&state, &gates, RunTuning::default())

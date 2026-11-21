@@ -50,6 +50,11 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace --all-targets
 
+      # Os testes de GPU passam em silencio quando nao ha adaptador; esta saida mostra qual
+      # adaptador cada sistema usou (ou "SEM GPU"), para o verde nao enganar.
+      - name: adaptador de GPU usado nos testes
+        run: cargo test -p hgm-gpu --test parity -- --nocapture --test-threads=1
+
       - name: cargo fmt --check
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --all -- --check
