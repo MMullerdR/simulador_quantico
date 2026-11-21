@@ -43,8 +43,14 @@ pub fn region_kernel(tile_bits: u32, workgroup_size: u32) -> String {
 @group(0) @binding(0) var<storage, read_write> state: array<vec2<f32>>;
 @group(0) @binding(1) var<storage, read> ops: array<Op>;
 @group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> terms: array<vec4<u32>>;
+@group(0) @binding(4) var<storage, read> phase: array<vec2<f32>>;
 
 var<workgroup> tile: array<vec2<f32>, {tile}>;
+// Termos de fase que valem nesta região (os de fora já casaram com o endereço-base), com
+// a máscara e o valor locais empacotados em 16 bits cada: (mask | value << 16, passos).
+var<workgroup> active_terms: array<vec2<u32>, 64>;
+var<workgroup> active_count: u32;
 
 @compute @workgroup_size({wg})
 fn main(
@@ -76,9 +82,41 @@ fn main(
     let pairs = size >> 1u;
     for (var o = 0u; o < params.op_count; o += 1u) {{
         let op = ops[params.op_start + o];
-        // Controles fora da região: a condição é a mesma para o workgroup inteiro (só
-        // depende do endereço-base), então pular a porta aqui é uniforme.
-        if ((origin & op.outer.x) == op.outer.y) {{
+        // `params.pad0 == 1` marca passada com portas de fase: a condição é uniforme, então
+        // a barreira dentro dela é permitida.
+        if (params.pad0 == 1u) {{
+            if (lid == 0u && op.head.w == 1u) {{
+                var n = 0u;
+                for (var t = 0u; t < op.head.y; t += 1u) {{
+                    let a = terms[2u * (op.head.x + t)];
+                    if ((origin & a.z) == a.w) {{
+                        active_terms[n] = vec2<u32>(a.x | (a.y << 16u), terms[2u * (op.head.x + t) + 1u].x);
+                        n += 1u;
+                    }}
+                }}
+                active_count = n;
+            }}
+            workgroupBarrier();
+        }}
+        if (op.head.w == 1u) {{
+            // Porta de fase fundida: cada amplitude ganha o fator de fase da soma dos
+            // termos que casam. Dois vec4 por termo: [máscara local, valor local, máscara
+            // de fora, valor de fora] e [passos, 0, 0, 0]. A parte de fora compara com o
+            // endereço-base da região, como nos controles das portas.
+            let count = active_count;
+            for (var j = lid; j < size; j += {wg}u) {{
+                var steps = 0u;
+                for (var t = 0u; t < count; t += 1u) {{
+                    let a = active_terms[t];
+                    if ((j & (a.x & 65535u)) == (a.x >> 16u)) {{
+                        steps += a.y;
+                    }}
+                }}
+                tile[j] = cmul(tile[j], phase[steps & 65535u]);
+            }}
+        }} else if ((origin & op.outer.x) == op.outer.y) {{
+            // Controles fora da região: a condição é a mesma para o workgroup inteiro (só
+            // depende do endereço-base), então pular a porta aqui é uniforme.
             let t = op.head.x;
             let cm = op.head.y;
             let cv = op.head.z;

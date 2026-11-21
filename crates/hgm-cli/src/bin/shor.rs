@@ -9,7 +9,9 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use hgm_algos::shor::{shor, ShorOptions};
-use hgm_cli::{finish, parse_backend, parse_qubits, seed_from_environment, CliError};
+use hgm_cli::{
+    finish, fuse_from_environment, parse_backend, parse_qubits, seed_from_environment, CliError,
+};
 use hgm_engine::SimConfig;
 
 /// Quantidade de qubits -> número a fatorar (a mesma tabela do `shor.cpp`).
@@ -51,7 +53,8 @@ fn run(args: &[String]) -> Result<(), CliError> {
     };
     let backend = parse_backend(args, 0)?;
     let options = options_from_environment()?;
-    let config = SimConfig::new(backend, seed_from_environment()?);
+    let config =
+        SimConfig::new(backend, seed_from_environment()?).with_fuse_phase(fuse_from_environment()?);
 
     println!("Executing Shor: {qubits} qubits");
     let start = Instant::now();

@@ -131,6 +131,20 @@ pub fn seed_from_environment() -> Result<u32, CliError> {
     Ok((seconds as u32) ^ std::process::id())
 }
 
+/// Fusão de fase pedida por `HGM_FUSE_PHASE` (`0` ou `1`); `None` se não definida.
+pub fn fuse_from_environment() -> Result<Option<bool>, CliError> {
+    match std::env::var("HGM_FUSE_PHASE") {
+        Err(_) => Ok(None),
+        Ok(text) => match text.trim() {
+            "0" => Ok(Some(false)),
+            "1" => Ok(Some(true)),
+            other => Err(CliError::Usage(format!(
+                "HGM_FUSE_PHASE inválida: `{other}` (esperado 0 ou 1)"
+            ))),
+        },
+    }
+}
+
 /// Converte o resultado de `run` em código de saída, imprimindo o erro em stderr.
 pub fn finish(result: Result<(), CliError>) -> ExitCode {
     match result {

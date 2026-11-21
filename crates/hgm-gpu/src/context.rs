@@ -5,12 +5,13 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
+use hgm_core::fused::phase_table;
 use hgm_core::modmult::ModMultPlan;
 use hgm_core::C32;
 use wgpu::util::DeviceExt;
 
 use crate::error::{GpuError, Result};
-use crate::plan::{plan, GpuGate, RegionGate, Step};
+use crate::plan::{plan_ops, GpuGate, GpuOp, RegionGate, RegionOp, RegionTerm, Step};
 use crate::shaders;
 
 /// Teto da região em adaptadores de software (`DeviceType::Cpu`, como o WARP do Windows).
@@ -133,7 +134,8 @@ struct ParamsRaw {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct OpRaw {
-    /// alvo, máscara de controle, valor de controle, (livre)
+    /// Porta: alvo, máscara de controle, valor de controle, 0. Fase fundida: primeiro
+    /// termo (índice em `terms`), quantidade de termos, 0, 1 (o `w` distingue os dois).
     head: [u32; 4],
     /// máscara e valor dos controles fora da região (endereço-base), 2 livres
     outer: [u32; 4],
@@ -149,11 +151,42 @@ impl OpRaw {
         }
     }
 
+    fn fused(first_term: u32, count: u32) -> Self {
+        Self {
+            head: [first_term, count, 0, 1],
+            outer: [0; 4],
+            matrix: [0.0; 8],
+        }
+    }
+
     fn region(gate: &RegionGate) -> Self {
         Self {
             head: [gate.target, gate.control_mask, gate.control_value, 0],
             outer: [gate.outer_mask, gate.outer_value, 0, 0],
             matrix: gate.matrix,
+        }
+    }
+}
+
+/// Termo de fase na GPU: `mask_value` = máscara local, valor local, máscara de fora,
+/// valor de fora; `steps` = passos de fase no primeiro componente.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct TermRaw {
+    mask_value: [u32; 4],
+    steps: [u32; 4],
+}
+
+impl TermRaw {
+    fn new(term: &RegionTerm) -> Self {
+        Self {
+            mask_value: [
+                term.local_mask,
+                term.local_value,
+                term.outer_mask,
+                term.outer_value,
+            ],
+            steps: [term.steps, 0, 0, 0],
         }
     }
 }
@@ -173,6 +206,8 @@ pub struct GpuContext {
     copy_pipeline: wgpu::ComputePipeline,
     collapse_pipeline: wgpu::ComputePipeline,
     mod_mult_pipeline: wgpu::ComputePipeline,
+    /// Tabela `e^{i·2π·k/2^16}` das portas de fase fundida (a mesma da CPU).
+    phase_buffer: wgpu::Buffer,
     layout_ops: wgpu::BindGroupLayout,
     layout_copy: wgpu::BindGroupLayout,
     layout_collapse: wgpu::BindGroupLayout,
@@ -294,6 +329,8 @@ impl GpuContext {
                 storage_entry(0, false),
                 storage_entry(1, true),
                 uniform_entry(2),
+                storage_entry(3, true),
+                storage_entry(4, true),
             ],
         });
         // medição: state (ro), parciais (rw), parâmetros.
@@ -352,6 +389,12 @@ impl GpuContext {
         let uniform_slot = u64::from(limits.min_uniform_buffer_offset_alignment)
             .max(std::mem::size_of::<ParamsRaw>() as u64);
 
+        let phase_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("phase table"),
+            contents: bytemuck::cast_slice(phase_table()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
         let context = Self {
             device,
             queue,
@@ -367,6 +410,7 @@ impl GpuContext {
             copy_pipeline,
             collapse_pipeline,
             mod_mult_pipeline,
+            phase_buffer,
             layout_ops,
             layout_copy,
             layout_collapse,
@@ -489,11 +533,23 @@ impl GpuContext {
         gates: &[GpuGate],
         tuning: RunTuning,
     ) -> Result<PreparedRun> {
-        let region_bits = tuning.region_bits.min(self.max_region_bits);
-        let steps = plan(gates, state.qubits, tuning.coalesced_bits, region_bits);
+        let ops: Vec<GpuOp> = gates.iter().copied().map(GpuOp::Gate).collect();
+        self.prepare_ops(state, &ops, tuning)
+    }
 
-        // Parâmetros e portas de todas as passadas, em dois buffers só.
+    /// Como [`GpuContext::prepare`], com portas de fase fundida.
+    pub fn prepare_ops(
+        &self,
+        state: &GpuState,
+        gpu_ops: &[GpuOp],
+        tuning: RunTuning,
+    ) -> Result<PreparedRun> {
+        let region_bits = tuning.region_bits.min(self.max_region_bits);
+        let steps = plan_ops(gpu_ops, state.qubits, tuning.coalesced_bits, region_bits);
+
+        // Parâmetros, operações e termos de fase de todas as passadas, em três buffers só.
         let mut ops: Vec<OpRaw> = Vec::new();
+        let mut terms: Vec<TermRaw> = Vec::new();
         let mut params: Vec<u8> = Vec::new();
         let slot = self.uniform_slot as usize;
         let mut launches: Vec<Launch> = Vec::new();
@@ -502,17 +558,29 @@ impl GpuContext {
             let (raw, region, groups) = match step {
                 Step::Region(pass) => {
                     let start = ops.len() as u32;
-                    ops.extend(pass.gates.iter().map(OpRaw::region));
+                    for op in &pass.ops {
+                        match op {
+                            RegionOp::Gate(gate) => ops.push(OpRaw::region(gate)),
+                            RegionOp::Fused(region_terms) => {
+                                let first = terms.len() as u32;
+                                terms.extend(region_terms.iter().map(TermRaw::new));
+                                ops.push(OpRaw::fused(first, region_terms.len() as u32));
+                            }
+                        }
+                    }
                     let k = pass.region_bits();
+                    let has_fused = pass.ops.iter().any(|op| matches!(op, RegionOp::Fused(_)));
                     (
                         ParamsRaw {
                             op_start: start,
-                            op_count: pass.gates.len() as u32,
+                            op_count: pass.ops.len() as u32,
                             c: pass.coalesced_bits,
                             w: pass.window_bits,
                             s: pass.window_start,
                             n: state.qubits,
-                            pad: [0; 2],
+                            // Marca passada com portas de fase (o kernel só pára para
+                            // montar a lista de termos ativos nessas).
+                            pad: [u32::from(has_fused), 0],
                         },
                         true,
                         1u64 << (state.qubits - k),
@@ -564,6 +632,18 @@ impl GpuContext {
                 contents: &params,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
+        // Sem portas de fase o buffer de termos é só um espaço reservado (a ligação
+        // precisa de um buffer não vazio).
+        if terms.is_empty() {
+            terms.push(TermRaw::zeroed());
+        }
+        let terms_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("phase terms"),
+                contents: bytemuck::cast_slice(&terms),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ops"),
             layout: &self.layout_ops,
@@ -584,12 +664,20 @@ impl GpuContext {
                         size: wgpu::BufferSize::new(std::mem::size_of::<ParamsRaw>() as u64),
                     }),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: terms_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.phase_buffer.as_entire_binding(),
+                },
             ],
         });
         Ok(PreparedRun {
             bind_group: Some(bind_group),
             launches,
-            _buffers: vec![ops_buffer, params_buffer],
+            _buffers: vec![ops_buffer, params_buffer, terms_buffer],
         })
     }
 

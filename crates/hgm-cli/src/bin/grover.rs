@@ -8,7 +8,10 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use hgm_algos::grover::grover;
-use hgm_cli::{finish, parse_arg, parse_backend, parse_qubits, seed_from_environment, CliError};
+use hgm_cli::{
+    finish, fuse_from_environment, parse_arg, parse_backend, parse_qubits, seed_from_environment,
+    CliError,
+};
 use hgm_core::MAX_QUBITS;
 use hgm_engine::SimConfig;
 
@@ -34,7 +37,8 @@ fn run(args: &[String]) -> Result<(), CliError> {
         )));
     }
 
-    let config = SimConfig::new(backend, seed_from_environment()?);
+    let config =
+        SimConfig::new(backend, seed_from_environment()?).with_fuse_phase(fuse_from_environment()?);
     let start = Instant::now();
     let result = grover(&config, qubits, search_value)?;
     println!("{:.6}", start.elapsed().as_secs_f64());

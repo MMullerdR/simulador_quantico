@@ -55,13 +55,34 @@ pub const DEFAULT_SEED: u32 = 5489;
 pub struct SimConfig {
     pub backend: BackendKind,
     pub seed: u32,
+    /// Funde corridas de portas de fase antes de executar. `None` usa o padrão do
+    /// backend (ver [`SimConfig::fuse_phase_enabled`]).
+    pub fuse_phase: Option<bool>,
 }
 
 impl SimConfig {
     pub fn new(backend: BackendKind, seed: u32) -> Self {
-        Self { backend, seed }
+        Self {
+            backend,
+            seed,
+            fuse_phase: None,
+        }
+    }
+
+    /// Força a fusão de fase ligada ou desligada (`None` volta ao padrão do backend).
+    pub fn with_fuse_phase(mut self, fuse_phase: Option<bool>) -> Self {
+        self.fuse_phase = fuse_phase;
+        self
+    }
+
+    /// Se a fusão fica ligada: o pedido explícito, ou o padrão do backend.
+    pub fn fuse_phase_enabled(&self) -> bool {
+        self.fuse_phase.unwrap_or(DEFAULT_FUSE_PHASE)
     }
 }
+
+/// Padrão da fusão de fase (ver `docs/09`, fase 4).
+const DEFAULT_FUSE_PHASE: bool = false;
 
 impl Default for SimConfig {
     fn default() -> Self {
@@ -107,7 +128,7 @@ impl Simulator {
             backend,
             gates: GateCatalog::with_base_gates(),
             rng: Mt19937::new(config.seed),
-            fuse_phase: false,
+            fuse_phase: config.fuse_phase_enabled(),
         })
     }
 
@@ -302,7 +323,11 @@ mod tests {
     /// `Some(simulador)` se há GPU; senão `None` (o teste passa avisando), a menos que
     /// `HGM_REQUIRE_GPU` esteja definida.
     fn gpu_simulator(qubits: usize) -> Option<Simulator> {
-        match Simulator::new(BackendKind::Gpu(GpuTuning::default()), qubits) {
+        gpu_simulator_with(GpuTuning::default(), qubits)
+    }
+
+    fn gpu_simulator_with(tuning: GpuTuning, qubits: usize) -> Option<Simulator> {
+        match Simulator::new(BackendKind::Gpu(tuning), qubits) {
             Ok(simulator) => Some(simulator),
             Err(error) => {
                 assert!(
@@ -449,6 +474,55 @@ mod tests {
         assert_eq!(gpu.amplitude(1).unwrap(), C32::new(1.0, 0.0));
         assert_eq!(gpu.state().unwrap().as_slice()[1], C32::new(1.0, 0.0));
         assert!(gpu.set_basis(8).is_err());
+    }
+
+    /// Fases fundidas na GPU contra as portas separadas na CPU serial. Os três ajustes
+    /// de região fazem os termos caírem dentro e fora da região (a parte "de fora" é
+    /// comparada com o endereço-base, igual aos controles das portas).
+    #[test]
+    fn gpu_fused_phases_match_the_unfused_serial_oracle() {
+        let steps = [
+            "H,H,H,H,H,H,H,H,H",
+            "Z,R1,R2,R3,Z,R1,R2,ID,Z",
+            "ID,Control1(1),ID,ID,ID,ID,ID,ID,Target1(R3)",
+            "R2,Z,ID,Control0(1),ID,ID,ID,Target1(R1),ID",
+            "Control1(1),ID,ID,ID,ID,ID,ID,ID,Target1(Z)",
+            "H,ID,H,ID,H,ID,H,ID,H",
+            "R1,R3,Z,R2,R1,Z,R3,R2,R1",
+            "R1,R3,Z,R2,R1,Z,R3,R2,R1",
+        ];
+        let shapes = [
+            GpuTuning::default(),
+            GpuTuning {
+                region_bits: 5,
+                coalesced_bits: 2,
+                batch: 300,
+            },
+            GpuTuning {
+                region_bits: 4,
+                coalesced_bits: 4,
+                batch: 0,
+            },
+        ];
+        for tuning in shapes {
+            let Some(mut gpu) = gpu_simulator_with(tuning, 9) else {
+                return;
+            };
+            gpu.set_fuse_phase(true);
+            let program = gpu.compile_steps(&steps, 1).unwrap();
+            assert!(
+                program
+                    .ops
+                    .iter()
+                    .any(|op| matches!(op, hgm_core::Op::FusedPhase(_))),
+                "o programa de teste deveria ter fases fundidas"
+            );
+            let mut cpu = Simulator::new(BackendKind::CpuSerial, 9).unwrap();
+            cpu.run_steps(&steps, 1, 2).unwrap();
+            gpu.run_program(&program, 2).unwrap();
+            let diff = cpu.state().unwrap().max_abs_diff(gpu.state().unwrap());
+            assert!(diff < 1e-5, "{tuning:?}: diferença {diff}");
+        }
     }
 
     #[test]

@@ -14,8 +14,11 @@
 //!   volta por execução) ou **residente** na GPU (execução, medição, colapso e `modmult`
 //!   lá; fase 4), e o contexto único do processo.
 //!
-//! O que **não** existe ainda (fase 4): portas de fase fundida e estados acima de 27
-//! qubits (limite de binding da A4500; ver `docs/09` §4.2). Limites do WGSL
+//! Portas de fase fundida rodam no kernel de região (`GpuOp::Fused`), mas o `Simulator` só
+//! as usa se pedido (`SimConfig::with_fuse_phase`): medidas, empatam com as portas separadas.
+//!
+//! O que **não** existe ainda (fase 4): estados acima de 27 qubits (limite de binding da
+//! A4500; ver `docs/09` §4.2). Limites do WGSL
 //! (`docs/09` §4.1): sem `f64`, índice `u32` (no máximo 31 qubits aqui) e memória de
 //! workgroup pelo limite do adaptador.
 //!
@@ -33,4 +36,4 @@ pub use context::{
     CollapseMode, GpuContext, GpuOptions, GpuState, PreparedRun, RunStats, RunTuning,
 };
 pub use error::{GpuError, Result};
-pub use plan::GpuGate;
+pub use plan::{GpuGate, GpuOp, GpuTerm};

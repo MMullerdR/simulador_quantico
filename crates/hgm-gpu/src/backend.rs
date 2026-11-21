@@ -26,7 +26,7 @@ use hgm_core::{Backend, Measurement, Mt19937, StateVector, C32};
 
 use crate::context::{CollapseMode, GpuContext, GpuOptions, GpuState, RunTuning};
 use crate::error::{GpuError, Result};
-use crate::plan::{gates_of, region_shape};
+use crate::plan::{ops_of, region_shape};
 
 /// Portas por lote do agendador: o `OPS_BLOCK` do C++.
 pub const DEFAULT_BATCH: usize = 300;
@@ -147,8 +147,8 @@ impl Backend for GpuBackend {
                 state: state.qubits(),
             });
         }
-        let gates = gates_of(&self.ordered(program, state.qubits()), 1).map_err(backend_error)?;
-        if gates.is_empty() || repetitions == 0 {
+        let ops = ops_of(&self.ordered(program, state.qubits()), 1).map_err(backend_error)?;
+        if ops.is_empty() || repetitions == 0 {
             return Ok(());
         }
         let context = self.context;
@@ -161,7 +161,7 @@ impl Backend for GpuBackend {
                 .state_from(qubits, state.as_slice())
                 .map_err(backend_error)?;
             let prepared = context
-                .prepare(&gpu_state, &gates, tuning)
+                .prepare_ops(&gpu_state, &ops, tuning)
                 .map_err(backend_error)?;
             context.run(&prepared, repetitions).map_err(backend_error)?;
             let result = context.read_state(&gpu_state).map_err(backend_error)?;
@@ -171,7 +171,7 @@ impl Backend for GpuBackend {
 
         let device = self.device_state(state)?;
         let prepared = context
-            .prepare(device, &gates, tuning)
+            .prepare_ops(device, &ops, tuning)
             .map_err(backend_error)?;
         context.run(&prepared, repetitions).map_err(backend_error)?;
         self.device_ahead = true;

@@ -17,6 +17,7 @@
 //! Índices são `u32` (WGSL não tem inteiro de 64 bits portátil), então a GPU fica
 //! limitada a 32 qubits, como previsto em `docs/09` §4.1.
 
+use hgm_core::fused::FusedPhase;
 use hgm_core::pt::{Op, Pt};
 use hgm_core::Program;
 
@@ -63,8 +64,68 @@ impl GpuGate {
     }
 }
 
-/// Converte um programa do núcleo em portas da GPU. Portas de fase fundida
-/// (`Op::FusedPhase`) ainda não têm kernel na GPU (spike): viram erro.
+/// Um termo de uma porta de fase fundida: onde `(índice & mask) == value`, soma `steps`
+/// (em unidades de `2π / 2^16`) ao ângulo da amplitude (`hgm_core::fused`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuTerm {
+    pub mask: u32,
+    pub value: u32,
+    pub steps: u32,
+}
+
+/// O que um passo do programa faz com o estado: uma porta de 1 qubit ou uma porta de fase
+/// fundida (só multiplica cada amplitude por um fator de fase; não mistura pares).
+#[derive(Clone, Debug, PartialEq)]
+pub enum GpuOp {
+    Gate(GpuGate),
+    Fused(Vec<GpuTerm>),
+}
+
+impl From<GpuGate> for GpuOp {
+    fn from(gate: GpuGate) -> Self {
+        GpuOp::Gate(gate)
+    }
+}
+
+impl GpuOp {
+    fn from_fused(fused: &FusedPhase) -> Result<Self, GpuError> {
+        let mut terms = Vec::with_capacity(fused.terms.len());
+        for term in &fused.terms {
+            if term.mask >> 32 != 0 || term.value >> 32 != 0 {
+                return Err(GpuError::Unsupported(
+                    "termo de fase acima do bit 31 (a GPU indexa com 32 bits)".to_owned(),
+                ));
+            }
+            terms.push(GpuTerm {
+                mask: term.mask as u32,
+                value: term.value as u32,
+                steps: term.steps,
+            });
+        }
+        Ok(GpuOp::Fused(terms))
+    }
+}
+
+/// Converte um programa do núcleo em operações da GPU, com portas de fase fundida. Uma
+/// fundida sem termos (todos se cancelaram) é a identidade e some.
+pub fn ops_of(program: &Program, repetitions: usize) -> Result<Vec<GpuOp>, GpuError> {
+    let mut one = Vec::with_capacity(program.ops.len());
+    for op in &program.ops {
+        match op {
+            Op::Gate(pt) => one.push(GpuOp::Gate(GpuGate::from_pt(pt)?)),
+            Op::FusedPhase(fused) if fused.terms.is_empty() => {}
+            Op::FusedPhase(fused) => one.push(GpuOp::from_fused(fused)?),
+        }
+    }
+    let mut all = Vec::with_capacity(one.len() * repetitions);
+    for _ in 0..repetitions {
+        all.extend(one.iter().cloned());
+    }
+    Ok(all)
+}
+
+/// Converte um programa do núcleo em portas da GPU. Programas com portas de fase fundida
+/// não cabem aqui (use [`ops_of`]): viram erro.
 pub fn gates_of(program: &Program, repetitions: usize) -> Result<Vec<GpuGate>, GpuError> {
     let mut one = Vec::with_capacity(program.ops.len());
     for op in &program.ops {
@@ -72,7 +133,7 @@ pub fn gates_of(program: &Program, repetitions: usize) -> Result<Vec<GpuGate>, G
             Op::Gate(pt) => one.push(GpuGate::from_pt(pt)?),
             Op::FusedPhase(_) => {
                 return Err(GpuError::Unsupported(
-                    "porta de fase fundida (ainda sem kernel na GPU)".to_owned(),
+                    "porta de fase fundida (use ops_of)".to_owned(),
                 ))
             }
         }
@@ -94,9 +155,27 @@ pub struct RegionPass {
     pub window_bits: u32,
     /// `s`: primeiro bit da janela (`s >= c`).
     pub window_start: u32,
-    /// Portas já reindexadas para a região (bit `b` global vira `b` se `b < c`, senão
+    /// Operações já reindexadas para a região (bit `b` global vira `b` se `b < c`, senão
     /// `b - s + c`).
-    pub gates: Vec<RegionGate>,
+    pub ops: Vec<RegionOp>,
+}
+
+/// Operação dentro de uma passada de região.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RegionOp {
+    Gate(RegionGate),
+    Fused(Vec<RegionTerm>),
+}
+
+/// Termo de fase dentro de uma região: a parte local da máscara (índices locais, por
+/// amplitude) e a de fora (índices globais, contra o endereço-base da região).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegionTerm {
+    pub local_mask: u32,
+    pub local_value: u32,
+    pub outer_mask: u32,
+    pub outer_value: u32,
+    pub steps: u32,
 }
 
 /// Porta dentro de uma passada de região. Os controles que caem dentro da região estão
@@ -153,17 +232,22 @@ fn remap_mask(mask: u32, c: u32, s: u32) -> u32 {
 
 /// Posição do alvo se ele está acima dos `c` bits coalescidos (só esses precisam caber
 /// na janela); `None` se está entre os bits baixos, que entram em qualquer passada.
-fn upper_span(gate: &GpuGate, c: u32) -> Option<(u32, u32)> {
-    (gate.target >= c).then_some((gate.target, gate.target))
+fn upper_span(op: &GpuOp, c: u32) -> Option<(u32, u32)> {
+    match op {
+        GpuOp::Gate(gate) => (gate.target >= c).then_some((gate.target, gate.target)),
+        // Uma porta de fase não tem alvo: cabe em qualquer passada (como no C++, onde a
+        // fundida vale `target_bit = 0`).
+        GpuOp::Fused(_) => None,
+    }
 }
 
 struct Open {
-    gates: Vec<GpuGate>,
+    ops: Vec<GpuOp>,
     span: Option<(u32, u32)>,
 }
 
 fn close(open: Open, qubits: u32, c: u32, w: u32, steps: &mut Vec<Step>) {
-    if open.gates.is_empty() {
+    if open.ops.is_empty() {
         return;
     }
     // Janela: começa no menor bit usado, mas recua se passaria do fim do estado.
@@ -177,49 +261,77 @@ fn close(open: Open, qubits: u32, c: u32, w: u32, steps: &mut Vec<Step>) {
     for bit in start..start + w {
         inside |= 1u32 << bit;
     }
-    let gates = open
-        .gates
+    let ops = open
+        .ops
         .iter()
-        .map(|g| {
-            let local_mask = g.control_mask & inside;
-            let outer_mask = g.control_mask & !inside;
-            RegionGate {
-                target: to_local(g.target, c, start),
-                control_mask: remap_mask(local_mask, c, start),
-                control_value: remap_mask(g.control_value & local_mask, c, start),
-                outer_mask,
-                outer_value: g.control_value & outer_mask,
-                matrix: g.matrix,
+        .map(|op| match op {
+            GpuOp::Gate(g) => {
+                let local_mask = g.control_mask & inside;
+                let outer_mask = g.control_mask & !inside;
+                RegionOp::Gate(RegionGate {
+                    target: to_local(g.target, c, start),
+                    control_mask: remap_mask(local_mask, c, start),
+                    control_value: remap_mask(g.control_value & local_mask, c, start),
+                    outer_mask,
+                    outer_value: g.control_value & outer_mask,
+                    matrix: g.matrix,
+                })
             }
+            GpuOp::Fused(terms) => RegionOp::Fused(
+                terms
+                    .iter()
+                    .map(|t| {
+                        let local_mask = t.mask & inside;
+                        let outer_mask = t.mask & !inside;
+                        RegionTerm {
+                            local_mask: remap_mask(local_mask, c, start),
+                            local_value: remap_mask(t.value & local_mask, c, start),
+                            outer_mask,
+                            outer_value: t.value & outer_mask,
+                            steps: t.steps,
+                        }
+                    })
+                    .collect(),
+            ),
         })
         .collect();
     steps.push(Step::Region(RegionPass {
         coalesced_bits: c,
         window_bits: w,
         window_start: start,
-        gates,
+        ops,
     }));
 }
 
-/// Agrupa `gates`, na ordem dada, em passadas. A ordem das portas é preservada (não
-/// há reordenação por comutação nesta versão).
+/// Agrupa `gates`, na ordem dada, em passadas (ver [`plan_ops`]).
 pub fn plan(gates: &[GpuGate], qubits: u32, coalesced_bits: u32, region_bits: u32) -> Vec<Step> {
+    let ops: Vec<GpuOp> = gates.iter().copied().map(GpuOp::Gate).collect();
+    plan_ops(&ops, qubits, coalesced_bits, region_bits)
+}
+
+/// Agrupa `ops`, na ordem dada, em passadas. A ordem das operações é preservada (não há
+/// reordenação por comutação aqui; ela é feita antes, por `schedule_for_batching`).
+pub fn plan_ops(ops: &[GpuOp], qubits: u32, coalesced_bits: u32, region_bits: u32) -> Vec<Step> {
     let (c, w) = region_shape(qubits, coalesced_bits, region_bits);
     let mut steps = Vec::new();
     let mut open = Open {
-        gates: Vec::new(),
+        ops: Vec::new(),
         span: None,
     };
 
-    for gate in gates {
-        let span = upper_span(gate, c);
+    for op in ops {
+        let span = upper_span(op, c);
         if let Some((low, high)) = span {
             if high - low + 1 > w {
-                // Sem janela (`w = 0`) o alvo não cabe nem sozinho.
+                // Sem janela (`w = 0`) o alvo não cabe nem sozinho. Só porta com alvo cai
+                // aqui (a de fase não tem `span`).
+                let GpuOp::Gate(gate) = op else {
+                    continue;
+                };
                 let finished = std::mem::replace(
                     &mut open,
                     Open {
-                        gates: Vec::new(),
+                        ops: Vec::new(),
                         span: None,
                     },
                 );
@@ -239,7 +351,7 @@ pub fn plan(gates: &[GpuGate], qubits: u32, coalesced_bits: u32, region_bits: u3
             let finished = std::mem::replace(
                 &mut open,
                 Open {
-                    gates: Vec::new(),
+                    ops: Vec::new(),
                     span: None,
                 },
             );
@@ -248,7 +360,7 @@ pub fn plan(gates: &[GpuGate], qubits: u32, coalesced_bits: u32, region_bits: u3
         } else {
             open.span = merged;
         }
-        open.gates.push(*gate);
+        open.ops.push(op.clone());
     }
     close(open, qubits, c, w, &mut steps);
     steps
@@ -258,7 +370,8 @@ pub fn plan(gates: &[GpuGate], qubits: u32, coalesced_bits: u32, region_bits: u3
 /// Serve para testar o planejador sem GPU e como segunda opinião do que a GPU deve
 /// dar (a menos de FMA).
 pub mod model {
-    use super::{GpuGate, RegionPass, Step};
+    use super::{GpuGate, GpuOp, GpuTerm, RegionOp, RegionPass, Step};
+    use hgm_core::fused::phase_table;
     use hgm_core::C32;
 
     fn apply_pair(a: &mut C32, b: &mut C32, m: &[f32; 8]) {
@@ -289,6 +402,29 @@ pub mod model {
         }
     }
 
+    /// Porta de fase fundida direto no estado: `a[i] *= e^{i·2π·soma/2^16}` com a soma dos
+    /// passos dos termos que casam (módulo `2^16`).
+    pub fn apply_fused(state: &mut [C32], terms: &[GpuTerm]) {
+        let table = phase_table();
+        for (index, amplitude) in state.iter_mut().enumerate() {
+            let mut steps = 0u32;
+            for term in terms {
+                if index as u32 & term.mask == term.value {
+                    steps = steps.wrapping_add(term.steps);
+                }
+            }
+            *amplitude *= table[(steps & 0xFFFF) as usize];
+        }
+    }
+
+    /// Uma operação direto no estado (referência para os testes).
+    pub fn apply_op(state: &mut [C32], op: &GpuOp) {
+        match op {
+            GpuOp::Gate(gate) => apply_global(state, gate),
+            GpuOp::Fused(terms) => apply_fused(state, terms),
+        }
+    }
+
     /// Kernel de região: a conta de índices de `region_kernel` em `shaders.rs`.
     pub fn apply_region(state: &mut [C32], qubits: u32, pass: &RegionPass) {
         let (c, w, s) = (pass.coalesced_bits, pass.window_bits, pass.window_start);
@@ -307,19 +443,37 @@ pub mod model {
             for (j, slot) in tile.iter_mut().enumerate() {
                 *slot = state[global(j)];
             }
-            for gate in &pass.gates {
-                if base as u32 & gate.outer_mask != gate.outer_value {
-                    continue;
+            for op in &pass.ops {
+                match op {
+                    RegionOp::Gate(gate) => {
+                        if base as u32 & gate.outer_mask != gate.outer_value {
+                            continue;
+                        }
+                        apply_global(
+                            &mut tile,
+                            &GpuGate {
+                                target: gate.target,
+                                control_mask: gate.control_mask,
+                                control_value: gate.control_value,
+                                matrix: gate.matrix,
+                            },
+                        );
+                    }
+                    RegionOp::Fused(terms) => {
+                        let table = phase_table();
+                        for (j, slot) in tile.iter_mut().enumerate() {
+                            let mut steps = 0u32;
+                            for term in terms {
+                                if base as u32 & term.outer_mask == term.outer_value
+                                    && j as u32 & term.local_mask == term.local_value
+                                {
+                                    steps = steps.wrapping_add(term.steps);
+                                }
+                            }
+                            *slot *= table[(steps & 0xFFFF) as usize];
+                        }
+                    }
                 }
-                apply_global(
-                    &mut tile,
-                    &GpuGate {
-                        target: gate.target,
-                        control_mask: gate.control_mask,
-                        control_value: gate.control_value,
-                        matrix: gate.matrix,
-                    },
-                );
             }
             for (j, value) in tile.iter().enumerate() {
                 state[global(j)] = *value;
@@ -461,7 +615,7 @@ mod tests {
         let counted: usize = steps
             .iter()
             .map(|s| match s {
-                Step::Region(p) => p.gates.len(),
+                Step::Region(p) => p.ops.len(),
                 Step::Global(_) => 1,
             })
             .sum();
@@ -509,7 +663,9 @@ mod tests {
         let [Step::Region(pass)] = steps.as_slice() else {
             panic!("esperava uma passada de região: {steps:?}");
         };
-        let local = pass.gates[0];
+        let RegionOp::Gate(local) = pass.ops[0] else {
+            panic!("esperava uma porta: {:?}", pass.ops);
+        };
         assert_eq!(local.control_mask, 1 << 1);
         assert_eq!(local.control_value, 0);
         assert_eq!(local.outer_mask, 1 << 20);
@@ -527,6 +683,82 @@ mod tests {
         // Região só com bits coalescidos (c = k = 4): o alvo 5 não cabe em lugar nenhum.
         let steps = plan(&[gate], 22, 4, 4);
         assert_eq!(steps, vec![Step::Global(gate)]);
+    }
+
+    fn random_terms(rng: &mut Lcg, qubits: u32) -> Vec<GpuTerm> {
+        (0..1 + rng.below(6))
+            .map(|_| {
+                let mut mask = 0u32;
+                for _ in 0..rng.below(4) {
+                    mask |= 1 << rng.below(u64::from(qubits));
+                }
+                // Valor: um subconjunto qualquer dos bits da máscara.
+                let value = mask & (rng.next() as u32);
+                GpuTerm {
+                    mask,
+                    value,
+                    steps: rng.below(1 << 16) as u32,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn planned_passes_with_fused_phases_equal_op_by_op_application() {
+        let shapes = [
+            (3, 4, 12),
+            (6, 2, 4),
+            (8, 3, 3),
+            (9, 3, 6),
+            (10, 4, 7),
+            (12, 4, 12),
+        ];
+        for (seed, &(qubits, c, k)) in shapes.iter().enumerate() {
+            let mut rng = Lcg(seed as u64 + 500);
+            // Mistura portas e fundidas na ordem.
+            let gates = random_gates(&mut rng, qubits, 30, 3);
+            let mut ops = Vec::new();
+            for gate in gates {
+                ops.push(GpuOp::Gate(gate));
+                if rng.below(2) == 1 {
+                    ops.push(GpuOp::Fused(random_terms(&mut rng, qubits)));
+                }
+            }
+            let initial = random_state(&mut rng, qubits);
+
+            let mut expected = initial.clone();
+            for op in &ops {
+                model::apply_op(&mut expected, op);
+            }
+            let steps = plan_ops(&ops, qubits, c, k);
+            let mut got = initial;
+            model::apply_plan(&mut got, qubits, &steps);
+
+            let diff = max_diff(&expected, &got);
+            assert!(diff < 1e-5, "{qubits}q c={c} k={k}: diferença {diff}");
+        }
+    }
+
+    #[test]
+    fn a_fused_phase_fits_any_pass_and_splits_its_mask_into_local_and_outer() {
+        // Região de 6 bits (c = 2, janela de 4 a partir do bit 2), estado de 22 qubits.
+        let fused = GpuOp::Fused(vec![GpuTerm {
+            mask: 1 << 1 | 1 << 3 | 1 << 20,
+            value: 1 << 3 | 1 << 20,
+            steps: 1 << 14,
+        }]);
+        let steps = plan_ops(&[fused], 22, 2, 6);
+        let [Step::Region(pass)] = steps.as_slice() else {
+            panic!("esperava uma passada de região: {steps:?}");
+        };
+        let RegionOp::Fused(terms) = &pass.ops[0] else {
+            panic!("esperava uma fundida");
+        };
+        assert_eq!(pass.window_start, 2); // sem alvo, a janela fica logo acima dos coalescidos
+        assert_eq!(terms[0].local_mask, 1 << 1 | 1 << 3); // bit 3: local 3 - 2 + 2
+        assert_eq!(terms[0].local_value, 1 << 3);
+        assert_eq!(terms[0].outer_mask, 1 << 20);
+        assert_eq!(terms[0].outer_value, 1 << 20);
     }
 
     #[test]

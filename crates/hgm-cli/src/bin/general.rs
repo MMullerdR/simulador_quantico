@@ -9,7 +9,9 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use hgm_algos::general::hadamard_n_qubits;
-use hgm_cli::{finish, parse_backend, parse_qubits, seed_from_environment, CliError};
+use hgm_cli::{
+    finish, fuse_from_environment, parse_backend, parse_qubits, seed_from_environment, CliError,
+};
 use hgm_core::MAX_QUBITS;
 use hgm_engine::SimConfig;
 
@@ -29,7 +31,8 @@ fn run(args: &[String]) -> Result<(), CliError> {
         )));
     }
     let backend = parse_backend(args, 0)?;
-    let config = SimConfig::new(backend, seed_from_environment()?);
+    let config =
+        SimConfig::new(backend, seed_from_environment()?).with_fuse_phase(fuse_from_environment()?);
 
     let start = Instant::now();
     let amplitude = hadamard_n_qubits(&config, qubits, ITERATIONS)?;
