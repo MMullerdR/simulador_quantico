@@ -200,6 +200,6 @@ do estado (`DGM::applyModMult`) em vez das portas do circuito. Deixa de ser um
 circuito, por isso é opcional; no `shor.out 27` em GPU: 43,5 s -> 1,2 s. O
 circuito exato é o oráculo de `tests/test_shor_emulate.cpp`.
 
-**Atenção (item 30 de [07](07-bugs-e-pontos-de-atencao.md), aberto):** `Shor()`
-passa `a` e não `a^-1` a `CRMultMod`, e `reg2` sai com lixo; o circuito com o
-inverso e a emulação concordam entre si, o circuito atual não.
+**Item 30 de [07](07-bugs-e-pontos-de-atencao.md), corrigido:** `Shor()` passava
+`a` e não `a^-1` a `CRMultMod`, e `reg2` saía com lixo. Agora passa `a^-1` e o
+circuito concorda com a emulação.

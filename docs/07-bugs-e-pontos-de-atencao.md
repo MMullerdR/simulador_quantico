@@ -1248,7 +1248,7 @@ circuito exato em N maior fica caro no `t_CPU`); a emulação foi cronometrada n
 Shor 21-27, e não a 31-33 qubits, onde o buffer auxiliar dobra a memória do
 estado.
 
-## 30. [ABERTO] Shor: `CRMultMod` recebe `a` em vez de `a^-1` e deixa lixo em `reg2`
+## 30. [CORRIGIDO] Shor: `CRMultMod` recebe `a` em vez de `a^-1` e deixa lixo em `reg2`
 
 **Onde:** `Shor()` em `src/algorithms/lib_shor.cpp` (a chamada de `CRMultMod`);
 já era assim no código original (`9d36e42`, `lib_shor.cpp:676`).
@@ -1284,11 +1284,20 @@ pós-processamento acha fatores mesmo com a fase medida quase aleatória, então
 essa taxa não serve para validar o circuito. As taxas de sucesso dos itens 1, 21
 e 26 foram medidas assim.
 
-**Correção provável (não aplicada):** trocar `base_pow_mod` por `base_inv_pow_mod`
-na chamada de `CRMultMod`. Não muda o número de portas. Falta decidir antes de
-mexer (muda o resultado do Shor padrão) e conferir depois com a fase medida, e
-não só com "Found factors". A emulação do item 29 já usa a multiplicação correta,
-então `SHOR_EMULATE=1` não tem o problema.
+**Correção (2026-11-21):** `Shor()` passa `base_inv_pow_mod` a `CRMultMod`. Não
+muda o número de portas. A emulação do item 29 já usava a multiplicação correta,
+então `SHOR_EMULATE=1` não tinha o problema.
+
+**O que foi verificado e o que não foi:** com a correção, `make test GPU=real`
+na qflex (clone limpo em `9a78318` + a correção) passou inteiro, incluindo
+`test_shor_emulate` e o smoke test. A prova de que o circuito corrigido faz a
+estimação de fase certa é a equivalência exata com a emulação (26 casos mais 12
+sessões de GPU, ver acima) e a medição de 150 execuções com o circuito com o
+inverso (24% perto de j/r contra 7% do circuito antigo). **Não** foi refeita a
+medição de fase de ponta a ponta com o `Shor()` já corrigido do repositório: o
+experimento de 300 execuções por configuração se perdeu quando a conexão com a
+qflex caiu. Se for importante, repetir com a mesma métrica (fase a até 1/2^12 de
+um múltiplo de 1/r), não com a taxa de "Found factors".
 
 ---
 

@@ -122,7 +122,10 @@ vector<int> Shor(long number_to_factor, int type, int thread_count, int cpu_regi
 		sub_steps = CSwapR(qubits, qft_qb, reg1, reg2, bit_width);
 		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
 
-		sub_steps = CRMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_pow_mod, number_to_factor, dgm.gates);
+		// desfazer a soma de CMultMod exige o inverso: depois da troca reg1 = a*x e
+		// reg2 = x, subtrair a^-1 * (a*x) devolve reg2 a 0. Com a em vez de a^-1
+		// reg2 saía com x*(1 - a^2) -- item 30 em docs/07-bugs-e-pontos-de-atencao.md.
+		sub_steps = CRMultMod(qubits, qft_qb, reg1, reg2, over, over_bool, bit_width, base_inv_pow_mod, number_to_factor, dgm.gates);
 		round_steps.insert(round_steps.end(), sub_steps.begin(), sub_steps.end());
 		round_steps.push_back(hadamard_step0);
 

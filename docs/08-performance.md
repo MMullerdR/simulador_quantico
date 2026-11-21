@@ -152,7 +152,8 @@ circuito -> emulação: `shor.out 27` em GPU 43,5 -> 1,21 s, `shor.out 25` 8,83 
 0,39-0,41 s, `shor.out 21` em GPU 0,77 -> 0,14 s e em CPU com 16 threads 2,10 ->
 0,078 s, `shor.out 25` híbrido 9,01 -> 0,39 s. É um modo opcional (o padrão
 segue sendo o circuito); a tabela do resumo acima é do circuito. Os números do
-circuito só valem como motor de portas enquanto o item 30 estiver aberto.
+circuito foram medidos antes da correção do item 30; ela não muda o número de
+portas, então os tempos devem valer, mas não foram remedidos.
 
 **Atualização (2026-10-21, corpo da porta fundida):** reescrito o corpo do
 kernel das portas de fase fundidas (item 27 de
