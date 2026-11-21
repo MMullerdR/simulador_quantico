@@ -148,8 +148,17 @@ região).
    uma cópia extra). Some quando o estado fica residente, que é o desenho planejado, mas só
    existe como medida, não como Backend.
 4. A tentativa de uma segunda implementação (lavapipe, Vulkan por software do Mesa, na
-   própria qflex) falhou ao abrir o dispositivo ("Parent device is lost"). **Nenhuma outra
-   implementação de Vulkan, nem DX12 nem Metal, foi verificada.**
+   própria qflex) falhou ao abrir o dispositivo ("Parent device is lost"). O CI (run
+   44906182960, `dfa7a1f`) mostrou o que os executores usam: **macOS** "Apple Paravirtual
+   device" (Metal, GPU integrada virtualizada), os 4 testes de paridade passam em 8 a 12 s;
+   **Windows** "Microsoft Basic Render Driver" (DX12, `Cpu`, ou seja, software/WARP), passam,
+   mas levam ~890 s mesmo com o circuito reduzido a 14 qubits e 5 repetições. Isolado com
+   tempos por fase (run 44909816577, `05c817b`): ~135 s para criar o contexto e **751 s na
+   primeira execução do kernel de região** (circuito de 3 qubits, uma passada); daí em diante
+   cada execução leva de 4 a 100 ms. É custo único, do primeiro uso no WARP (provavelmente
+   compilação do shader de região no adaptador), não do tamanho do circuito; **Linux** sem adaptador (os testes de GPU não rodam). Logo
+   Metal e DX12 foram exercitados só em adaptadores virtualizados/por software, e nenhuma
+   GPU real que não seja a A4500 foi verificada.
 
 **Não está no spike:** portas de fase fundida, emulação de `modmult`, sessão residente com
 medição e colapso na GPU, a implementação da trait `Backend`, Shor, estados acima de 27
