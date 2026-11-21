@@ -230,3 +230,108 @@ fn main(
         wg = workgroup_size,
     )
 }
+
+/// Colapso de um qubit, um thread por par `(pos, pos | 1<<shift)` (`pos` tem o bit em 0).
+///
+/// `mode == 0` é a medição do C++ (`DGM::measure`): o ramo sorteado, escalado por
+/// `scale = 1/norma`, vai para a posição `pos` (a do bit em 0) e a posição com o bit em 1
+/// é zerada; ou seja, depois de medir 1 o qubit passa a valer 0, igual ao host
+/// (`StateVector::measure_qubit`). `mode == 1` é `colapse`: o ramo `bit` fica no lugar,
+/// escalado, e o outro é zerado.
+pub fn collapse_kernel(workgroup_size: u32) -> String {
+    format!(
+        r#"
+struct Edit {{
+    shift: u32,
+    bit: u32,
+    mode: u32,
+    n: u32,
+    scale: f32,
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
+}}
+
+@group(0) @binding(0) var<storage, read_write> state: array<vec2<f32>>;
+@group(0) @binding(1) var<uniform> edit: Edit;
+
+@compute @workgroup_size({wg})
+fn main(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+) {{
+    let pair = (wid.x + wid.y * nwg.x) * {wg}u + lid;
+    if (pair >= (1u << (edit.n - 1u))) {{
+        return;
+    }}
+    let low = (1u << edit.shift) - 1u;
+    let pos = (pair << 1u) - (pair & low);
+    let other = pos | (1u << edit.shift);
+    let a = state[pos];
+    let b = state[other];
+    let zero = vec2<f32>(0.0, 0.0);
+    if (edit.mode == 0u) {{
+        var kept = a;
+        if (edit.bit == 1u) {{
+            kept = b;
+        }}
+        state[pos] = kept * edit.scale;
+        state[other] = zero;
+    }} else if (edit.bit == 1u) {{
+        state[pos] = zero;
+        state[other] = b * edit.scale;
+    }} else {{
+        state[pos] = a * edit.scale;
+        state[other] = zero;
+    }}
+}}
+"#,
+        wg = workgroup_size,
+    )
+}
+
+/// Multiplicação modular controlada como permutação, em forma de "gather": cada thread
+/// escreve uma posição de destino `d` e lê a origem `s`, como o laço do host
+/// (`hgm_core::modmult`). Precisa de um buffer de destino separado, porque a origem de um
+/// thread é o destino de outro.
+pub fn mod_mult_kernel(workgroup_size: u32) -> String {
+    format!(
+        r#"
+struct ModMult {{
+    n: u32,
+    ctrl_shift: u32,
+    reg_shift: u32,
+    width: u32,
+    modulus: u32,
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
+}}
+
+@group(0) @binding(0) var<storage, read> src: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> dst: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> gather: array<u32>;
+@group(0) @binding(3) var<uniform> mm: ModMult;
+
+@compute @workgroup_size({wg})
+fn main(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(num_workgroups) nwg: vec3<u32>,
+    @builtin(local_invocation_index) lid: u32,
+) {{
+    let d = (wid.x + wid.y * nwg.x) * {wg}u + lid;
+    if (d >= (1u << mm.n)) {{
+        return;
+    }}
+    let x = (d >> mm.reg_shift) & ((1u << mm.width) - 1u);
+    var s = d;
+    if (((d >> mm.ctrl_shift) & 1u) == 1u && x < mm.modulus) {{
+        s = d ^ ((x ^ gather[x]) << mm.reg_shift);
+    }}
+    dst[d] = src[s];
+}}
+"#,
+        wg = workgroup_size,
+    )
+}

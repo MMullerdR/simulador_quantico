@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use hgm_core::circuit::{compile_steps, tokenize};
 use hgm_core::error::Result;
 use hgm_core::optimize::fuse_phase_runs;
-use hgm_core::{Backend, GateCatalog, Measurement, Mt19937, Program, StateVector};
+use hgm_core::{Backend, GateCatalog, Measurement, Mt19937, Program, StateVector, C32};
 use hgm_cpu::{ParallelBackend, SerialBackend, Tuning};
 use hgm_gpu::{GpuBackend, RunTuning};
 
@@ -94,11 +94,16 @@ impl Simulator {
                     coalesced_bits: tuning.coalesced_bits,
                 })
                 .map_err(|e| hgm_core::error::HgmError::Backend(e.to_string()))?
-                .with_batch(tuning.batch),
+                .with_batch(tuning.batch)
+                // O estado fica na GPU entre execuções, medições e colapsos.
+                .resident(true),
             ),
         };
+        let mut backend = backend;
+        let mut state = StateVector::basis(qubits, 0)?;
+        backend.initial_state_ready(&mut state)?;
         Ok(Self {
-            state: StateVector::basis(qubits, 0)?,
+            state,
             backend,
             gates: GateCatalog::with_base_gates(),
             rng: Mt19937::new(config.seed),
@@ -112,8 +117,7 @@ impl Simulator {
 
     /// Põe o estado na base `|index>` (`DGM::setMemoryValue` depois de zerar).
     pub fn set_basis(&mut self, index: usize) -> Result<()> {
-        self.state = StateVector::basis(self.state.qubits(), index)?;
-        Ok(())
+        self.backend.set_basis(&mut self.state, index)
     }
 
     /// O gerador compartilhado por medições e sorteios do algoritmo (o `g_rng`
@@ -130,12 +134,22 @@ impl Simulator {
         self.backend.name()
     }
 
-    pub fn state(&self) -> &StateVector {
-        &self.state
+    /// O vetor de estado inteiro. Com a GPU como backend o estado mora lá; este método
+    /// o traz para o host se estiver desatualizado, o que custa uma cópia do vetor todo
+    /// (use [`Simulator::amplitude`] para ler poucas amplitudes).
+    pub fn state(&mut self) -> Result<&StateVector> {
+        self.backend.sync_to_host(&mut self.state)?;
+        Ok(&self.state)
+    }
+
+    /// Uma amplitude do estado, sem trazer o vetor inteiro para o host.
+    pub fn amplitude(&mut self, index: usize) -> Result<C32> {
+        self.backend.amplitude(&mut self.state, index)
     }
 
     pub fn set_state(&mut self, state: StateVector) {
         self.state = state;
+        self.backend.host_state_replaced();
     }
 
     pub fn gates_mut(&mut self) -> &mut GateCatalog {
@@ -191,16 +205,18 @@ impl Simulator {
 
     /// Mede um qubit, colapsando o estado (`DGM::measure(int)`).
     pub fn measure(&mut self, qubit: usize) -> Result<Measurement> {
-        self.state.measure_qubit(qubit, &mut self.rng)
+        self.backend
+            .measure_qubit(&mut self.state, qubit, &mut self.rng)
     }
 
     /// Força um qubit a 0 ou 1 e renormaliza (`DGM::colapse`).
     pub fn collapse(&mut self, qubit: usize, value: u8) -> Result<f64> {
-        self.state.collapse(qubit, value)
+        self.backend.collapse(&mut self.state, qubit, value)
     }
 
     /// Distribuição de probabilidade sobre os qubits dados, sem colapsar.
-    pub fn probabilities(&self, qubits: &[usize]) -> Result<BTreeMap<u64, f64>> {
+    pub fn probabilities(&mut self, qubits: &[usize]) -> Result<BTreeMap<u64, f64>> {
+        self.backend.sync_to_host(&mut self.state)?;
         self.state.probabilities(qubits)
     }
 
@@ -213,8 +229,14 @@ impl Simulator {
         multiplier: i64,
         modulus: i64,
     ) -> Result<()> {
-        self.state
-            .apply_mod_mult(ctrl_qubit, reg_first_qubit, width, multiplier, modulus)
+        self.backend.apply_mod_mult(
+            &mut self.state,
+            ctrl_qubit,
+            reg_first_qubit,
+            width,
+            multiplier,
+            modulus,
+        )
     }
 }
 
@@ -239,7 +261,7 @@ mod tests {
                 .run("Control1(1),Control1(1),Target1(Z)", 1, 1)
                 .unwrap();
             simulator.run("H,H,H;X,X,X", 1, 1).unwrap();
-            assert!((simulator.state().norm_sqr() - 1.0).abs() < 1e-5);
+            assert!((simulator.state().unwrap().norm_sqr() - 1.0).abs() < 1e-5);
         }
         let simulator = Simulator::new(BackendKind::CpuSerial, 2).unwrap();
         assert_eq!(simulator.backend_name(), "t_CPU (Rust, serial)");
@@ -272,7 +294,7 @@ mod tests {
             let mut simulator = Simulator::new(parallel(), 3).unwrap();
             simulator.set_fuse_phase(fuse);
             simulator.run("H,H,H;Z,R1,R2;R3,Z,R1;H,H,H", 1, 1).unwrap();
-            simulator.state().clone()
+            simulator.state().unwrap().clone()
         };
         assert!(run(false).max_abs_diff(&run(true)) < 1e-5);
     }
@@ -310,8 +332,8 @@ mod tests {
         for simulator in [&mut cpu, &mut gpu] {
             simulator.run_steps(&steps, 1, 3).unwrap();
         }
-        assert!(cpu.state().max_abs_diff(gpu.state()) < 1e-5);
-        assert!((gpu.state().norm_sqr() - 1.0).abs() < 1e-5);
+        assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
+        assert!((gpu.state().unwrap().norm_sqr() - 1.0).abs() < 1e-5);
     }
 
     #[test]
@@ -326,7 +348,107 @@ mod tests {
         // Uma segunda execução parte do estado colapsado, que subiu de novo para a GPU.
         gpu.run("X,X", 1, 1).unwrap();
         let expected = if first == 0 { 3 } else { 0 };
-        assert!((gpu.state().as_slice()[expected].norm() - 1.0).abs() < 1e-5);
+        assert!((gpu.amplitude(expected).unwrap().norm() - 1.0).abs() < 1e-5);
+    }
+
+    /// Mesmos passos em CPU serial e em GPU residente, com a mesma semente: estados iguais
+    /// (até 1e-5) e os mesmos bits medidos, em ordem, com o estado colapsado igual.
+    #[test]
+    fn resident_gpu_measurements_follow_the_serial_oracle() {
+        let qubits = 6;
+        let Some(mut gpu) = gpu_simulator(qubits) else {
+            return;
+        };
+        let mut cpu = Simulator::new(BackendKind::CpuSerial, qubits).unwrap();
+        for seed in 0..6u32 {
+            for simulator in [&mut cpu, &mut gpu] {
+                simulator.seed(seed);
+                simulator.set_basis(5).unwrap();
+                simulator.run("H,H,H,H,H,H", 1, 1).unwrap();
+                simulator
+                    .run("Control1(1),ID,ID,ID,ID,Target1(R2)", 1, 1)
+                    .unwrap();
+            }
+            for qubit in [0, 3, 5, 1] {
+                let want = cpu.measure(qubit).unwrap();
+                let got = gpu.measure(qubit).unwrap();
+                assert_eq!(want.bit, got.bit, "seed {seed}, qubit {qubit}");
+                assert!((want.probability - got.probability).abs() < 1e-5);
+                // O estado colapsado segue igual, e continua evoluindo igual.
+                for simulator in [&mut cpu, &mut gpu] {
+                    simulator.run("H,ID,ID,ID,ID,H", 1, 1).unwrap();
+                }
+            }
+            assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
+        }
+    }
+
+    #[test]
+    fn resident_gpu_collapse_and_amplitudes_follow_the_host() {
+        let Some(mut gpu) = gpu_simulator(5) else {
+            return;
+        };
+        let mut cpu = Simulator::new(BackendKind::CpuSerial, 5).unwrap();
+        for simulator in [&mut cpu, &mut gpu] {
+            simulator.run("H,H,H,H,H", 1, 1).unwrap();
+            simulator.run("R1,ID,Z,ID,R3", 1, 1).unwrap();
+        }
+        for (qubit, value) in [(2, 1), (0, 0)] {
+            let want = cpu.collapse(qubit, value).unwrap();
+            let got = gpu.collapse(qubit, value).unwrap();
+            assert!((want - got).abs() < 1e-5);
+        }
+        // Lê amplitudes uma a uma (sem sincronizar) e depois o vetor inteiro.
+        for index in 0..32 {
+            let want = cpu.amplitude(index).unwrap();
+            let got = gpu.amplitude(index).unwrap();
+            assert!((want - got).norm() < 1e-5, "índice {index}");
+        }
+        assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
+        assert!(gpu.amplitude(32).is_err());
+        // Zero de probabilidade no ramo já colapsado.
+        assert!(cpu.collapse(2, 0).is_err() && gpu.collapse(2, 0).is_err());
+    }
+
+    #[test]
+    fn resident_gpu_mod_mult_matches_the_host_permutation() {
+        // 1 qubit de controle + registrador de 4 qubits + 2 qubits à parte, em
+        // superposição, para a permutação ter o que embaralhar.
+        let Some(mut gpu) = gpu_simulator(7) else {
+            return;
+        };
+        let mut cpu = Simulator::new(BackendKind::CpuSerial, 7).unwrap();
+        for simulator in [&mut cpu, &mut gpu] {
+            simulator.run("H,H,R1,H,Z,H,H", 1, 1).unwrap();
+            simulator.apply_mod_mult(0, 1, 4, 7, 15).unwrap();
+            simulator.run("H,ID,ID,ID,ID,ID,ID", 1, 1).unwrap();
+            simulator.apply_mod_mult(0, 1, 4, 13, 15).unwrap();
+            simulator.apply_mod_mult(0, 1, 4, 2, 11).unwrap(); // módulo menor que 2^4
+        }
+        assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
+        for simulator in [&mut cpu, &mut gpu] {
+            assert!(simulator.apply_mod_mult(0, 1, 4, 5, 15).is_err()); // gcd != 1
+            assert!(simulator.apply_mod_mult(1, 1, 4, 7, 15).is_err()); // controle no registrador
+        }
+    }
+
+    #[test]
+    fn replacing_the_host_state_invalidates_the_gpu_copy() {
+        let Some(mut gpu) = gpu_simulator(3) else {
+            return;
+        };
+        gpu.run("H,H,H", 1, 1).unwrap();
+        let mut replacement = StateVector::basis(3, 6).unwrap();
+        replacement.as_mut_slice()[6] = C32::new(0.0, 1.0);
+        gpu.set_state(replacement);
+        assert_eq!(gpu.amplitude(6).unwrap(), C32::new(0.0, 1.0));
+        gpu.run("X,ID,ID", 1, 1).unwrap();
+        assert_eq!(gpu.state().unwrap().as_slice()[2], C32::new(0.0, 1.0));
+        // set_basis sem passar pelo host
+        gpu.set_basis(1).unwrap();
+        assert_eq!(gpu.amplitude(1).unwrap(), C32::new(1.0, 0.0));
+        assert_eq!(gpu.state().unwrap().as_slice()[1], C32::new(1.0, 0.0));
+        assert!(gpu.set_basis(8).is_err());
     }
 
     #[test]
@@ -335,6 +457,6 @@ mod tests {
         simulator.run("ID,ID,ID,ID,X", 1, 1).unwrap(); // x = 1
         simulator.run("X,ID,ID,ID,ID", 1, 1).unwrap(); // controle = 1
         simulator.apply_mod_mult(0, 1, 4, 7, 15).unwrap();
-        assert_eq!(simulator.state().as_slice()[(1 << 4) | 7].re, 1.0);
+        assert_eq!(simulator.amplitude((1 << 4) | 7).unwrap().re, 1.0);
     }
 }

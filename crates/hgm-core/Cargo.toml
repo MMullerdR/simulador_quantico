@@ -6,8 +6,11 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-num-complex.workspace = true
+num-complex = { workspace = true, features = ["bytemuck"] }
 thiserror.workspace = true
+# Só a API segura: `try_zeroed_vec` pede memória já zerada ao alocador (calloc), sem
+# escrever zeros página a página num vetor de centenas de MiB.
+bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 
 [dev-dependencies]
 hgm-golden.workspace = true

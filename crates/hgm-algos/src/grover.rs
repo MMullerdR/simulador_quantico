@@ -179,17 +179,20 @@ mod tests {
         // 1 bloco de 3 e 2 sobrando); 1_000_000 -> tudo no primeiro bloco. As três
         // formas têm que dar o mesmo estado: repetir blocos só economiza memória.
         let config = SimConfig::default();
-        let reference = amplify(&config, 8, 100, 1_000_000).unwrap();
+        let mut reference = amplify(&config, 8, 100, 1_000_000).unwrap();
         for limit in [1, 40, 60, 100] {
-            let chunked = amplify(&config, 8, 100, limit).unwrap();
-            let diff = reference.state().max_abs_diff(chunked.state());
+            let mut chunked = amplify(&config, 8, 100, limit).unwrap();
+            let diff = reference
+                .state()
+                .unwrap()
+                .max_abs_diff(chunked.state().unwrap());
             assert!(diff < 1e-6, "limite {limit}: diferença {diff:e}");
         }
         // E o estado é mesmo o amplificado: a amplitude do valor buscado domina.
         let target = 100usize | (1 << 7); // o ancilla (qubit 0) é o bit 7 do índice
         let probability: f64 = [target, target & !(1 << 7)]
             .iter()
-            .map(|&i| f64::from(reference.state().as_slice()[i].norm_sqr()))
+            .map(|&i| f64::from(reference.amplitude(i).unwrap().norm_sqr()))
             .sum();
         assert!(probability > 0.99, "probabilidade {probability}");
     }

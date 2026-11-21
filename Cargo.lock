@@ -321,6 +321,7 @@ dependencies = [
 name = "hgm-core"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "hgm-golden",
  "num-complex",
  "thiserror 1.0.69",

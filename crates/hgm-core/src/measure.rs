@@ -32,15 +32,40 @@ fn divide(amplitude: C32, divisor: f64) -> C32 {
     )
 }
 
+/// Posição do bit do índice em que mora o qubit `qubit` (posição no circuito) de um estado
+/// de `qubits` qubits. Compartilhada pelo caminho de CPU e pelo de GPU.
+pub fn qubit_shift(qubits: usize, qubit: usize) -> Result<u32> {
+    if qubit >= qubits {
+        return Err(HgmError::InvalidArgument(format!(
+            "qubit {qubit} fora de um estado de {qubits} qubits"
+        )));
+    }
+    Ok((qubits - 1 - qubit) as u32)
+}
+
+/// Escolhe o ramo de uma medição a partir das somas de probabilidade (`zero`: bit 0,
+/// `one`: bit 1): uma amostra de `rng` convertida para `f32`, como no C++ (sai 0 se
+/// `P(0) > amostra`, senão 1). Devolve o bit e a probabilidade do ramo.
+///
+/// Compartilhada pela CPU e pela GPU, para as duas gastarem o gerador do mesmo jeito.
+/// Desvio do C++: se o ramo sorteado tem probabilidade 0 (só acontece por erro de
+/// arredondamento em estados quase determinísticos; o C++ produzia NaN), usa o outro.
+pub fn pick_branch(zero: f64, one: f64, rng: &mut Mt19937) -> Result<(u8, f64)> {
+    let sample = rng.uniform_f64() as f32;
+    let mut bit = u8::from(zero <= f64::from(sample));
+    if (bit == 0 && zero <= 0.0) || (bit == 1 && one <= 0.0) {
+        bit ^= 1;
+    }
+    let branch = if bit == 1 { one } else { zero };
+    if branch <= 0.0 {
+        return Err(HgmError::ZeroProbability);
+    }
+    Ok((bit, branch))
+}
+
 impl StateVector {
     fn bit_shift(&self, qubit: usize) -> Result<u32> {
-        if qubit >= self.qubits {
-            return Err(HgmError::InvalidArgument(format!(
-                "qubit {qubit} fora de um estado de {} qubits",
-                self.qubits
-            )));
-        }
-        Ok((self.qubits - 1 - qubit) as u32)
+        qubit_shift(self.qubits, qubit)
     }
 
     /// Mede o qubit `qubit` (posição no circuito): soma as probabilidades dos dois
@@ -62,15 +87,7 @@ impl StateVector {
             }
         }
 
-        let sample = rng.uniform_f64() as f32;
-        let mut bit = u8::from(zero <= f64::from(sample));
-        if (bit == 0 && zero <= 0.0) || (bit == 1 && one <= 0.0) {
-            bit ^= 1;
-        }
-        let branch = if bit == 1 { one } else { zero };
-        if branch <= 0.0 {
-            return Err(HgmError::ZeroProbability);
-        }
+        let (bit, branch) = pick_branch(zero, one, rng)?;
         let norm = branch.sqrt();
 
         let low_bits_mask = (1usize << shift) - 1;

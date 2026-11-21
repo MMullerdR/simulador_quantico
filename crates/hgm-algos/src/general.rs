@@ -21,7 +21,7 @@ pub fn hadamard_n_qubits(config: &SimConfig, qubits: usize, iterations: usize) -
     let mut simulator = Simulator::with_config(config, qubits)?;
     let step = hadamard(qubits, 0, qubits);
     simulator.run_steps(&[step], iterations, 1)?;
-    Ok(simulator.state().as_slice()[0])
+    simulator.amplitude(0)
 }
 
 #[cfg(test)]

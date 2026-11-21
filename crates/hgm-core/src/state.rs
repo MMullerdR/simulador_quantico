@@ -12,6 +12,13 @@ pub struct StateVector {
     pub(crate) scratch: Option<Vec<C32>>,
 }
 
+/// `len` amplitudes zeradas, alocação falível. Vem direto do alocador já zerada (o sistema
+/// entrega páginas zeradas sob demanda), então um estado de centenas de MiB que só vai ser
+/// lido na GPU, ou só tocado em parte, não custa a escrita de zeros.
+pub(crate) fn zeroed_amplitudes(len: usize) -> Option<Vec<C32>> {
+    bytemuck::allocation::try_zeroed_vec::<C32>(len).ok()
+}
+
 impl StateVector {
     /// Estado de base `|index>` (amplitude 1 em `index`, 0 no resto). A alocação é
     /// falível: falta de memória vira erro, não aborto do processo (o C++ dava
@@ -26,11 +33,7 @@ impl StateVector {
         let len = 1usize << qubits;
         assert!(index < len, "índice de base fora do estado");
 
-        let mut amplitudes = Vec::new();
-        amplitudes
-            .try_reserve_exact(len)
-            .map_err(|_| HgmError::OutOfMemory { qubits })?;
-        amplitudes.resize(len, C32::new(0.0, 0.0));
+        let mut amplitudes = zeroed_amplitudes(len).ok_or(HgmError::OutOfMemory { qubits })?;
         amplitudes[index] = C32::new(1.0, 0.0);
         Ok(Self {
             qubits,

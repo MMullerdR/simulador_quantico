@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
+use hgm_core::modmult::ModMultPlan;
 use hgm_core::C32;
 use wgpu::util::DeviceExt;
 
@@ -36,6 +37,15 @@ impl Default for GpuOptions {
             workgroup_size: 256,
         }
     }
+}
+
+/// O que o colapso faz com o ramo que sobra.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollapseMode {
+    /// Medição do C++: o ramo sorteado vai para a posição do bit em 0.
+    Measure,
+    /// `colapse` do C++: o ramo fica onde está.
+    InPlace,
 }
 
 /// Parâmetros de uma execução (ajuste fino, como `gpu_region_bits` e
@@ -96,6 +106,9 @@ impl PreparedRun {
 /// Estado na GPU: `2^qubits` amplitudes `vec2<f32>`.
 pub struct GpuState {
     buffer: wgpu::Buffer,
+    /// Buffer de destino da multiplicação modular (troca de lugar com `buffer`); só
+    /// existe depois da primeira.
+    scratch: Option<wgpu::Buffer>,
     qubits: u32,
 }
 
@@ -158,8 +171,12 @@ pub struct GpuContext {
     global_pipeline: wgpu::ComputePipeline,
     measure_pipeline: wgpu::ComputePipeline,
     copy_pipeline: wgpu::ComputePipeline,
+    collapse_pipeline: wgpu::ComputePipeline,
+    mod_mult_pipeline: wgpu::ComputePipeline,
     layout_ops: wgpu::BindGroupLayout,
     layout_copy: wgpu::BindGroupLayout,
+    layout_collapse: wgpu::BindGroupLayout,
+    layout_mod_mult: wgpu::BindGroupLayout,
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -168,6 +185,20 @@ fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
         visibility: wgpu::ShaderStages::COMPUTE,
         ty: wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+/// Uniform sem deslocamento dinâmico (parâmetros de uma chamada só).
+fn plain_uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
             has_dynamic_offset: false,
             min_binding_size: None,
         },
@@ -253,6 +284,8 @@ impl GpuContext {
         let global_module = compile("global", shaders::global_kernel(wg));
         let measure_module = compile("measure", shaders::measure_kernel(wg));
         let copy_module = compile("copy", shaders::copy_kernel(wg));
+        let collapse_module = compile("collapse", shaders::collapse_kernel(wg));
+        let mod_mult_module = compile("mod_mult", shaders::mod_mult_kernel(wg));
 
         // state (rw), ops (ro), parâmetros (uniform com offset dinâmico).
         let layout_ops = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -277,6 +310,20 @@ impl GpuContext {
             entries: &[storage_entry(0, true), storage_entry(1, false)],
         });
 
+        let layout_collapse = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("collapse"),
+            entries: &[storage_entry(0, false), plain_uniform_entry(1)],
+        });
+        let layout_mod_mult = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("mod_mult"),
+            entries: &[
+                storage_entry(0, true),
+                storage_entry(1, false),
+                storage_entry(2, true),
+                plain_uniform_entry(3),
+            ],
+        });
+
         let pipeline = |label: &str,
                         module: &wgpu::ShaderModule,
                         layout: &wgpu::BindGroupLayout|
@@ -299,6 +346,8 @@ impl GpuContext {
         let global_pipeline = pipeline("global", &global_module, &layout_ops);
         let measure_pipeline = pipeline("measure", &measure_module, &layout_measure);
         let copy_pipeline = pipeline("copy", &copy_module, &layout_copy);
+        let collapse_pipeline = pipeline("collapse", &collapse_module, &layout_collapse);
+        let mod_mult_pipeline = pipeline("mod_mult", &mod_mult_module, &layout_mod_mult);
 
         let uniform_slot = u64::from(limits.min_uniform_buffer_offset_alignment)
             .max(std::mem::size_of::<ParamsRaw>() as u64);
@@ -316,8 +365,12 @@ impl GpuContext {
             global_pipeline,
             measure_pipeline,
             copy_pipeline,
+            collapse_pipeline,
+            mod_mult_pipeline,
             layout_ops,
             layout_copy,
+            layout_collapse,
+            layout_mod_mult,
         };
         // Erros de validação de shader/pipeline aparecem aqui, não na primeira execução.
         context.drain_errors()?;
@@ -412,7 +465,11 @@ impl GpuContext {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Ok(GpuState { buffer, qubits })
+        Ok(GpuState {
+            buffer,
+            scratch: None,
+            qubits,
+        })
     }
 
     /// Dispatch 2D (x, y) para `groups` workgroups, respeitando o limite por dimensão.
@@ -685,6 +742,160 @@ impl GpuContext {
         drop(data);
         buffer.unmap();
         Ok(out)
+    }
+
+    /// Colapsa o qubit do bit `shift` do índice (ver `shaders::collapse_kernel`): com
+    /// `CollapseMode::Measure` o ramo `bit` vai para a posição do bit em 0 (a medição do
+    /// C++); com `InPlace` fica onde está (o `colapse`). `scale` é `1/norma`.
+    pub fn collapse_bit(
+        &self,
+        state: &GpuState,
+        shift: u32,
+        bit: u8,
+        scale: f32,
+        mode: CollapseMode,
+    ) -> Result<()> {
+        if shift >= state.qubits {
+            return Err(GpuError::Unsupported(format!(
+                "bit {shift} fora de um estado de {} qubits",
+                state.qubits
+            )));
+        }
+        let params = [
+            shift,
+            u32::from(bit),
+            match mode {
+                CollapseMode::Measure => 0,
+                CollapseMode::InPlace => 1,
+            },
+            state.qubits,
+            scale.to_bits(),
+            0,
+            0,
+            0,
+        ];
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("collapse params"),
+                contents: bytemuck::cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("collapse"),
+            layout: &self.layout_collapse,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let pairs = 1u64 << (state.qubits - 1);
+        let groups = self.dispatch_size(pairs.div_ceil(u64::from(self.options.workgroup_size)));
+        self.dispatch_once(&self.collapse_pipeline, &bind_group, groups);
+        Ok(())
+    }
+
+    /// Multiplicação modular controlada (`hgm_core::modmult::plan_mod_mult`): cada
+    /// amplitude de destino lê a de origem num buffer de destino separado, e os dois
+    /// trocam de lugar. Aloca o segundo buffer (mesmo tamanho do estado) na primeira vez.
+    pub fn mod_mult(&self, state: &mut GpuState, plan: &ModMultPlan) -> Result<()> {
+        let gather_bytes = (u64::from(plan.modulus) * 4).max(16);
+        let gather = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mod_mult gather"),
+            size: gather_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&gather, 0, bytemuck::cast_slice(&plan.gather));
+        let params = [
+            state.qubits,
+            plan.ctrl_shift,
+            plan.reg_shift,
+            plan.width,
+            plan.modulus,
+            0,
+            0,
+            0,
+        ];
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mod_mult params"),
+                contents: bytemuck::cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        if state.scratch.is_none() {
+            state.scratch = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("state scratch"),
+                size: 8u64 << state.qubits,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+        let Some(scratch) = state.scratch.as_ref() else {
+            return Err(GpuError::Unsupported("buffer auxiliar".to_owned()));
+        };
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("mod_mult"),
+            layout: &self.layout_mod_mult,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: state.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: scratch.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: gather.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let groups = self
+            .dispatch_size((1u64 << state.qubits).div_ceil(u64::from(self.options.workgroup_size)));
+        self.dispatch_once(&self.mod_mult_pipeline, &bind_group, groups);
+        if let Some(mut scratch) = state.scratch.take() {
+            std::mem::swap(&mut state.buffer, &mut scratch);
+            state.scratch = Some(scratch);
+        }
+        Ok(())
+    }
+
+    /// Um dispatch num comando só (kernels pequenos: colapso e `modmult`).
+    fn dispatch_once(
+        &self,
+        pipeline: &wgpu::ComputePipeline,
+        bind_group: &wgpu::BindGroup,
+        groups: (u32, u32),
+    ) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.dispatch_workgroups(groups.0, groups.1, 1);
+        }
+        self.queue.submit(Some(encoder.finish()));
     }
 
     /// Soma de `|a|^2` com o bit `bit` em 0 e em 1: parciais em `f32` por workgroup

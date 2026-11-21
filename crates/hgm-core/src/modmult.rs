@@ -7,8 +7,7 @@
 use std::mem;
 
 use crate::error::{HgmError, Result};
-use crate::state::StateVector;
-use crate::C32;
+use crate::state::{zeroed_amplitudes, StateVector};
 
 fn invalid(message: String) -> HgmError {
     HgmError::InvalidArgument(message)
@@ -21,11 +20,82 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
     a
 }
 
+/// Parâmetros de uma multiplicação modular já validados, na forma que os dois caminhos
+/// (CPU e GPU) usam: posições de bit e a tabela do "gather".
+#[derive(Clone, Debug)]
+pub struct ModMultPlan {
+    /// Posição do bit de controle no índice do estado.
+    pub ctrl_shift: u32,
+    /// Posição do bit menos significativo do registrador no índice.
+    pub reg_shift: u32,
+    /// Largura do registrador (1 a 16).
+    pub width: u32,
+    pub modulus: u32,
+    /// `gather[y] = x` tal que `(a*x) mod modulus == y`, para `y < modulus`.
+    pub gather: Vec<u32>,
+}
+
+/// Valida os parâmetros de `apply_mod_mult` e monta o plano. Os erros são os mesmos nos
+/// dois caminhos (onde o C++ fazia `exit(1)`).
+///
+/// `|ctrl> |x>  ->  |ctrl> |a·x mod N>` quando o controle vale 1 e `x < N`; o resto do
+/// espaço não muda. O registrador tem `width` qubits a partir de `reg_first_qubit`, e o
+/// qubit de controle precisa estar acima dele no índice (`ctrl_qubit < reg_first_qubit`).
+/// `multiplier` precisa ser coprimo com `modulus`.
+pub fn plan_mod_mult(
+    qubits: usize,
+    ctrl_qubit: usize,
+    reg_first_qubit: usize,
+    width: usize,
+    multiplier: i64,
+    modulus: i64,
+) -> Result<ModMultPlan> {
+    if !(1..=16).contains(&width)
+        || modulus < 2
+        || modulus > (1i64 << width)
+        || multiplier < 1
+        || ctrl_qubit >= qubits
+        || reg_first_qubit + width > qubits
+        || (reg_first_qubit..reg_first_qubit + width).contains(&ctrl_qubit)
+    {
+        return Err(invalid(format!(
+            "applyModMult: ctrl={ctrl_qubit}, registrador={reg_first_qubit}+{width}, modulus={modulus}, qubits={qubits}"
+        )));
+    }
+
+    let a = multiplier % modulus;
+    if gcd(a, modulus) != 1 {
+        return Err(invalid(format!(
+            "applyModMult exige multiplicador coprimo com o módulo ({multiplier} e {modulus})"
+        )));
+    }
+
+    // Posições de bit no índice (o qubit q é o bit qubits-1-q).
+    let ctrl_shift = qubits - 1 - ctrl_qubit;
+    let reg_shift = qubits - reg_first_qubit - width;
+    if ctrl_shift < reg_shift + width {
+        return Err(invalid(
+            "applyModMult exige o qubit de controle acima do registrador no índice".to_owned(),
+        ));
+    }
+
+    // gather[y] = x tal que (a*x) mod modulus == y
+    let mut gather = vec![0u32; modulus as usize];
+    for x in 0..modulus {
+        gather[((a * x) % modulus) as usize] = x as u32;
+    }
+    Ok(ModMultPlan {
+        ctrl_shift: ctrl_shift as u32,
+        reg_shift: reg_shift as u32,
+        width: width as u32,
+        modulus: modulus as u32,
+        gather,
+    })
+}
+
 impl StateVector {
-    /// `|ctrl> |x>  ->  |ctrl> |a·x mod N>` quando o controle vale 1 e `x < N`; o resto
-    /// do espaço não muda. O registrador tem `width` qubits a partir de
-    /// `reg_first_qubit`, e o qubit de controle precisa estar acima dele no índice
-    /// (`ctrl_qubit < reg_first_qubit`). `multiplier` precisa ser coprimo com `modulus`.
+    /// Aplica a multiplicação modular controlada (ver [`plan_mod_mult`]) emulada como
+    /// permutação dos índices.
     ///
     /// Onde o C++ fazia `exit(1)` por parâmetro inválido, devolve erro.
     pub fn apply_mod_mult(
@@ -37,52 +107,21 @@ impl StateVector {
         modulus: i64,
     ) -> Result<()> {
         let qubits = self.qubits;
-        if !(1..=16).contains(&width)
-            || modulus < 2
-            || modulus > (1i64 << width)
-            || multiplier < 1
-            || ctrl_qubit >= qubits
-            || reg_first_qubit + width > qubits
-            || (reg_first_qubit..reg_first_qubit + width).contains(&ctrl_qubit)
-        {
-            return Err(invalid(format!(
-                "applyModMult: ctrl={ctrl_qubit}, registrador={reg_first_qubit}+{width}, modulus={modulus}, qubits={qubits}"
-            )));
-        }
-
-        let a = multiplier % modulus;
-        if gcd(a, modulus) != 1 {
-            return Err(invalid(format!(
-                "applyModMult exige multiplicador coprimo com o módulo ({multiplier} e {modulus})"
-            )));
-        }
-
-        // Posições de bit no índice (o qubit q é o bit qubits-1-q).
-        let ctrl_shift = qubits - 1 - ctrl_qubit;
-        let reg_shift = qubits - reg_first_qubit - width;
-        if ctrl_shift < reg_shift + width {
-            return Err(invalid(
-                "applyModMult exige o qubit de controle acima do registrador no índice".to_owned(),
-            ));
-        }
-
-        // gather[y] = x tal que (a*x) mod modulus == y
-        let mut gather = vec![0usize; modulus as usize];
-        for x in 0..modulus {
-            gather[((a * x) % modulus) as usize] = x as usize;
-        }
+        let plan = plan_mod_mult(
+            qubits,
+            ctrl_qubit,
+            reg_first_qubit,
+            width,
+            multiplier,
+            modulus,
+        )?;
+        let (ctrl_shift, reg_shift) = (plan.ctrl_shift as usize, plan.reg_shift as usize);
+        let width = plan.width as usize;
 
         let len = self.amplitudes.len();
         let mut target = match self.scratch.take() {
             Some(buffer) => buffer,
-            None => {
-                let mut buffer = Vec::new();
-                buffer
-                    .try_reserve_exact(len)
-                    .map_err(|_| HgmError::OutOfMemory { qubits })?;
-                buffer.resize(len, C32::new(0.0, 0.0));
-                buffer
-            }
+            None => zeroed_amplitudes(len).ok_or(HgmError::OutOfMemory { qubits })?,
         };
 
         let run = 1usize << reg_shift; // amplitudes contíguas que andam juntas
@@ -93,8 +132,8 @@ impl StateVector {
             let dest_x = job & (reg_values - 1);
             let dest_base = (upper << (reg_shift + width)) | (dest_x << reg_shift);
             let mut src_x = dest_x;
-            if (dest_base >> ctrl_shift) & 1 == 1 && (dest_x as i64) < modulus {
-                src_x = gather[dest_x];
+            if (dest_base >> ctrl_shift) & 1 == 1 && (dest_x as u32) < plan.modulus {
+                src_x = plan.gather[dest_x] as usize;
             }
             let src_base = dest_base ^ ((dest_x ^ src_x) << reg_shift);
             target[dest_base..dest_base + run]
