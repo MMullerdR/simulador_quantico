@@ -59,6 +59,9 @@ pub struct GpuBackend {
     batch: usize,
     /// Modo residente (ver o cabeçalho do módulo).
     resident: bool,
+    /// Maior bloco do estado (log2 de amplitudes) que o pedido aceita; o dispositivo pode
+    /// limitar mais. Só serve para testar a divisão em blocos com estados pequenos.
+    max_chunk_bits: u32,
     /// O estado na GPU, no modo residente.
     device: Option<GpuState>,
     /// A GPU tem um estado mais novo que o do host (a cópia do host está velha).
@@ -73,6 +76,7 @@ impl GpuBackend {
             tuning,
             batch: DEFAULT_BATCH,
             resident: false,
+            max_chunk_bits: u32::MAX,
             device: None,
             device_ahead: false,
         })
@@ -90,6 +94,13 @@ impl GpuBackend {
         self
     }
 
+    /// Limita o bloco do estado a `2^bits` amplitudes (o dispositivo já impõe o seu limite;
+    /// isto força a divisão em blocos em estados que caberiam num só).
+    pub fn with_max_chunk_bits(mut self, bits: u32) -> Self {
+        self.max_chunk_bits = bits;
+        self
+    }
+
     pub fn context(&self) -> &'static GpuContext {
         self.context
     }
@@ -99,8 +110,9 @@ impl GpuBackend {
     fn ordered(&self, program: &Program, qubits: usize) -> Program {
         let ops = if self.batch > 0 {
             let region_bits = self.tuning.region_bits.min(self.context.max_region_bits());
-            let (coalesced, window) =
-                region_shape(qubits as u32, self.tuning.coalesced_bits, region_bits);
+            // A janela fica nos bits locais do bloco (ver `plan.rs`).
+            let local = self.context.local_bits(qubits as u32, self.max_chunk_bits);
+            let (coalesced, window) = region_shape(local, self.tuning.coalesced_bits, region_bits);
             schedule_for_batching(program.ops.clone(), coalesced, window, self.batch)
         } else {
             program.ops.clone()
@@ -119,7 +131,7 @@ impl GpuBackend {
         if !usable {
             self.device = Some(
                 self.context
-                    .state_from(qubits, host.as_slice())
+                    .state_from_in_chunks(qubits, host.as_slice(), self.max_chunk_bits)
                     .map_err(backend_error)?,
             );
             self.device_ahead = false;
@@ -158,14 +170,15 @@ impl Backend for GpuBackend {
             let qubits = u32::try_from(state.qubits())
                 .map_err(|_| HgmError::InvalidArgument("número de qubits".to_owned()))?;
             let gpu_state = context
-                .state_from(qubits, state.as_slice())
+                .state_from_in_chunks(qubits, state.as_slice(), self.max_chunk_bits)
                 .map_err(backend_error)?;
             let prepared = context
                 .prepare_ops(&gpu_state, &ops, tuning)
                 .map_err(backend_error)?;
             context.run(&prepared, repetitions).map_err(backend_error)?;
-            let result = context.read_state(&gpu_state).map_err(backend_error)?;
-            state.as_mut_slice().copy_from_slice(&result);
+            context
+                .read_into(&gpu_state, state.as_mut_slice())
+                .map_err(backend_error)?;
             return Ok(());
         }
 
@@ -205,7 +218,7 @@ impl Backend for GpuBackend {
             .map_err(|_| HgmError::InvalidArgument("número de qubits".to_owned()))?;
         self.device = Some(
             self.context
-                .basis_state(qubits, index as u32)
+                .basis_state_in_chunks(qubits, index as u32, self.max_chunk_bits)
                 .map_err(backend_error)?,
         );
         self.device_ahead = true;
@@ -215,8 +228,9 @@ impl Backend for GpuBackend {
     fn sync_to_host(&mut self, state: &mut StateVector) -> CoreResult<()> {
         if self.device_ahead {
             if let Some(device) = &self.device {
-                let result = self.context.read_state(device).map_err(backend_error)?;
-                state.as_mut_slice().copy_from_slice(&result);
+                self.context
+                    .read_into(device, state.as_mut_slice())
+                    .map_err(backend_error)?;
             }
             self.device_ahead = false;
         }

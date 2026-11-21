@@ -16,6 +16,13 @@
 //!
 //! Índices são `u32` (WGSL não tem inteiro de 64 bits portátil), então a GPU fica
 //! limitada a 32 qubits, como previsto em `docs/09` §4.1.
+//!
+//! **Estados em blocos.** Se o estado não cabe num binding só (27 qubits na A4500), ele é
+//! dividido em `2^(n - L)` blocos de `2^L` amplitudes, cada um num buffer; o bloco é dado
+//! pelos bits do índice de `L` para cima. Uma passada de região nunca cruza blocos (a
+//! janela fica nos `L` bits baixos e roda uma vez por bloco, com os bits de bloco entrando
+//! no endereço-base), e uma porta com alvo nos bits de bloco vira um passo [`Step::Cross`]:
+//! um par de blocos por dispatch, um par de amplitudes por thread.
 
 use hgm_core::fused::FusedPhase;
 use hgm_core::pt::{Op, Pt};
@@ -203,6 +210,9 @@ impl RegionPass {
 pub enum Step {
     Region(RegionPass),
     Global(GpuGate),
+    /// Porta com o alvo nos bits que escolhem o bloco: os dois ramos do alvo estão em
+    /// blocos diferentes.
+    Cross(GpuGate),
 }
 
 /// Forma da região depois de ajustar aos limites: nunca maior que o estado.
@@ -246,15 +256,15 @@ struct Open {
     span: Option<(u32, u32)>,
 }
 
-fn close(open: Open, qubits: u32, c: u32, w: u32, steps: &mut Vec<Step>) {
+fn close(open: Open, local_bits: u32, c: u32, w: u32, steps: &mut Vec<Step>) {
     if open.ops.is_empty() {
         return;
     }
-    // Janela: começa no menor bit usado, mas recua se passaria do fim do estado.
-    // `qubits >= c + w` garante `qubits - w >= c`.
+    // Janela: começa no menor bit usado, mas recua se passaria do fim do bloco.
+    // `local_bits >= c + w` garante `local_bits - w >= c`.
     let start = match open.span {
         None => c,
-        Some((low, _)) => low.min(qubits - w),
+        Some((low, _)) => low.min(local_bits - w),
     };
     // Bits dentro da região: os `c` baixos e a janela `[start, start + w)`.
     let mut inside = if c >= 32 { u32::MAX } else { (1u32 << c) - 1 };
@@ -309,10 +319,24 @@ pub fn plan(gates: &[GpuGate], qubits: u32, coalesced_bits: u32, region_bits: u3
     plan_ops(&ops, qubits, coalesced_bits, region_bits)
 }
 
-/// Agrupa `ops`, na ordem dada, em passadas. A ordem das operações é preservada (não há
-/// reordenação por comutação aqui; ela é feita antes, por `schedule_for_batching`).
+/// Agrupa `ops`, na ordem dada, em passadas, com o estado num bloco só. A ordem das
+/// operações é preservada (não há reordenação por comutação aqui; ela é feita antes, por
+/// `schedule_for_batching`).
 pub fn plan_ops(ops: &[GpuOp], qubits: u32, coalesced_bits: u32, region_bits: u32) -> Vec<Step> {
-    let (c, w) = region_shape(qubits, coalesced_bits, region_bits);
+    plan_ops_chunked(ops, qubits, qubits, coalesced_bits, region_bits)
+}
+
+/// Como [`plan_ops`], com o estado dividido em blocos de `2^local_bits` amplitudes (ver o
+/// cabeçalho do módulo). `local_bits == qubits` é o estado num bloco só.
+pub fn plan_ops_chunked(
+    ops: &[GpuOp],
+    qubits: u32,
+    local_bits: u32,
+    coalesced_bits: u32,
+    region_bits: u32,
+) -> Vec<Step> {
+    let local_bits = local_bits.min(qubits);
+    let (c, w) = region_shape(local_bits, coalesced_bits, region_bits);
     let mut steps = Vec::new();
     let mut open = Open {
         ops: Vec::new(),
@@ -320,6 +344,20 @@ pub fn plan_ops(ops: &[GpuOp], qubits: u32, coalesced_bits: u32, region_bits: u3
     };
 
     for op in ops {
+        if let GpuOp::Gate(gate) = op {
+            if gate.target >= local_bits {
+                let finished = std::mem::replace(
+                    &mut open,
+                    Open {
+                        ops: Vec::new(),
+                        span: None,
+                    },
+                );
+                close(finished, local_bits, c, w, &mut steps);
+                steps.push(Step::Cross(*gate));
+                continue;
+            }
+        }
         let span = upper_span(op, c);
         if let Some((low, high)) = span {
             if high - low + 1 > w {
@@ -335,7 +373,7 @@ pub fn plan_ops(ops: &[GpuOp], qubits: u32, coalesced_bits: u32, region_bits: u3
                         span: None,
                     },
                 );
-                close(finished, qubits, c, w, &mut steps);
+                close(finished, local_bits, c, w, &mut steps);
                 steps.push(Step::Global(*gate));
                 continue;
             }
@@ -355,14 +393,14 @@ pub fn plan_ops(ops: &[GpuOp], qubits: u32, coalesced_bits: u32, region_bits: u3
                     span: None,
                 },
             );
-            close(finished, qubits, c, w, &mut steps);
+            close(finished, local_bits, c, w, &mut steps);
             open.span = span;
         } else {
             open.span = merged;
         }
         open.ops.push(op.clone());
     }
-    close(open, qubits, c, w, &mut steps);
+    close(open, local_bits, c, w, &mut steps);
     steps
 }
 
@@ -485,7 +523,7 @@ pub mod model {
         for step in steps {
             match step {
                 Step::Region(pass) => apply_region(state, qubits, pass),
-                Step::Global(gate) => apply_global(state, gate),
+                Step::Global(gate) | Step::Cross(gate) => apply_global(state, gate),
             }
         }
     }
@@ -616,7 +654,7 @@ mod tests {
             .iter()
             .map(|s| match s {
                 Step::Region(p) => p.ops.len(),
-                Step::Global(_) => 1,
+                Step::Global(_) | Step::Cross(_) => 1,
             })
             .sum();
         assert_eq!(counted, gates.len());
@@ -759,6 +797,69 @@ mod tests {
         assert_eq!(terms[0].local_value, 1 << 3);
         assert_eq!(terms[0].outer_mask, 1 << 20);
         assert_eq!(terms[0].outer_value, 1 << 20);
+    }
+
+    #[test]
+    fn chunked_plans_keep_windows_in_the_local_bits_and_equal_op_by_op_application() {
+        // (qubits, bits locais, coalescida, região): blocos de 2 a 16.
+        let shapes = [
+            (8, 7, 2, 4),
+            (10, 8, 3, 6),
+            (10, 6, 2, 5),
+            (12, 8, 4, 7),
+            (12, 9, 0, 4),
+            (11, 7, 3, 3),
+        ];
+        for (seed, &(qubits, local, c, k)) in shapes.iter().enumerate() {
+            let mut rng = Lcg(seed as u64 + 900);
+            let gates = random_gates(&mut rng, qubits, 60, 3);
+            let mut ops = Vec::new();
+            for gate in gates {
+                ops.push(GpuOp::Gate(gate));
+                if rng.below(3) == 0 {
+                    ops.push(GpuOp::Fused(random_terms(&mut rng, qubits)));
+                }
+            }
+            let initial = random_state(&mut rng, qubits);
+
+            let mut expected = initial.clone();
+            for op in &ops {
+                model::apply_op(&mut expected, op);
+            }
+            let steps = plan_ops_chunked(&ops, qubits, local, c, k);
+            let mut crossed = 0;
+            for step in &steps {
+                match step {
+                    Step::Region(pass) => {
+                        assert!(
+                            pass.window_start + pass.window_bits <= local,
+                            "{qubits}q bloco {local}: janela {}+{} passa do bloco",
+                            pass.window_start,
+                            pass.window_bits
+                        );
+                        assert!(pass.region_bits() <= local);
+                    }
+                    Step::Global(gate) => assert!(gate.target < local),
+                    Step::Cross(gate) => {
+                        assert!(gate.target >= local);
+                        crossed += 1;
+                    }
+                }
+            }
+            let targets_in_chunk_bits = ops
+                .iter()
+                .filter(|op| matches!(op, GpuOp::Gate(g) if g.target >= local))
+                .count();
+            assert_eq!(crossed, targets_in_chunk_bits);
+
+            let mut got = initial;
+            model::apply_plan(&mut got, qubits, &steps);
+            let diff = max_diff(&expected, &got);
+            assert!(
+                diff < 1e-5,
+                "{qubits}q bloco {local} c={c} k={k}: diferença {diff}"
+            );
+        }
     }
 
     #[test]

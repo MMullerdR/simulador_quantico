@@ -10,16 +10,10 @@ pub enum GpuError {
     #[error("falha ao abrir o dispositivo: {0}")]
     Device(String),
 
-    #[error(
-        "estado de {qubits} qubits ({bytes} bytes) não cabe: limite de buffer {max_buffer} \
-         bytes, de binding {max_binding} bytes"
-    )]
-    StateTooLarge {
-        qubits: u32,
-        bytes: u64,
-        max_buffer: u64,
-        max_binding: u64,
-    },
+    /// A GPU não tem memória para o estado (ou para os blocos auxiliares da
+    /// multiplicação modular).
+    #[error("sem memória na GPU: {0}")]
+    OutOfMemory(String),
 
     #[error("não suportado na GPU: {0}")]
     Unsupported(String),

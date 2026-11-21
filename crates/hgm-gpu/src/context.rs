@@ -1,6 +1,7 @@
 //! Dispositivo, pipelines e execução (wgpu). Tudo o que fala com a GPU fica aqui;
 //! o planejamento das passadas está em `plan.rs` e é testável sem GPU.
 
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Instant;
 
@@ -11,7 +12,7 @@ use hgm_core::C32;
 use wgpu::util::DeviceExt;
 
 use crate::error::{GpuError, Result};
-use crate::plan::{plan_ops, GpuGate, GpuOp, RegionGate, RegionOp, RegionTerm, Step};
+use crate::plan::{plan_ops_chunked, GpuGate, GpuOp, RegionGate, RegionOp, RegionTerm, Step};
 use crate::shaders;
 
 /// Teto da região em adaptadores de software (`DeviceType::Cpu`, como o WARP do Windows).
@@ -81,8 +82,17 @@ pub struct RunStats {
 /// Dispatches por comando enviado à GPU.
 const SUBMIT_CHUNK: u64 = 512;
 
+#[derive(Clone, Copy)]
+enum Kernel {
+    Region,
+    Global,
+    Cross,
+}
+
 struct Launch {
-    region: bool,
+    kernel: Kernel,
+    /// Grupo de recursos (índice em `PreparedRun::bind_groups`).
+    group: u32,
     /// Deslocamento (dinâmico) da passada no buffer de parâmetros.
     offset: u32,
     groups: (u32, u32),
@@ -91,31 +101,52 @@ struct Launch {
 /// Uma sequência de passadas já planejada e carregada na GPU para um estado.
 #[derive(Default)]
 pub struct PreparedRun {
-    bind_group: Option<wgpu::BindGroup>,
+    /// Um grupo por bloco do estado (passadas de região e globais), depois um por par de
+    /// blocos usado por portas cruzadas.
+    bind_groups: Vec<wgpu::BindGroup>,
     launches: Vec<Launch>,
+    region_passes: usize,
+    global_passes: usize,
     _buffers: Vec<wgpu::Buffer>,
 }
 
 impl PreparedRun {
-    /// Passadas por repetição: `(de região, globais)`.
+    /// Passadas por repetição: `(de região, globais)`. Uma passada de um estado em blocos
+    /// conta uma vez, mesmo rodando um dispatch por bloco; as portas cruzadas contam como
+    /// globais.
     pub fn passes(&self) -> (usize, usize) {
-        let region = self.launches.iter().filter(|l| l.region).count();
-        (region, self.launches.len() - region)
+        (self.region_passes, self.global_passes)
     }
 }
 
-/// Estado na GPU: `2^qubits` amplitudes `vec2<f32>`.
+/// Estado na GPU: `2^qubits` amplitudes `vec2<f32>`, em um ou mais blocos.
+///
+/// Se o estado cabe num binding só, é um bloco; senão, `2^(qubits - L)` blocos de `2^L`
+/// amplitudes (`L` = [`GpuState::chunk_bits`]), em ordem de índice: o bloco `i` guarda os
+/// índices `i * 2^L ..`.
 pub struct GpuState {
-    buffer: wgpu::Buffer,
-    /// Buffer de destino da multiplicação modular (troca de lugar com `buffer`); só
-    /// existe depois da primeira.
-    scratch: Option<wgpu::Buffer>,
+    chunks: Vec<wgpu::Buffer>,
+    /// Blocos de destino da multiplicação modular (trocam de lugar com os do estado); só
+    /// existem depois da primeira. Um só, se a multiplicação não mistura blocos; um por
+    /// bloco, se mistura.
+    scratch: Vec<wgpu::Buffer>,
     qubits: u32,
+    chunk_bits: u32,
 }
 
 impl GpuState {
     pub fn qubits(&self) -> u32 {
         self.qubits
+    }
+
+    /// `L`: log2 de amplitudes por bloco.
+    pub fn chunk_bits(&self) -> u32 {
+        self.chunk_bits
+    }
+
+    /// Quantos blocos (buffers) o estado tem.
+    pub fn chunk_count(&self) -> usize {
+        1usize << (self.qubits - self.chunk_bits)
     }
 }
 
@@ -127,8 +158,12 @@ struct ParamsRaw {
     c: u32,
     w: u32,
     s: u32,
+    /// Bits locais do bloco (`L`).
     n: u32,
-    pad: [u32; 2],
+    /// 1 se a passada tem porta de fase fundida.
+    fused: u32,
+    /// Número do bloco.
+    chunk: u32,
 }
 
 #[repr(C)]
@@ -199,18 +234,24 @@ pub struct GpuContext {
     timestamps: bool,
     options: GpuOptions,
     max_region_bits: u32,
+    /// Maior bloco (log2 de amplitudes) que cabe num binding.
+    max_chunk_bits: u32,
     uniform_slot: u64,
     region_pipeline: wgpu::ComputePipeline,
     global_pipeline: wgpu::ComputePipeline,
     measure_pipeline: wgpu::ComputePipeline,
     copy_pipeline: wgpu::ComputePipeline,
     collapse_pipeline: wgpu::ComputePipeline,
+    collapse_pair_pipeline: wgpu::ComputePipeline,
+    cross_pipeline: wgpu::ComputePipeline,
     mod_mult_pipeline: wgpu::ComputePipeline,
     /// Tabela `e^{i·2π·k/2^16}` das portas de fase fundida (a mesma da CPU).
     phase_buffer: wgpu::Buffer,
     layout_ops: wgpu::BindGroupLayout,
     layout_copy: wgpu::BindGroupLayout,
     layout_collapse: wgpu::BindGroupLayout,
+    layout_collapse_pair: wgpu::BindGroupLayout,
+    layout_cross: wgpu::BindGroupLayout,
     layout_mod_mult: wgpu::BindGroupLayout,
 }
 
@@ -256,6 +297,23 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 
 fn floor_log2(value: u64) -> u32 {
     63 - value.max(1).leading_zeros()
+}
+
+/// Separa os controles de uma porta em locais (dentro do bloco, conferidos no kernel) e de
+/// bloco (conferidos no host, que pula os blocos que não casam). Devolve a porta só com os
+/// controles locais, e a máscara e o valor dos controles de bloco (já deslocados).
+fn split_controls(gate: &GpuGate, local_bits: u32) -> (GpuGate, u32, u32) {
+    let low = (1u32 << local_bits) - 1;
+    let local_gate = GpuGate {
+        control_mask: gate.control_mask & low,
+        control_value: gate.control_value & low,
+        ..*gate
+    };
+    (
+        local_gate,
+        gate.control_mask >> local_bits,
+        gate.control_value >> local_bits,
+    )
 }
 
 impl GpuContext {
@@ -308,6 +366,11 @@ impl GpuContext {
             max_region_bits = max_region_bits.min(SOFTWARE_MAX_REGION_BITS);
         }
         let wg = options.workgroup_size;
+        // Um bloco precisa caber num buffer e num binding; índices de 32 bits.
+        let max_chunk_bytes = limits
+            .max_buffer_size
+            .min(limits.max_storage_buffer_binding_size);
+        let max_chunk_bits = floor_log2(max_chunk_bytes / 8).min(31);
 
         let compile = |label: &str, source: String| {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -321,6 +384,8 @@ impl GpuContext {
         let copy_module = compile("copy", shaders::copy_kernel(wg));
         let collapse_module = compile("collapse", shaders::collapse_kernel(wg));
         let mod_mult_module = compile("mod_mult", shaders::mod_mult_kernel(wg));
+        let collapse_pair_module = compile("collapse_pair", shaders::collapse_pair_kernel(wg));
+        let cross_module = compile("cross", shaders::cross_kernel(wg));
 
         // state (rw), ops (ro), parâmetros (uniform com offset dinâmico).
         let layout_ops = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -351,6 +416,25 @@ impl GpuContext {
             label: Some("collapse"),
             entries: &[storage_entry(0, false), plain_uniform_entry(1)],
         });
+        // bloco com o alvo em 0 (rw), portas, parâmetros, bloco com o alvo em 1 (rw).
+        let layout_cross = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("cross"),
+            entries: &[
+                storage_entry(0, false),
+                storage_entry(1, true),
+                uniform_entry(2),
+                storage_entry(3, false),
+            ],
+        });
+        let layout_collapse_pair =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("collapse pair"),
+                entries: &[
+                    storage_entry(0, false),
+                    storage_entry(1, false),
+                    plain_uniform_entry(2),
+                ],
+            });
         let layout_mod_mult = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("mod_mult"),
             entries: &[
@@ -385,6 +469,12 @@ impl GpuContext {
         let copy_pipeline = pipeline("copy", &copy_module, &layout_copy);
         let collapse_pipeline = pipeline("collapse", &collapse_module, &layout_collapse);
         let mod_mult_pipeline = pipeline("mod_mult", &mod_mult_module, &layout_mod_mult);
+        let collapse_pair_pipeline = pipeline(
+            "collapse_pair",
+            &collapse_pair_module,
+            &layout_collapse_pair,
+        );
+        let cross_pipeline = pipeline("cross", &cross_module, &layout_cross);
 
         let uniform_slot = u64::from(limits.min_uniform_buffer_offset_alignment)
             .max(std::mem::size_of::<ParamsRaw>() as u64);
@@ -403,17 +493,22 @@ impl GpuContext {
             timestamps,
             options,
             max_region_bits,
+            max_chunk_bits,
             uniform_slot,
             region_pipeline,
             global_pipeline,
             measure_pipeline,
             copy_pipeline,
             collapse_pipeline,
+            collapse_pair_pipeline,
+            cross_pipeline,
             mod_mult_pipeline,
             phase_buffer,
             layout_ops,
             layout_copy,
             layout_collapse,
+            layout_collapse_pair,
+            layout_cross,
             layout_mod_mult,
         };
         // Erros de validação de shader/pipeline aparecem aqui, não na primeira execução.
@@ -445,6 +540,18 @@ impl GpuContext {
         self.max_region_bits
     }
 
+    /// Maior bloco (log2 de amplitudes) que cabe num binding deste dispositivo: estados
+    /// maiores são divididos em blocos.
+    pub fn max_chunk_bits(&self) -> u32 {
+        self.max_chunk_bits
+    }
+
+    /// Bits locais (`L`) de um estado de `qubits` qubits, com blocos de no máximo
+    /// `2^max_chunk_bits` amplitudes (além do limite do dispositivo).
+    pub fn local_bits(&self, qubits: u32, max_chunk_bits: u32) -> u32 {
+        qubits.min(max_chunk_bits).min(self.max_chunk_bits)
+    }
+
     pub fn workgroup_size(&self) -> u32 {
         self.options.workgroup_size
     }
@@ -452,68 +559,120 @@ impl GpuContext {
     /// Uma linha para relatórios.
     pub fn describe(&self) -> String {
         format!(
-            "{} ({:?}, {:?}); região máx. {} bits; buffer máx. {} MiB; binding máx. {} MiB; \
-             timestamps: {}",
+            "{} ({:?}, {:?}); região máx. {} bits; buffer máx. {} MiB; binding máx. {} MiB \
+             (bloco de até {} qubits); timestamps: {}",
             self.info.name,
             self.info.backend,
             self.info.device_type,
             self.max_region_bits,
             self.limits.max_buffer_size >> 20,
             self.limits.max_storage_buffer_binding_size >> 20,
+            self.max_chunk_bits,
             self.timestamps,
         )
     }
 
-    /// Estado de base `|index>`.
+    /// Estado de base `|index>`, com os blocos que o dispositivo permitir.
     pub fn basis_state(&self, qubits: u32, index: u32) -> Result<GpuState> {
-        let state = self.alloc_state(qubits)?;
+        self.basis_state_in_chunks(qubits, index, u32::MAX)
+    }
+
+    /// Como [`GpuContext::basis_state`], com blocos de no máximo `2^max_chunk_bits`
+    /// amplitudes (para testar a divisão em estados pequenos).
+    pub fn basis_state_in_chunks(
+        &self,
+        qubits: u32,
+        index: u32,
+        max_chunk_bits: u32,
+    ) -> Result<GpuState> {
+        let state = self.alloc_state(qubits, max_chunk_bits)?;
+        if u64::from(index) >= 1u64 << qubits {
+            return Err(GpuError::Unsupported(format!(
+                "índice {index} fora de um estado de {qubits} qubits"
+            )));
+        }
         let one = [1.0f32, 0.0];
-        self.queue.write_buffer(
-            &state.buffer,
-            u64::from(index) * 8,
-            bytemuck::cast_slice(&one),
-        );
+        let chunk = (index >> state.chunk_bits) as usize;
+        let local = u64::from(index) & ((1u64 << state.chunk_bits) - 1);
+        self.queue
+            .write_buffer(&state.chunks[chunk], local * 8, bytemuck::cast_slice(&one));
         Ok(state)
     }
 
     /// Estado com as amplitudes dadas (`2^qubits` valores).
     pub fn state_from(&self, qubits: u32, amplitudes: &[C32]) -> Result<GpuState> {
+        self.state_from_in_chunks(qubits, amplitudes, u32::MAX)
+    }
+
+    /// Como [`GpuContext::state_from`], com blocos de no máximo `2^max_chunk_bits`
+    /// amplitudes.
+    pub fn state_from_in_chunks(
+        &self,
+        qubits: u32,
+        amplitudes: &[C32],
+        max_chunk_bits: u32,
+    ) -> Result<GpuState> {
         assert_eq!(amplitudes.len(), 1usize << qubits, "tamanho do estado");
-        let state = self.alloc_state(qubits)?;
-        self.queue
-            .write_buffer(&state.buffer, 0, bytemuck::cast_slice(amplitudes));
+        let state = self.alloc_state(qubits, max_chunk_bits)?;
+        let size = 1usize << state.chunk_bits;
+        for (chunk, part) in state.chunks.iter().zip(amplitudes.chunks(size)) {
+            self.queue
+                .write_buffer(chunk, 0, bytemuck::cast_slice(part));
+        }
         Ok(state)
     }
 
-    fn alloc_state(&self, qubits: u32) -> Result<GpuState> {
+    fn alloc_state(&self, qubits: u32, max_chunk_bits: u32) -> Result<GpuState> {
         if qubits == 0 || qubits > 31 {
             return Err(GpuError::Unsupported(format!(
                 "{qubits} qubits (o spike aceita de 1 a 31)"
             )));
         }
-        let bytes = 8u64 << qubits;
-        let max_binding = self.limits.max_storage_buffer_binding_size;
-        if bytes > self.limits.max_buffer_size || bytes > max_binding {
-            return Err(GpuError::StateTooLarge {
-                qubits,
-                bytes,
-                max_buffer: self.limits.max_buffer_size,
-                max_binding,
-            });
+        let chunk_bits = self.local_bits(qubits, max_chunk_bits);
+        if chunk_bits == 0 {
+            return Err(GpuError::Unsupported(
+                "blocos de uma amplitude só (limite de buffer do dispositivo ou do pedido)"
+                    .to_owned(),
+            ));
         }
-        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("state"),
-            size: bytes,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_SRC
-                | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let count = 1usize << (qubits - chunk_bits);
+        let chunks = self.alloc_chunks(count, chunk_bits, "state")?;
         Ok(GpuState {
-            buffer,
-            scratch: None,
+            chunks,
+            scratch: Vec::new(),
             qubits,
+            chunk_bits,
         })
+    }
+
+    /// `count` blocos de `2^chunk_bits` amplitudes. Falta de memória da GPU volta como
+    /// erro (e não como queda do dispositivo): um estado de 31 qubits ocupa 16 GiB.
+    fn alloc_chunks(
+        &self,
+        count: usize,
+        chunk_bits: u32,
+        label: &'static str,
+    ) -> Result<Vec<wgpu::Buffer>> {
+        let guard = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let buffers: Vec<wgpu::Buffer> = (0..count)
+            .map(|_| {
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(label),
+                    size: 8u64 << chunk_bits,
+                    usage: wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::COPY_SRC
+                        | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
+        match pollster::block_on(guard.pop()) {
+            None => Ok(buffers),
+            Some(error) => Err(GpuError::OutOfMemory(format!(
+                "{count} bloco(s) de {} MiB: {error}",
+                (8u64 << chunk_bits) >> 20
+            ))),
+        }
     }
 
     /// Dispatch 2D (x, y) para `groups` workgroups, respeitando o limite por dimensão.
@@ -544,8 +703,17 @@ impl GpuContext {
         gpu_ops: &[GpuOp],
         tuning: RunTuning,
     ) -> Result<PreparedRun> {
+        let local = state.chunk_bits;
+        let chunks = state.chunk_count();
         let region_bits = tuning.region_bits.min(self.max_region_bits);
-        let steps = plan_ops(gpu_ops, state.qubits, tuning.coalesced_bits, region_bits);
+        let steps = plan_ops_chunked(
+            gpu_ops,
+            state.qubits,
+            local,
+            tuning.coalesced_bits,
+            region_bits,
+        );
+        let wg = u64::from(self.options.workgroup_size);
 
         // Parâmetros, operações e termos de fase de todas as passadas, em três buffers só.
         let mut ops: Vec<OpRaw> = Vec::new();
@@ -553,9 +721,34 @@ impl GpuContext {
         let mut params: Vec<u8> = Vec::new();
         let slot = self.uniform_slot as usize;
         let mut launches: Vec<Launch> = Vec::new();
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        let mut pair_index: HashMap<(usize, usize), u32> = HashMap::new();
+        let (mut region_passes, mut global_passes) = (0usize, 0usize);
+
+        let mut launch = |raw: ParamsRaw, kernel: Kernel, group: u32, groups: u64| {
+            let offset = params.len();
+            params.extend_from_slice(bytemuck::bytes_of(&raw));
+            params.resize(offset + slot, 0);
+            launches.push(Launch {
+                kernel,
+                group,
+                offset: offset as u32,
+                groups: self.dispatch_size(groups),
+            });
+        };
+        let base = ParamsRaw {
+            op_start: 0,
+            op_count: 1,
+            c: 0,
+            w: 0,
+            s: 0,
+            n: local,
+            fused: 0,
+            chunk: 0,
+        };
 
         for step in &steps {
-            let (raw, region, groups) = match step {
+            match step {
                 Step::Region(pass) => {
                     let start = ops.len() as u32;
                     for op in &pass.ops {
@@ -568,51 +761,65 @@ impl GpuContext {
                             }
                         }
                     }
-                    let k = pass.region_bits();
                     let has_fused = pass.ops.iter().any(|op| matches!(op, RegionOp::Fused(_)));
-                    (
-                        ParamsRaw {
+                    let regions = 1u64 << (local - pass.region_bits());
+                    for chunk in 0..chunks {
+                        let raw = ParamsRaw {
                             op_start: start,
                             op_count: pass.ops.len() as u32,
                             c: pass.coalesced_bits,
                             w: pass.window_bits,
                             s: pass.window_start,
-                            n: state.qubits,
                             // Marca passada com portas de fase (o kernel só pára para
                             // montar a lista de termos ativos nessas).
-                            pad: [u32::from(has_fused), 0],
-                        },
-                        true,
-                        1u64 << (state.qubits - k),
-                    )
+                            fused: u32::from(has_fused),
+                            chunk: chunk as u32,
+                            ..base
+                        };
+                        launch(raw, Kernel::Region, chunk as u32, regions);
+                    }
+                    region_passes += 1;
                 }
                 Step::Global(gate) => {
+                    let (local_gate, chunk_mask, chunk_value) = split_controls(gate, local);
                     let start = ops.len() as u32;
-                    ops.push(OpRaw::global(gate));
-                    let pairs = 1u64 << (state.qubits - 1);
-                    (
-                        ParamsRaw {
+                    ops.push(OpRaw::global(&local_gate));
+                    let groups = (1u64 << (local - 1)).div_ceil(wg);
+                    for chunk in (0..chunks).filter(|c| *c as u32 & chunk_mask == chunk_value) {
+                        let raw = ParamsRaw {
                             op_start: start,
-                            op_count: 1,
-                            c: 0,
-                            w: 0,
-                            s: 0,
-                            n: state.qubits,
-                            pad: [0; 2],
-                        },
-                        false,
-                        pairs.div_ceil(u64::from(self.options.workgroup_size)),
-                    )
+                            chunk: chunk as u32,
+                            ..base
+                        };
+                        launch(raw, Kernel::Global, chunk as u32, groups);
+                    }
+                    global_passes += 1;
                 }
-            };
-            let offset = params.len();
-            params.extend_from_slice(bytemuck::bytes_of(&raw));
-            params.resize(offset + slot, 0);
-            launches.push(Launch {
-                region,
-                offset: offset as u32,
-                groups: self.dispatch_size(groups),
-            });
+                Step::Cross(gate) => {
+                    let (local_gate, chunk_mask, chunk_value) = split_controls(gate, local);
+                    let start = ops.len() as u32;
+                    ops.push(OpRaw::global(&local_gate));
+                    let target_bit = gate.target - local;
+                    let groups = (1u64 << local).div_ceil(wg);
+                    for lo in 0..chunks {
+                        if (lo >> target_bit) & 1 == 1 || lo as u32 & chunk_mask != chunk_value {
+                            continue;
+                        }
+                        let hi = lo | (1usize << target_bit);
+                        let next = (chunks + pairs.len()) as u32;
+                        let group = *pair_index.entry((lo, hi)).or_insert_with(|| {
+                            pairs.push((lo, hi));
+                            next
+                        });
+                        let raw = ParamsRaw {
+                            op_start: start,
+                            ..base
+                        };
+                        launch(raw, Kernel::Cross, group, groups);
+                    }
+                    global_passes += 1;
+                }
+            }
         }
         if ops.is_empty() {
             return Ok(PreparedRun::default());
@@ -644,39 +851,72 @@ impl GpuContext {
                 contents: bytemuck::cast_slice(&terms),
                 usage: wgpu::BufferUsages::STORAGE,
             });
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ops"),
-            layout: &self.layout_ops,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: state.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: ops_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &params_buffer,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(std::mem::size_of::<ParamsRaw>() as u64),
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: terms_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: self.phase_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let params_binding = || {
+            wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &params_buffer,
+                offset: 0,
+                size: wgpu::BufferSize::new(std::mem::size_of::<ParamsRaw>() as u64),
+            })
+        };
+
+        let mut bind_groups = Vec::with_capacity(chunks + pairs.len());
+        for chunk in &state.chunks {
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("ops"),
+                layout: &self.layout_ops,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: chunk.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: ops_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: params_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: terms_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: self.phase_buffer.as_entire_binding(),
+                    },
+                ],
+            }));
+        }
+        for &(lo, hi) in &pairs {
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("cross"),
+                layout: &self.layout_cross,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: state.chunks[lo].as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: ops_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: params_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: state.chunks[hi].as_entire_binding(),
+                    },
+                ],
+            }));
+        }
         Ok(PreparedRun {
-            bind_group: Some(bind_group),
+            bind_groups,
             launches,
+            region_passes,
+            global_passes,
             _buffers: vec![ops_buffer, params_buffer, terms_buffer],
         })
     }
@@ -686,9 +926,9 @@ impl GpuContext {
     /// para o sistema cancelar (TDR do Windows, ~2 s; R2 de `docs/11`).
     pub fn run(&self, prepared: &PreparedRun, repetitions: u32) -> Result<RunStats> {
         let started = Instant::now();
-        let Some(bind_group) = &prepared.bind_group else {
+        if prepared.launches.is_empty() {
             return Ok(RunStats::default());
-        };
+        }
 
         let per_rep = prepared.launches.len() as u64;
         let total = per_rep * u64::from(repetitions);
@@ -707,12 +947,16 @@ impl GpuContext {
                 });
                 for index in sent..sent + count {
                     let launch = &prepared.launches[(index % per_rep) as usize];
-                    pass.set_pipeline(if launch.region {
-                        &self.region_pipeline
-                    } else {
-                        &self.global_pipeline
+                    pass.set_pipeline(match launch.kernel {
+                        Kernel::Region => &self.region_pipeline,
+                        Kernel::Global => &self.global_pipeline,
+                        Kernel::Cross => &self.cross_pipeline,
                     });
-                    pass.set_bind_group(0, bind_group, &[launch.offset]);
+                    pass.set_bind_group(
+                        0,
+                        &prepared.bind_groups[launch.group as usize],
+                        &[launch.offset],
+                    );
                     pass.dispatch_workgroups(launch.groups.0, launch.groups.1, 1);
                 }
             }
@@ -758,25 +1002,47 @@ impl GpuContext {
 
     /// Lê `count` amplitudes a partir de `first`.
     pub fn read_range(&self, state: &GpuState, first: u64, count: u64) -> Result<Vec<C32>> {
-        let bytes = count * 8;
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("staging"),
-            size: bytes,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(&state.buffer, first * 8, &staging, 0, bytes);
-        self.queue.submit(Some(encoder.finish()));
-        self.map_read(&staging)
+        let mut out = bytemuck::allocation::try_zeroed_vec::<C32>(count as usize)
+            .map_err(|_| GpuError::Readback(format!("sem memória para {count} amplitudes")))?;
+        self.read_range_into(state, first, &mut out)?;
+        Ok(out)
     }
 
     /// Lê o estado inteiro para `out` (que já existe e já foi tocado, como o `state` do
     /// C++): evita alocar e faltar páginas de um `Vec` novo de `2^n * 8` bytes.
     pub fn read_into(&self, state: &GpuState, out: &mut [C32]) -> Result<()> {
         assert_eq!(out.len(), 1usize << state.qubits, "tamanho do estado");
+        self.read_range_into(state, 0, out)
+    }
+
+    pub fn read_state(&self, state: &GpuState) -> Result<Vec<C32>> {
+        self.read_range(state, 0, 1u64 << state.qubits)
+    }
+
+    /// Lê `out.len()` amplitudes a partir de `first`, um bloco por vez.
+    fn read_range_into(&self, state: &GpuState, first: u64, out: &mut [C32]) -> Result<()> {
+        if first + out.len() as u64 > 1u64 << state.qubits {
+            return Err(GpuError::Unsupported(format!(
+                "leitura de {} amplitudes a partir de {first} passa do fim de um estado de {} qubits",
+                out.len(),
+                state.qubits
+            )));
+        }
+        let size = 1u64 << state.chunk_bits;
+        let mut done = 0usize;
+        while done < out.len() {
+            let index = first + done as u64;
+            let chunk = (index >> state.chunk_bits) as usize;
+            let local = index & (size - 1);
+            let len = ((size - local) as usize).min(out.len() - done);
+            self.read_segment(&state.chunks[chunk], local * 8, &mut out[done..done + len])?;
+            done += len;
+        }
+        Ok(())
+    }
+
+    /// Copia `out.len()` amplitudes de `buffer` (a partir de `offset` bytes) para `out`.
+    fn read_segment(&self, buffer: &wgpu::Buffer, offset: u64, out: &mut [C32]) -> Result<()> {
         let bytes = (out.len() as u64) * 8;
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
@@ -787,7 +1053,7 @@ impl GpuContext {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(&state.buffer, 0, &staging, 0, bytes);
+        encoder.copy_buffer_to_buffer(buffer, offset, &staging, 0, bytes);
         self.queue.submit(Some(encoder.finish()));
 
         let slice = staging.slice(..);
@@ -807,10 +1073,6 @@ impl GpuContext {
         }
         staging.unmap();
         Ok(())
-    }
-
-    pub fn read_state(&self, state: &GpuState) -> Result<Vec<C32>> {
-        self.read_range(state, 0, 1u64 << state.qubits)
     }
 
     fn map_read<T: Pod>(&self, buffer: &wgpu::Buffer) -> Result<Vec<T>> {
@@ -849,14 +1111,16 @@ impl GpuContext {
                 state.qubits
             )));
         }
+        let local = state.chunk_bits;
+        let in_chunk = shift < local;
         let params = [
-            shift,
+            if in_chunk { shift } else { 0 },
             u32::from(bit),
             match mode {
                 CollapseMode::Measure => 0,
                 CollapseMode::InPlace => 1,
             },
-            state.qubits,
+            local,
             scale.to_bits(),
             0,
             0,
@@ -869,30 +1133,106 @@ impl GpuContext {
                 contents: bytemuck::cast_slice(&params),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("collapse"),
-            layout: &self.layout_collapse,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: state.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: params_buffer.as_entire_binding(),
-                },
-            ],
-        });
-        let pairs = 1u64 << (state.qubits - 1);
-        let groups = self.dispatch_size(pairs.div_ceil(u64::from(self.options.workgroup_size)));
-        self.dispatch_once(&self.collapse_pipeline, &bind_group, groups);
+        let wg = u64::from(self.options.workgroup_size);
+        let mut items: Vec<(wgpu::BindGroup, (u32, u32))> = Vec::new();
+        if in_chunk {
+            // O qubit está dentro do bloco: cada bloco se colapsa sozinho.
+            let groups = self.dispatch_size((1u64 << (local - 1)).div_ceil(wg));
+            for chunk in &state.chunks {
+                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("collapse"),
+                    layout: &self.layout_collapse,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: chunk.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: params_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+                items.push((bind_group, groups));
+            }
+            self.dispatch_all(&self.collapse_pipeline, &items);
+        } else {
+            // O qubit escolhe o bloco: os dois ramos estão em blocos diferentes.
+            let target_bit = shift - local;
+            let groups = self.dispatch_size((1u64 << local).div_ceil(wg));
+            for lo in (0..state.chunk_count()).filter(|c| (c >> target_bit) & 1 == 0) {
+                let hi = lo | (1usize << target_bit);
+                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("collapse pair"),
+                    layout: &self.layout_collapse_pair,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: state.chunks[lo].as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: state.chunks[hi].as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: params_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+                items.push((bind_group, groups));
+            }
+            self.dispatch_all(&self.collapse_pair_pipeline, &items);
+        }
         Ok(())
     }
 
     /// Multiplicação modular controlada (`hgm_core::modmult::plan_mod_mult`): cada
-    /// amplitude de destino lê a de origem num buffer de destino separado, e os dois
-    /// trocam de lugar. Aloca o segundo buffer (mesmo tamanho do estado) na primeira vez.
+    /// amplitude de destino lê a de origem em blocos de destino separados, e os blocos
+    /// trocam de lugar com os do estado.
+    ///
+    /// Se o registrador (e o bit de controle) estão dentro dos bits locais do bloco, a origem
+    /// de cada posição está no mesmo bloco e basta um bloco auxiliar, reaproveitado. Se o
+    /// registrador cruza o limite do bloco, a origem pode estar em outro bloco e é preciso
+    /// um conjunto inteiro de blocos auxiliares (o dobro da memória do estado).
     pub fn mod_mult(&self, state: &mut GpuState, plan: &ModMultPlan) -> Result<()> {
+        let local = state.chunk_bits;
+        let chunks = state.chunk_count();
+
+        // De quais blocos cada bloco de destino lê (sempre inclui o próprio: é onde caem as
+        // posições que não mudam). Só aparecem os blocos que a tabela alcança.
+        let register_chunk_bits = ((1u64 << plan.width) - 1) << plan.reg_shift >> local;
+        let control_in_chunk = plan.ctrl_shift >= local;
+        let mut sources: Vec<Vec<usize>> = vec![Vec::new(); chunks];
+        for (dst, list) in sources.iter_mut().enumerate() {
+            list.push(dst);
+            if control_in_chunk && (dst >> (plan.ctrl_shift - local)) & 1 == 0 {
+                continue; // controle em 0 neste bloco: nada muda
+            }
+            for x in 0..plan.modulus {
+                let moved = u64::from(x ^ plan.gather[x as usize]) << plan.reg_shift >> local;
+                if moved == 0 {
+                    continue;
+                }
+                // Só vale se os bits de bloco de `x` são os do bloco de destino.
+                let x_chunk_bits = u64::from(x) << plan.reg_shift >> local;
+                if x_chunk_bits != dst as u64 & register_chunk_bits {
+                    continue;
+                }
+                let source = dst ^ moved as usize;
+                if !list.contains(&source) {
+                    list.push(source);
+                }
+            }
+        }
+        let within_chunks = sources.iter().all(|list| list.len() == 1);
+
+        let needed = if within_chunks { 1 } else { chunks };
+        if state.scratch.len() < needed {
+            let more = self.alloc_chunks(needed - state.scratch.len(), local, "state scratch")?;
+            state.scratch.extend(more);
+        }
+
         let gather_bytes = (u64::from(plan.modulus) * 4).max(16);
         let gather = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mod_mult gather"),
@@ -902,74 +1242,79 @@ impl GpuContext {
         });
         self.queue
             .write_buffer(&gather, 0, bytemuck::cast_slice(&plan.gather));
-        let params = [
-            state.qubits,
-            plan.ctrl_shift,
-            plan.reg_shift,
-            plan.width,
-            plan.modulus,
-            0,
-            0,
-            0,
-        ];
-        let params_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("mod_mult params"),
-                contents: bytemuck::cast_slice(&params),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-        if state.scratch.is_none() {
-            state.scratch = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("state scratch"),
-                size: 8u64 << state.qubits,
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }));
+        let groups =
+            self.dispatch_size((1u64 << local).div_ceil(u64::from(self.options.workgroup_size)));
+
+        let mut items: Vec<(wgpu::BindGroup, (u32, u32))> = Vec::new();
+        for (dst, list) in sources.iter().enumerate() {
+            let target = if within_chunks {
+                &state.scratch[0]
+            } else {
+                &state.scratch[dst]
+            };
+            for &source in list {
+                let params = [
+                    local,
+                    plan.ctrl_shift,
+                    plan.reg_shift,
+                    plan.width,
+                    plan.modulus,
+                    dst as u32,
+                    source as u32,
+                    0,
+                ];
+                let params_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("mod_mult params"),
+                            contents: bytemuck::cast_slice(&params),
+                            usage: wgpu::BufferUsages::UNIFORM,
+                        });
+                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("mod_mult"),
+                    layout: &self.layout_mod_mult,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: state.chunks[source].as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: target.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: gather.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: params_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+                items.push((bind_group, groups));
+            }
+            if within_chunks {
+                // O bloco antigo vira o auxiliar do próximo (os grupos de recursos já
+                // guardam os buffers certos).
+                std::mem::swap(&mut state.chunks[dst], &mut state.scratch[0]);
+            }
         }
-        let Some(scratch) = state.scratch.as_ref() else {
-            return Err(GpuError::Unsupported("buffer auxiliar".to_owned()));
-        };
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("mod_mult"),
-            layout: &self.layout_mod_mult,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: state.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: scratch.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: gather.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: params_buffer.as_entire_binding(),
-                },
-            ],
-        });
-        let groups = self
-            .dispatch_size((1u64 << state.qubits).div_ceil(u64::from(self.options.workgroup_size)));
-        self.dispatch_once(&self.mod_mult_pipeline, &bind_group, groups);
-        if let Some(mut scratch) = state.scratch.take() {
-            std::mem::swap(&mut state.buffer, &mut scratch);
-            state.scratch = Some(scratch);
+        if !within_chunks {
+            for (chunk, scratch) in state.chunks.iter_mut().zip(state.scratch.iter_mut()) {
+                std::mem::swap(chunk, scratch);
+            }
         }
+        self.dispatch_all(&self.mod_mult_pipeline, &items);
         Ok(())
     }
 
-    /// Um dispatch num comando só (kernels pequenos: colapso e `modmult`).
-    fn dispatch_once(
+    /// Vários dispatches do mesmo kernel num comando só (colapso e `modmult`; um por
+    /// bloco ou par de blocos).
+    fn dispatch_all(
         &self,
         pipeline: &wgpu::ComputePipeline,
-        bind_group: &wgpu::BindGroup,
-        groups: (u32, u32),
+        items: &[(wgpu::BindGroup, (u32, u32))],
     ) {
         let mut encoder = self
             .device
@@ -980,27 +1325,40 @@ impl GpuContext {
                 timestamp_writes: None,
             });
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, bind_group, &[]);
-            pass.dispatch_workgroups(groups.0, groups.1, 1);
+            for (bind_group, groups) in items {
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.dispatch_workgroups(groups.0, groups.1, 1);
+            }
         }
         self.queue.submit(Some(encoder.finish()));
     }
 
     /// Soma de `|a|^2` com o bit `bit` em 0 e em 1: parciais em `f32` por workgroup
-    /// na GPU, fechamento em `f64` aqui.
+    /// na GPU, fechamento em `f64` aqui. Num estado em blocos cada bloco tem os seus
+    /// parciais; se o bit escolhe o bloco, o bloco inteiro vai para um dos lados.
     pub fn measure_sums(&self, state: &GpuState, bit: u32) -> Result<(f64, f64)> {
         const GROUPS: u32 = 1024;
-        let params = ParamsRaw {
-            op_start: 0,
-            op_count: 0,
-            c: 0,
-            w: 0,
-            s: bit,
-            n: state.qubits,
-            pad: [0; 2],
-        };
-        let mut params_bytes = bytemuck::bytes_of(&params).to_vec();
-        params_bytes.resize(self.uniform_slot as usize, 0);
+        let local = state.chunk_bits;
+        let chunks = state.chunk_count();
+        let in_chunk = bit < local;
+
+        let mut params_bytes = Vec::new();
+        for chunk in 0..chunks {
+            let params = ParamsRaw {
+                op_start: 0,
+                op_count: 0,
+                c: 0,
+                w: 0,
+                // Se o bit escolhe o bloco, soma-se o bloco todo (bit local qualquer).
+                s: if in_chunk { bit } else { 0 },
+                n: local,
+                fused: 0,
+                chunk: chunk as u32,
+            };
+            let offset = params_bytes.len();
+            params_bytes.extend_from_slice(bytemuck::bytes_of(&params));
+            params_bytes.resize(offset + self.uniform_slot as usize, 0);
+        }
         let params_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1008,7 +1366,7 @@ impl GpuContext {
                 contents: &params_bytes,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
-        let partial_bytes = u64::from(GROUPS) * 2 * 4;
+        let partial_bytes = chunks as u64 * u64::from(GROUPS) * 2 * 4;
         let partial = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("partials"),
             size: partial_bytes,
@@ -1022,28 +1380,36 @@ impl GpuContext {
             mapped_at_creation: false,
         });
         let layout = self.measure_pipeline.get_bind_group_layout(0);
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("measure"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: state.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: partial.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &params_buffer,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(std::mem::size_of::<ParamsRaw>() as u64),
-                    }),
-                },
-            ],
-        });
+        let bind_groups: Vec<wgpu::BindGroup> = state
+            .chunks
+            .iter()
+            .map(|chunk| {
+                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("measure"),
+                    layout: &layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: chunk.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: partial.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &params_buffer,
+                                offset: 0,
+                                size: wgpu::BufferSize::new(
+                                    std::mem::size_of::<ParamsRaw>() as u64
+                                ),
+                            }),
+                        },
+                    ],
+                })
+            })
+            .collect();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -1053,17 +1419,32 @@ impl GpuContext {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.measure_pipeline);
-            pass.set_bind_group(0, &bind_group, &[0]);
-            pass.dispatch_workgroups(GROUPS, 1, 1);
+            for (chunk, bind_group) in bind_groups.iter().enumerate() {
+                let offset = chunk as u64 * self.uniform_slot;
+                pass.set_bind_group(0, bind_group, &[offset as u32]);
+                pass.dispatch_workgroups(GROUPS, 1, 1);
+            }
         }
         encoder.copy_buffer_to_buffer(&partial, 0, &staging, 0, partial_bytes);
         self.queue.submit(Some(encoder.finish()));
         let sums: Vec<f32> = self.map_read(&staging)?;
         let (mut zero, mut one) = (0.0f64, 0.0f64);
-        let (pairs, _) = sums.as_chunks::<2>();
-        for pair in pairs {
-            zero += f64::from(pair[0]);
-            one += f64::from(pair[1]);
+        let per_chunk = GROUPS as usize * 2;
+        for (chunk, block) in sums.chunks(per_chunk).enumerate() {
+            let (mut chunk_zero, mut chunk_one) = (0.0f64, 0.0f64);
+            let (pairs, _) = block.as_chunks::<2>();
+            for pair in pairs {
+                chunk_zero += f64::from(pair[0]);
+                chunk_one += f64::from(pair[1]);
+            }
+            if in_chunk {
+                zero += chunk_zero;
+                one += chunk_one;
+            } else if (chunk >> (bit - local)) & 1 == 1 {
+                one += chunk_zero + chunk_one;
+            } else {
+                zero += chunk_zero + chunk_one;
+            }
         }
         Ok((zero, one))
     }

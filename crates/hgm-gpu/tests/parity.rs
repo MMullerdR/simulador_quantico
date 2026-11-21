@@ -257,3 +257,142 @@ fn repeated_runs_give_identical_results() {
         }
     }
 }
+
+#[test]
+fn chunked_states_match_the_serial_cpu_on_random_circuits() {
+    let Some(context) = gpu() else { return };
+
+    // (qubits, bloco máx., região, coalescida): blocos de 1 a 128 amplitudes, regiões
+    // que cabem e que não cabem no bloco, e coalescida maior que o bloco.
+    let combos: [(usize, u32, u32, u32); 10] = [
+        (8, 7, 12, 4),
+        (8, 5, 4, 2),
+        (9, 3, 12, 4),
+        (10, 4, 5, 1),
+        (10, 9, 6, 3),
+        (11, 2, 12, 4),
+        (12, 6, 6, 2),
+        (12, 8, 12, 4),
+        (12, 3, 3, 0),
+        (13, 10, 8, 3),
+    ];
+    // Em adaptador de software (WARP) só os primeiros combos: o custo é o de cada execução.
+    let used = if is_software(context) {
+        5
+    } else {
+        combos.len()
+    };
+    for (index, &(qubits, cap, region_bits, coalesced_bits)) in combos.iter().enumerate().take(used)
+    {
+        let mut rng = Lcg(5000 + index as u64);
+        let steps: Vec<String> = (0..50).map(|_| random_step(&mut rng, qubits)).collect();
+        let program = compile_steps(&steps, 2, &GateCatalog::with_base_gates()).unwrap();
+        let initial = random_amplitudes(&mut rng, qubits);
+
+        let mut cpu_state = StateVector::from_f32_le_bytes(
+            qubits,
+            &initial
+                .iter()
+                .flat_map(|a| [a.re.to_le_bytes(), a.im.to_le_bytes()])
+                .flatten()
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap();
+        SerialBackend::new()
+            .execute(&mut cpu_state, &program, 1)
+            .unwrap();
+
+        let gates = gates_of(&program, 1).unwrap();
+        let state = context
+            .state_from_in_chunks(qubits as u32, &initial, cap)
+            .unwrap();
+        let local = cap.min(qubits as u32).min(context.max_chunk_bits());
+        assert_eq!(state.chunk_bits(), local);
+        assert_eq!(state.chunk_count(), 1usize << (qubits as u32 - local));
+        context
+            .execute(
+                &state,
+                &gates,
+                RunTuning {
+                    region_bits,
+                    coalesced_bits,
+                },
+            )
+            .unwrap();
+        let got = context.read_state(&state).unwrap();
+        let diff = max_diff(cpu_state.as_slice(), &got);
+        assert!(
+            diff < 1e-5,
+            "{qubits}q bloco {cap} região={region_bits} coalescida={coalesced_bits}: diferença {diff}"
+        );
+    }
+}
+
+#[test]
+fn chunked_reads_and_writes_cross_chunk_boundaries() {
+    let Some(context) = gpu() else { return };
+    let mut rng = Lcg(31);
+    let amplitudes = random_amplitudes(&mut rng, 10);
+    let state = context.state_from_in_chunks(10, &amplitudes, 4).unwrap();
+    assert_eq!(state.chunk_count(), 64);
+
+    // Trechos que começam no meio de um bloco e atravessam vários.
+    for (first, count) in [
+        (0u64, 1024u64),
+        (13, 100),
+        (15, 2),
+        (16, 16),
+        (1000, 24),
+        (5, 1),
+    ] {
+        let got = context.read_range(&state, first, count).unwrap();
+        assert_eq!(got, amplitudes[first as usize..(first + count) as usize]);
+    }
+    assert!(context.read_range(&state, 1000, 25).is_err());
+
+    let mut whole = vec![C32::new(0.0, 0.0); 1024];
+    context.read_into(&state, &mut whole).unwrap();
+    assert_eq!(whole, amplitudes);
+
+    // Estado de base num bloco do meio e no último.
+    for index in [0u32, 37, 511, 1023] {
+        let basis = context.basis_state_in_chunks(10, index, 4).unwrap();
+        let all = context.read_state(&basis).unwrap();
+        for (position, value) in all.iter().enumerate() {
+            let want = if position as u32 == index { 1.0 } else { 0.0 };
+            assert_eq!(value.re, want, "índice {index}, posição {position}");
+            assert_eq!(value.im, 0.0);
+        }
+    }
+    assert!(context.basis_state_in_chunks(5, 32, 3).is_err());
+}
+
+#[test]
+fn chunked_measurement_sums_match_f64_on_the_host() {
+    let Some(context) = gpu() else { return };
+    let qubits = 12usize;
+    let mut rng = Lcg(8);
+    let amplitudes = random_amplitudes(&mut rng, qubits);
+    for cap in [12u32, 8, 5, 2] {
+        let state = context
+            .state_from_in_chunks(qubits as u32, &amplitudes, cap)
+            .unwrap();
+        for bit in 0..qubits as u32 {
+            let (mut zero, mut one) = (0.0f64, 0.0f64);
+            for (index, a) in amplitudes.iter().enumerate() {
+                let energy = f64::from(a.re).powi(2) + f64::from(a.im).powi(2);
+                if index >> bit & 1 == 1 {
+                    one += energy;
+                } else {
+                    zero += energy;
+                }
+            }
+            let (gpu_zero, gpu_one) = context.measure_sums(&state, bit).unwrap();
+            let error = ((gpu_zero - zero).abs() / zero).max((gpu_one - one).abs() / one);
+            assert!(
+                error < 1e-6,
+                "bloco {cap}, bit {bit}: erro relativo {error:e}"
+            );
+        }
+    }
+}

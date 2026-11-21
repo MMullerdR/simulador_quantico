@@ -22,6 +22,10 @@ pub struct GpuTuning {
     pub coalesced_bits: u32,
     /// Portas por lote do agendador por comutação (0 desliga a reordenação).
     pub batch: usize,
+    /// Maior bloco do estado na GPU (log2 de amplitudes). O dispositivo impõe o seu limite
+    /// (27 qubits na A4500); estados maiores são divididos em blocos. Valores menores só
+    /// servem para testar a divisão com estados pequenos.
+    pub max_chunk_bits: u32,
 }
 
 impl Default for GpuTuning {
@@ -30,6 +34,7 @@ impl Default for GpuTuning {
             region_bits: 12,
             coalesced_bits: 4,
             batch: hgm_gpu::backend::DEFAULT_BATCH,
+            max_chunk_bits: u32::MAX,
         }
     }
 }
@@ -116,6 +121,7 @@ impl Simulator {
                 })
                 .map_err(|e| hgm_core::error::HgmError::Backend(e.to_string()))?
                 .with_batch(tuning.batch)
+                .with_max_chunk_bits(tuning.max_chunk_bits)
                 // O estado fica na GPU entre execuções, medições e colapsos.
                 .resident(true),
             ),
@@ -340,25 +346,43 @@ mod tests {
         }
     }
 
+    /// Tamanhos de bloco para repetir os testes de GPU: `u32::MAX` é o estado num bloco só
+    /// (o que o dispositivo permitir); os outros dividem o estado em 2^(n-L) blocos, o que
+    /// exercita as portas cruzadas, o colapso e a medição entre blocos e o `modmult` com o
+    /// registrador cruzando o limite do bloco.
+    const CHUNK_CAPS: [u32; 5] = [u32::MAX, 6, 4, 3, 2];
+
+    fn chunked(cap: u32) -> GpuTuning {
+        GpuTuning {
+            max_chunk_bits: cap,
+            ..GpuTuning::default()
+        }
+    }
+
     #[test]
     fn gpu_backend_matches_the_serial_oracle_through_the_engine() {
-        let Some(mut gpu) = gpu_simulator(8) else {
-            return;
-        };
-        assert_eq!(gpu.backend_name(), "t_GPU (Rust, wgpu)");
-        let mut cpu = Simulator::new(BackendKind::CpuSerial, 8).unwrap();
-        // Hadamards, controles dentro e fora de uma região pequena, fases e repetições.
-        let steps = [
-            "H,H,H,H,H,H,H,H",
-            "Control1(1),ID,ID,ID,ID,ID,ID,Target1(X)",
-            "ID,R1,Z,ID,H,ID,R3,ID",
-            "Control1(1),Control1(1),ID,ID,ID,ID,ID,Target1(H)",
-        ];
-        for simulator in [&mut cpu, &mut gpu] {
-            simulator.run_steps(&steps, 1, 3).unwrap();
+        for cap in CHUNK_CAPS {
+            let Some(mut gpu) = gpu_simulator_with(chunked(cap), 8) else {
+                return;
+            };
+            assert_eq!(gpu.backend_name(), "t_GPU (Rust, wgpu)");
+            let mut cpu = Simulator::new(BackendKind::CpuSerial, 8).unwrap();
+            // Hadamards, controles dentro e fora de uma região pequena, fases e repetições.
+            let steps = [
+                "H,H,H,H,H,H,H,H",
+                "Control1(1),ID,ID,ID,ID,ID,ID,Target1(X)",
+                "ID,R1,Z,ID,H,ID,R3,ID",
+                "Control1(1),Control1(1),ID,ID,ID,ID,ID,Target1(H)",
+                "Target1(R2),ID,ID,ID,ID,ID,ID,Control0(1)",
+                "R1,H,ID,ID,ID,ID,ID,ID",
+            ];
+            for simulator in [&mut cpu, &mut gpu] {
+                simulator.run_steps(&steps, 1, 3).unwrap();
+            }
+            let diff = cpu.state().unwrap().max_abs_diff(gpu.state().unwrap());
+            assert!(diff < 1e-5, "bloco {cap}: diferença {diff}");
+            assert!((gpu.state().unwrap().norm_sqr() - 1.0).abs() < 1e-5);
         }
-        assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
-        assert!((gpu.state().unwrap().norm_sqr() - 1.0).abs() < 1e-5);
     }
 
     #[test]
@@ -381,79 +405,92 @@ mod tests {
     #[test]
     fn resident_gpu_measurements_follow_the_serial_oracle() {
         let qubits = 6;
-        let Some(mut gpu) = gpu_simulator(qubits) else {
-            return;
-        };
-        let mut cpu = Simulator::new(BackendKind::CpuSerial, qubits).unwrap();
-        for seed in 0..6u32 {
-            for simulator in [&mut cpu, &mut gpu] {
-                simulator.seed(seed);
-                simulator.set_basis(5).unwrap();
-                simulator.run("H,H,H,H,H,H", 1, 1).unwrap();
-                simulator
-                    .run("Control1(1),ID,ID,ID,ID,Target1(R2)", 1, 1)
-                    .unwrap();
-            }
-            for qubit in [0, 3, 5, 1] {
-                let want = cpu.measure(qubit).unwrap();
-                let got = gpu.measure(qubit).unwrap();
-                assert_eq!(want.bit, got.bit, "seed {seed}, qubit {qubit}");
-                assert!((want.probability - got.probability).abs() < 1e-5);
-                // O estado colapsado segue igual, e continua evoluindo igual.
+        for cap in CHUNK_CAPS {
+            let Some(mut gpu) = gpu_simulator_with(chunked(cap), qubits) else {
+                return;
+            };
+            let mut cpu = Simulator::new(BackendKind::CpuSerial, qubits).unwrap();
+            for seed in 0..6u32 {
                 for simulator in [&mut cpu, &mut gpu] {
-                    simulator.run("H,ID,ID,ID,ID,H", 1, 1).unwrap();
+                    simulator.seed(seed);
+                    simulator.set_basis(5).unwrap();
+                    simulator.run("H,H,H,H,H,H", 1, 1).unwrap();
+                    simulator
+                        .run("Control1(1),ID,ID,ID,ID,Target1(R2)", 1, 1)
+                        .unwrap();
                 }
+                for qubit in [0, 3, 5, 1, 2, 4] {
+                    let want = cpu.measure(qubit).unwrap();
+                    let got = gpu.measure(qubit).unwrap();
+                    assert_eq!(want.bit, got.bit, "bloco {cap}, seed {seed}, qubit {qubit}");
+                    assert!((want.probability - got.probability).abs() < 1e-5);
+                    // O estado colapsado segue igual, e continua evoluindo igual.
+                    for simulator in [&mut cpu, &mut gpu] {
+                        simulator.run("H,ID,ID,ID,ID,H", 1, 1).unwrap();
+                    }
+                }
+                let diff = cpu.state().unwrap().max_abs_diff(gpu.state().unwrap());
+                assert!(diff < 1e-5, "bloco {cap}, seed {seed}: diferença {diff}");
             }
-            assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
         }
     }
 
     #[test]
     fn resident_gpu_collapse_and_amplitudes_follow_the_host() {
-        let Some(mut gpu) = gpu_simulator(5) else {
-            return;
-        };
-        let mut cpu = Simulator::new(BackendKind::CpuSerial, 5).unwrap();
-        for simulator in [&mut cpu, &mut gpu] {
-            simulator.run("H,H,H,H,H", 1, 1).unwrap();
-            simulator.run("R1,ID,Z,ID,R3", 1, 1).unwrap();
+        for cap in CHUNK_CAPS {
+            let Some(mut gpu) = gpu_simulator_with(chunked(cap), 5) else {
+                return;
+            };
+            let mut cpu = Simulator::new(BackendKind::CpuSerial, 5).unwrap();
+            for simulator in [&mut cpu, &mut gpu] {
+                simulator.run("H,H,H,H,H", 1, 1).unwrap();
+                simulator.run("R1,ID,Z,ID,R3", 1, 1).unwrap();
+            }
+            for (qubit, value) in [(2, 1), (0, 0), (4, 1)] {
+                let want = cpu.collapse(qubit, value).unwrap();
+                let got = gpu.collapse(qubit, value).unwrap();
+                assert!((want - got).abs() < 1e-5, "bloco {cap}");
+            }
+            // Lê amplitudes uma a uma (sem sincronizar) e depois o vetor inteiro.
+            for index in 0..32 {
+                let want = cpu.amplitude(index).unwrap();
+                let got = gpu.amplitude(index).unwrap();
+                assert!((want - got).norm() < 1e-5, "bloco {cap}, índice {index}");
+            }
+            assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
+            assert!(gpu.amplitude(32).is_err());
+            // Zero de probabilidade no ramo já colapsado.
+            assert!(cpu.collapse(2, 0).is_err() && gpu.collapse(2, 0).is_err());
         }
-        for (qubit, value) in [(2, 1), (0, 0)] {
-            let want = cpu.collapse(qubit, value).unwrap();
-            let got = gpu.collapse(qubit, value).unwrap();
-            assert!((want - got).abs() < 1e-5);
-        }
-        // Lê amplitudes uma a uma (sem sincronizar) e depois o vetor inteiro.
-        for index in 0..32 {
-            let want = cpu.amplitude(index).unwrap();
-            let got = gpu.amplitude(index).unwrap();
-            assert!((want - got).norm() < 1e-5, "índice {index}");
-        }
-        assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
-        assert!(gpu.amplitude(32).is_err());
-        // Zero de probabilidade no ramo já colapsado.
-        assert!(cpu.collapse(2, 0).is_err() && gpu.collapse(2, 0).is_err());
     }
 
     #[test]
     fn resident_gpu_mod_mult_matches_the_host_permutation() {
         // 1 qubit de controle + registrador de 4 qubits + 2 qubits à parte, em
-        // superposição, para a permutação ter o que embaralhar.
-        let Some(mut gpu) = gpu_simulator(7) else {
-            return;
-        };
-        let mut cpu = Simulator::new(BackendKind::CpuSerial, 7).unwrap();
-        for simulator in [&mut cpu, &mut gpu] {
-            simulator.run("H,H,R1,H,Z,H,H", 1, 1).unwrap();
-            simulator.apply_mod_mult(0, 1, 4, 7, 15).unwrap();
-            simulator.run("H,ID,ID,ID,ID,ID,ID", 1, 1).unwrap();
-            simulator.apply_mod_mult(0, 1, 4, 13, 15).unwrap();
-            simulator.apply_mod_mult(0, 1, 4, 2, 11).unwrap(); // módulo menor que 2^4
-        }
-        assert!(cpu.state().unwrap().max_abs_diff(gpu.state().unwrap()) < 1e-5);
-        for simulator in [&mut cpu, &mut gpu] {
-            assert!(simulator.apply_mod_mult(0, 1, 4, 5, 15).is_err()); // gcd != 1
-            assert!(simulator.apply_mod_mult(1, 1, 4, 7, 15).is_err()); // controle no registrador
+        // superposição, para a permutação ter o que embaralhar. Com blocos pequenos o
+        // controle e o registrador ficam (em parte ou inteiros) nos bits de bloco.
+        for cap in CHUNK_CAPS {
+            let Some(mut gpu) = gpu_simulator_with(chunked(cap), 7) else {
+                return;
+            };
+            let mut cpu = Simulator::new(BackendKind::CpuSerial, 7).unwrap();
+            for simulator in [&mut cpu, &mut gpu] {
+                simulator.run("H,H,R1,H,Z,H,H", 1, 1).unwrap();
+                simulator.apply_mod_mult(0, 1, 4, 7, 15).unwrap();
+                simulator.run("H,ID,ID,ID,ID,ID,ID", 1, 1).unwrap();
+                simulator.apply_mod_mult(0, 1, 4, 13, 15).unwrap();
+                simulator.apply_mod_mult(0, 1, 4, 2, 11).unwrap(); // módulo menor que 2^4
+                                                                   // Registrador nos qubits de baixo, controle no meio.
+                simulator.apply_mod_mult(2, 3, 4, 7, 15).unwrap();
+                simulator.run("H,H,H,H,H,H,H", 1, 1).unwrap();
+                simulator.apply_mod_mult(0, 1, 5, 3, 29).unwrap();
+            }
+            let diff = cpu.state().unwrap().max_abs_diff(gpu.state().unwrap());
+            assert!(diff < 1e-5, "bloco {cap}: diferença {diff}");
+            for simulator in [&mut cpu, &mut gpu] {
+                assert!(simulator.apply_mod_mult(0, 1, 4, 5, 15).is_err()); // gcd != 1
+                assert!(simulator.apply_mod_mult(1, 1, 4, 7, 15).is_err()); // controle no registrador
+            }
         }
     }
 
@@ -497,11 +534,26 @@ mod tests {
                 region_bits: 5,
                 coalesced_bits: 2,
                 batch: 300,
+                ..GpuTuning::default()
             },
             GpuTuning {
                 region_bits: 4,
                 coalesced_bits: 4,
                 batch: 0,
+                ..GpuTuning::default()
+            },
+            // Estado em blocos: termos com máscara nos bits de bloco.
+            GpuTuning {
+                region_bits: 5,
+                coalesced_bits: 2,
+                batch: 300,
+                max_chunk_bits: 6,
+            },
+            GpuTuning {
+                region_bits: 4,
+                coalesced_bits: 1,
+                batch: 0,
+                max_chunk_bits: 4,
             },
         ];
         for tuning in shapes {
