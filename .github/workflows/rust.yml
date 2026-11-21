@@ -16,6 +16,7 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "tests/golden/**"
+      - "tests/smoke_test_rust.sh"
       - ".github/workflows/rust.yml"
   pull_request:
     branches: [main]
@@ -25,6 +26,7 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "tests/golden/**"
+      - "tests/smoke_test_rust.sh"
       - ".github/workflows/rust.yml"
   workflow_dispatch:
 
@@ -56,5 +58,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: demo do binario
-        run: cargo run -p hgm-cli
+      # Porta da parte de CPU de tests/smoke_test.sh: compila os tres executaveis em
+      # release e confere amplitudes, taxas de sucesso e recusa de GPU/hibrido.
+      - name: smoke test dos executaveis
+        shell: bash
+        run: bash tests/smoke_test_rust.sh

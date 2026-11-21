@@ -1,0 +1,110 @@
+format 1
+# Gerado por tests/golden/export_runs.cpp (t_CPU, g_rng semeado com `seed`).
+grover qubits=4 value=5 seed=1 result=5
+grover qubits=4 value=5 seed=2 result=5
+grover qubits=4 value=5 seed=3 result=5
+grover qubits=4 value=5 seed=4 result=5
+grover qubits=4 value=5 seed=5 result=5
+grover qubits=4 value=5 seed=6 result=5
+grover qubits=4 value=5 seed=7 result=5
+grover qubits=4 value=5 seed=8 result=0
+grover qubits=6 value=21 seed=1 result=21
+grover qubits=6 value=21 seed=2 result=21
+grover qubits=6 value=21 seed=3 result=21
+grover qubits=6 value=21 seed=4 result=21
+grover qubits=6 value=21 seed=5 result=21
+grover qubits=6 value=21 seed=6 result=21
+grover qubits=6 value=21 seed=7 result=21
+grover qubits=6 value=21 seed=8 result=21
+grover qubits=8 value=100 seed=1 result=100
+grover qubits=8 value=100 seed=2 result=100
+grover qubits=8 value=100 seed=3 result=100
+grover qubits=8 value=100 seed=4 result=100
+grover qubits=8 value=100 seed=5 result=100
+grover qubits=8 value=100 seed=6 result=100
+grover qubits=8 value=100 seed=7 result=100
+grover qubits=8 value=100 seed=8 result=100
+grover qubits=10 value=300 seed=1 result=300
+grover qubits=10 value=300 seed=2 result=300
+grover qubits=10 value=300 seed=3 result=300
+grover qubits=10 value=300 seed=4 result=300
+grover qubits=10 value=300 seed=5 result=300
+grover qubits=10 value=300 seed=6 result=300
+grover qubits=10 value=300 seed=7 result=300
+grover qubits=10 value=300 seed=8 result=300
+grover qubits=12 value=1234 seed=1 result=1234
+grover qubits=12 value=1234 seed=2 result=1234
+grover qubits=12 value=1234 seed=3 result=1234
+grover qubits=12 value=1234 seed=4 result=1234
+grover qubits=12 value=1234 seed=5 result=1234
+grover qubits=12 value=1234 seed=6 result=1234
+grover qubits=12 value=1234 seed=7 result=1234
+grover qubits=12 value=1234 seed=8 result=1234
+shor n=15 seed=1 emulate=0 aqft=- factors=none
+shor n=15 seed=2 emulate=0 aqft=- factors=none
+shor n=15 seed=3 emulate=0 aqft=- factors=none
+shor n=15 seed=4 emulate=0 aqft=- factors=none
+shor n=15 seed=5 emulate=0 aqft=- factors=none
+shor n=15 seed=6 emulate=0 aqft=- factors=none
+shor n=15 seed=7 emulate=0 aqft=- factors=none
+shor n=15 seed=8 emulate=0 aqft=- factors=5,3
+shor n=15 seed=9 emulate=0 aqft=- factors=none
+shor n=15 seed=10 emulate=0 aqft=- factors=none
+shor n=15 seed=11 emulate=0 aqft=- factors=5,3
+shor n=15 seed=12 emulate=0 aqft=- factors=5,3
+shor n=15 seed=1 emulate=1 aqft=- factors=none
+shor n=15 seed=2 emulate=1 aqft=- factors=none
+shor n=15 seed=3 emulate=1 aqft=- factors=none
+shor n=15 seed=4 emulate=1 aqft=- factors=none
+shor n=15 seed=5 emulate=1 aqft=- factors=none
+shor n=15 seed=6 emulate=1 aqft=- factors=none
+shor n=15 seed=7 emulate=1 aqft=- factors=none
+shor n=15 seed=8 emulate=1 aqft=- factors=5,3
+shor n=15 seed=9 emulate=1 aqft=- factors=none
+shor n=15 seed=10 emulate=1 aqft=- factors=none
+shor n=15 seed=11 emulate=1 aqft=- factors=5,3
+shor n=15 seed=12 emulate=1 aqft=- factors=5,3
+shor n=15 seed=1 emulate=0 aqft=0 factors=none
+shor n=15 seed=2 emulate=0 aqft=0 factors=none
+shor n=15 seed=3 emulate=0 aqft=0 factors=none
+shor n=15 seed=4 emulate=0 aqft=0 factors=none
+shor n=15 seed=5 emulate=0 aqft=0 factors=none
+shor n=15 seed=6 emulate=0 aqft=0 factors=none
+shor n=21 seed=1 emulate=0 aqft=- factors=none
+shor n=21 seed=2 emulate=0 aqft=- factors=none
+shor n=21 seed=3 emulate=0 aqft=- factors=7,3
+shor n=21 seed=4 emulate=0 aqft=- factors=none
+shor n=21 seed=1 emulate=1 aqft=- factors=none
+shor n=21 seed=2 emulate=1 aqft=- factors=none
+shor n=21 seed=3 emulate=1 aqft=- factors=7,3
+shor n=21 seed=4 emulate=1 aqft=- factors=none
+shor n=21 seed=5 emulate=1 aqft=- factors=3,7
+shor n=21 seed=6 emulate=1 aqft=- factors=7,3
+shor n=21 seed=7 emulate=1 aqft=- factors=none
+shor n=21 seed=8 emulate=1 aqft=- factors=none
+shor n=35 seed=1 emulate=1 aqft=- factors=none
+shor n=35 seed=2 emulate=1 aqft=- factors=none
+shor n=35 seed=3 emulate=1 aqft=- factors=5,7
+shor n=35 seed=4 emulate=1 aqft=- factors=none
+shor n=35 seed=5 emulate=1 aqft=- factors=7,5
+shor n=35 seed=6 emulate=1 aqft=- factors=7,5
+shor n=35 seed=7 emulate=1 aqft=- factors=7,5
+shor n=35 seed=8 emulate=1 aqft=- factors=7,5
+shor n=57 seed=1 emulate=1 aqft=- factors=3,19
+shor n=57 seed=2 emulate=1 aqft=- factors=3,19
+shor n=57 seed=3 emulate=1 aqft=- factors=3,19
+shor n=57 seed=4 emulate=1 aqft=- factors=3,19
+shor n=57 seed=5 emulate=1 aqft=- factors=3,19
+shor n=57 seed=6 emulate=1 aqft=- factors=none
+shor n=57 seed=7 emulate=1 aqft=- factors=3,19
+shor n=57 seed=8 emulate=1 aqft=- factors=3,19
+shor n=119 seed=1 emulate=1 aqft=- factors=none
+shor n=119 seed=2 emulate=1 aqft=- factors=17,7
+shor n=119 seed=3 emulate=1 aqft=- factors=none
+shor n=119 seed=4 emulate=1 aqft=- factors=17,7
+shor n=119 seed=5 emulate=1 aqft=- factors=7,17
+shor n=119 seed=6 emulate=1 aqft=- factors=17,7
+shor n=253 seed=1 emulate=1 aqft=- factors=23,11
+shor n=253 seed=2 emulate=1 aqft=- factors=none
+shor n=253 seed=3 emulate=1 aqft=- factors=23,11
+shor n=253 seed=4 emulate=1 aqft=- factors=none

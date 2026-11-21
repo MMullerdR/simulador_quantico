@@ -66,7 +66,7 @@ endif
 # do algoritmo em si.
 CORE_OBJS = $(addprefix $(OUT)/, dgm_core.o dgm_parser.o dgm_cpu_exec.o dgm_par_exec.o common.o gates.o lib_general.o lib_shor.o lib_shor_number_theory.o lib_shor_circuits.o lib_grover.o cli_common.o gate_schedule.o gate_fuse.o)
 
-.PHONY: all clean shor grover general test golden
+.PHONY: all clean shor grover general test golden golden-runs
 
 all: shor grover general
 
@@ -158,6 +158,17 @@ $(OUT)/export_golden.out: $(OUT)/export_golden.o $(CORE_OBJS) $(GPU_OBJS)
 
 golden: $(OUT)/export_golden.out
 	$(OUT)/export_golden.out tests/golden/data
+
+# Execucoes completas (Grover/Shor) com semente fixa, para a fase 5: grava
+# tests/golden/data/runs.txt (formato no cabecalho de tests/golden/export_runs.cpp).
+$(OUT)/export_runs.o: tests/golden/export_runs.cpp | $(OUT)
+	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@
+
+$(OUT)/export_runs.out: $(OUT)/export_runs.o $(CORE_OBJS) $(GPU_OBJS)
+	$(LINKER) -o $@ $^ $(LDFLAGS)
+
+golden-runs: $(OUT)/export_runs.out
+	$(OUT)/export_runs.out tests/golden/data/runs.txt
 
 # gpu_hog.cu ocupa memória da GPU pro smoke test cobrir a decisão de
 # delegação do t_HYBRID com a GPU parcialmente cheia (só com GPU=real).

@@ -5,6 +5,8 @@
 //! C++ (`g_rng` em `src/core/common.cpp`) e para os sorteios serem iguais em
 //! qualquer sistema, sem depender de `rand()` (ver `docs/07` item 18).
 
+use crate::error::{HgmError, Result};
+
 const N: usize = 624;
 const M: usize = 397;
 
@@ -71,6 +73,46 @@ impl Mt19937 {
             value
         }
     }
+
+    /// `std::uniform_int_distribution<long>(low, high)(gen)` do libstdc++ 11 ou
+    /// mais novo: para faixas menores que `2^32 - 1` usa a redução de Lemire (um
+    /// produto de 64 bits por sorteio, `>> 32`, com rejeição só quando o resto
+    /// baixo é pequeno); a faixa cheia de 32 bits usa o sorteio direto.
+    ///
+    /// Faixas maiores que `2^32 - 1` viram erro: o libstdc++ combina vários
+    /// sorteios nesse caso e este porte não o reproduz (o Shor só sorteia bases
+    /// menores que o número a fatorar, que cabe em 32 qubits).
+    pub fn uniform_int(&mut self, low: i64, high: i64) -> Result<i64> {
+        if low > high {
+            return Err(HgmError::InvalidArgument(format!(
+                "faixa vazia: [{low}, {high}]"
+            )));
+        }
+        let range = i128::from(high) - i128::from(low);
+        if range > i128::from(u32::MAX) {
+            return Err(HgmError::InvalidArgument(format!(
+                "faixa [{low}, {high}] maior que 2^32 - 1 não é suportada"
+            )));
+        }
+
+        let offset = if range == i128::from(u32::MAX) {
+            u64::from(self.next_u32())
+        } else {
+            // `range + 1 <= u32::MAX`, então cabe em `u32`.
+            let span = (range + 1) as u32;
+            let mut product = u64::from(self.next_u32()) * u64::from(span);
+            let mut low_word = product as u32;
+            if low_word < span {
+                let threshold = span.wrapping_neg() % span;
+                while low_word < threshold {
+                    product = u64::from(self.next_u32()) * u64::from(span);
+                    low_word = product as u32;
+                }
+            }
+            product >> 32
+        };
+        Ok(low + offset as i64)
+    }
 }
 
 #[cfg(test)]
@@ -118,6 +160,64 @@ mod tests {
             checksum = checksum.wrapping_mul(31).wrapping_add(rng.next_u32());
         }
         assert_eq!(checksum, 3_225_766_033);
+    }
+
+    #[test]
+    fn uniform_int_matches_libstdcxx() {
+        // Saídas de `std::uniform_int_distribution<long>(0, hi)` com `std::mt19937`
+        // semeado, geradas no qflex (g++ 13.3.0, libstdc++ de Ubuntu 24.04).
+        let cases: [(u32, i64, [i64; 12]); 5] = [
+            (1, 14, [6, 14, 10, 13, 0, 1, 4, 14, 2, 3, 1, 5]),
+            (42, 56, [21, 45, 54, 10, 41, 44, 34, 34, 8, 25, 8, 5]),
+            (
+                5489,
+                2862,
+                [
+                    2332, 387, 2593, 2390, 363, 2773, 2614, 632, 1810, 882, 279, 1566,
+                ],
+            ),
+            (
+                1,
+                1_000_000_000,
+                [
+                    417_021_998,
+                    997_184_809,
+                    932_557_362,
+                    114_381,
+                    128_124_447,
+                    999_040_516,
+                    146_755_892,
+                    236_088_976,
+                    92_338_595,
+                    396_580_726,
+                    186_260_211,
+                    387_910_740,
+                ],
+            ),
+            (42, 14, [5, 11, 14, 2, 10, 11, 8, 8, 2, 6, 2, 1]),
+        ];
+        for (seed, high, expected) in cases {
+            let mut rng = Mt19937::new(seed);
+            let got: Vec<i64> = (0..12).map(|_| rng.uniform_int(0, high).unwrap()).collect();
+            assert_eq!(got, expected, "semente {seed}, faixa [0, {high}]");
+        }
+    }
+
+    #[test]
+    fn uniform_int_handles_offsets_and_bad_ranges() {
+        let mut rng = Mt19937::new(1);
+        // [10, 24] é [0, 14] deslocado: mesma sequência mais 10.
+        assert_eq!(rng.uniform_int(10, 24).unwrap(), 16);
+        assert_eq!(rng.uniform_int(-3, -3).unwrap(), -3);
+        assert!(rng.uniform_int(5, 4).is_err());
+        assert!(rng.uniform_int(0, i64::from(u32::MAX) + 1).is_err());
+        // Faixa cheia de 32 bits: devolve o sorteio cru.
+        let mut raw = Mt19937::new(7);
+        let mut cooked = Mt19937::new(7);
+        assert_eq!(
+            cooked.uniform_int(0, i64::from(u32::MAX)).unwrap(),
+            i64::from(raw.next_u32())
+        );
     }
 
     #[test]

@@ -1299,6 +1299,37 @@ experimento de 300 execuções por configuração se perdeu quando a conexão co
 qflex caiu. Se for importante, repetir com a mesma métrica (fase a até 1/2^12 de
 um múltiplo de 1/r), não com a taxa de "Found factors".
 
+## 31. [ABERTO] Shor: a correção de fase da estimação semiclássica entra depois do último Hadamard e não faz nada
+
+`Shor()` (`src/algorithms/lib_shor.cpp`, linhas 108-110 e 130-134) monta cada
+rodada como `H, (multiplicação modular), H, genRot(bits já medidos)` e mede o
+qubit de controle em seguida. `genRot` devolve uma porta diagonal
+`diag(1, e^{-2*pi*i*0.b})`. Uma porta diagonal aplicada imediatamente antes de uma
+medição na base computacional não muda nenhuma probabilidade, e o qubit colapsa
+logo depois: a correção é uma operação nula. Na estimação de fase semiclássica a
+rotação tem que vir **antes** do segundo `H`.
+
+**Como foi percebido (2026-11-21, durante a porta do Shor para Rust):** quatro
+mutações propositais no Rust sobreviveram à bateria inteira, inclusive à
+comparação bit a bit com o C++ (`tests/golden/data/runs.txt`): remover a correção
+(`!= 0` virando `> 1`) no caminho emulado e no de circuito, e trocar `a^(2^k)` por
+`a^-(2^k)` na emulação. Todas são equivalentes se a correção não faz nada: sem ela
+as marginais de cada bit medido são simétricas em `phi -> -phi`.
+
+**Efeito medido (fraco, não conclusivo):** no Rust, com a rotação antes do último
+`H`, 60 sementes por caso deram 52/60 contra 51/60 (N=21, a=2), 36/60 contra
+30/60 (N=21, a=5), 55/60 contra 45/60 (N=35, a=2) e 41/60 nos dois (N=15, a=7),
+na emulação. É a direção esperada, mas são poucas amostras e um único
+experimento, e a convenção de sinal da rotação não foi conferida contra um oráculo
+independente. Para N=15 a correção é irrelevante: os períodos 2 e 4 dividem
+`2^(2w)`, e os picos de fase são exatos com ou sem ela.
+
+**Não foi corrigido:** a migração para Rust exige paridade com o `v1.1.0`, e o Rust
+reproduz este comportamento de propósito. Se for corrigir, é uma mudança de
+algoritmo (afeta C++ e Rust, e os vetores de `runs.txt` mudam), e a métrica certa é
+a fase medida (a até `1/2^(2w)` de um múltiplo de `1/r`), não a taxa de "Found
+factors".
+
 ---
 
 *Achados durante a leitura de documentação em 2026-08-06, com adições em

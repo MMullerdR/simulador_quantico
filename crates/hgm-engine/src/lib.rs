@@ -4,10 +4,10 @@
 
 use std::collections::BTreeMap;
 
-use hgm_core::circuit::compile;
+use hgm_core::circuit::{compile_steps, tokenize};
 use hgm_core::error::Result;
 use hgm_core::optimize::fuse_phase_runs;
-use hgm_core::{Backend, GateCatalog, Measurement, Mt19937, StateVector};
+use hgm_core::{Backend, GateCatalog, Measurement, Mt19937, Program, StateVector};
 use hgm_cpu::{ParallelBackend, SerialBackend, Tuning};
 
 /// Backends disponíveis. `Gpu` e `Hybrid` entram com as fases 4-5.
@@ -20,7 +20,29 @@ pub enum BackendKind {
 }
 
 /// Semente padrão do `std::mt19937` do C++ (`g_rng` sem `seed_rng`).
-const DEFAULT_SEED: u32 = 5489;
+pub const DEFAULT_SEED: u32 = 5489;
+
+/// O que os algoritmos (`general`, `grover`, `shor`) precisam saber para montar
+/// um [`Simulator`]: o backend e a semente do gerador de medições/sorteios. É o
+/// `TuningDefaults` + `seed_rng` do C++ sem os campos de GPU, que entram com a
+/// fase 4.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SimConfig {
+    pub backend: BackendKind,
+    pub seed: u32,
+}
+
+impl SimConfig {
+    pub fn new(backend: BackendKind, seed: u32) -> Self {
+        Self { backend, seed }
+    }
+}
+
+impl Default for SimConfig {
+    fn default() -> Self {
+        Self::new(BackendKind::CpuSerial, DEFAULT_SEED)
+    }
+}
 
 pub struct Simulator {
     state: StateVector,
@@ -33,7 +55,12 @@ pub struct Simulator {
 impl Simulator {
     /// Simulador em `|0...0>` com as portas base.
     pub fn new(kind: BackendKind, qubits: usize) -> Result<Self> {
-        let backend: Box<dyn Backend> = match kind {
+        Self::with_config(&SimConfig::new(kind, DEFAULT_SEED), qubits)
+    }
+
+    /// Simulador em `|0...0>` com o backend e a semente de `config`.
+    pub fn with_config(config: &SimConfig, qubits: usize) -> Result<Self> {
+        let backend: Box<dyn Backend> = match config.backend {
             BackendKind::CpuSerial => Box::new(SerialBackend::new()),
             BackendKind::CpuParallel(tuning) => Box::new(ParallelBackend::new(tuning)?),
         };
@@ -41,9 +68,29 @@ impl Simulator {
             state: StateVector::basis(qubits, 0)?,
             backend,
             gates: GateCatalog::with_base_gates(),
-            rng: Mt19937::new(DEFAULT_SEED),
+            rng: Mt19937::new(config.seed),
             fuse_phase: false,
         })
+    }
+
+    pub fn qubits(&self) -> usize {
+        self.state.qubits()
+    }
+
+    /// Põe o estado na base `|index>` (`DGM::setMemoryValue` depois de zerar).
+    pub fn set_basis(&mut self, index: usize) -> Result<()> {
+        self.state = StateVector::basis(self.state.qubits(), index)?;
+        Ok(())
+    }
+
+    /// O gerador compartilhado por medições e sorteios do algoritmo (o `g_rng`
+    /// do C++: o Shor sorteia a base e mede com o mesmo gerador).
+    pub fn rng_mut(&mut self) -> &mut Mt19937 {
+        &mut self.rng
+    }
+
+    pub fn gates(&self) -> &GateCatalog {
+        &self.gates
     }
 
     pub fn backend_name(&self) -> &str {
@@ -78,11 +125,35 @@ impl Simulator {
     /// Compila `function` (passos separados por `;`, repetidos `iterations` vezes)
     /// e a executa `repetitions` vezes sobre o estado atual.
     pub fn run(&mut self, function: &str, iterations: usize, repetitions: u32) -> Result<()> {
-        let mut program = compile(function, iterations, &self.gates)?;
+        let steps: Vec<&str> = tokenize(function, ";").collect();
+        self.run_steps(&steps, iterations, repetitions)
+    }
+
+    /// Compila `steps` (um passo por item) repetidos `iterations` vezes, com o
+    /// catálogo de portas atual, sem executar (`setFunction`). A fusão de fase,
+    /// se ligada, é aplicada aqui.
+    pub fn compile_steps<S: AsRef<str>>(&self, steps: &[S], iterations: usize) -> Result<Program> {
+        let mut program = compile_steps(steps, iterations, &self.gates)?;
         if self.fuse_phase {
             program.ops = fuse_phase_runs(program.ops).0;
         }
-        self.backend.execute(&mut self.state, &program, repetitions)
+        Ok(program)
+    }
+
+    /// Executa um programa já compilado `repetitions` vezes (`DGM::execute`).
+    pub fn run_program(&mut self, program: &Program, repetitions: u32) -> Result<()> {
+        self.backend.execute(&mut self.state, program, repetitions)
+    }
+
+    /// Compila e executa passos já separados (`DGM::executeFunction(vector)`).
+    pub fn run_steps<S: AsRef<str>>(
+        &mut self,
+        steps: &[S],
+        iterations: usize,
+        repetitions: u32,
+    ) -> Result<()> {
+        let program = self.compile_steps(steps, iterations)?;
+        self.run_program(&program, repetitions)
     }
 
     /// Mede um qubit, colapsando o estado (`DGM::measure(int)`).

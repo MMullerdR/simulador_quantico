@@ -28,6 +28,23 @@ pub struct Program {
     pub ops: Vec<Op>,
 }
 
+impl Program {
+    /// Emenda `other` no fim (como `setFunction(..., reset = false)` do C++, que o
+    /// Grover usa para juntar a preparação ao primeiro bloco de iterações).
+    pub fn append(&mut self, other: Program) -> Result<()> {
+        if self.ops.is_empty() && self.qubits == 0 {
+            self.qubits = other.qubits;
+        } else if other.qubits != self.qubits && !other.ops.is_empty() {
+            return Err(HgmError::QubitMismatch {
+                program: other.qubits,
+                state: self.qubits,
+            });
+        }
+        self.ops.extend(other.ops);
+        Ok(())
+    }
+}
+
 /// Divide `text` em tokens por qualquer caractere de `delimiters`, ignorando
 /// delimitadores repetidos e as pontas (como `Tokenize` do C++).
 pub fn tokenize<'a>(text: &'a str, delimiters: &'a str) -> impl Iterator<Item = &'a str> + 'a {

@@ -23,8 +23,19 @@ pub struct GateCatalog {
 /// libm (ex.: `R1` sai com parte imaginária ~8e-9 em vez de 0). A diferença para
 /// este valor é < 1e-7; por isso os testes de paridade comparam matrizes com
 /// tolerância (ver `tests/golden/README.md`).
-fn phase(theta: f64) -> C32 {
+pub fn phase(theta: f64) -> C32 {
     C32::new(theta.cos() as f32, theta.sin() as f32)
+}
+
+/// Porta de fase `diag(1, value)`, a forma de todas as rotações geradas pelo Shor
+/// (`addGate(name, 1.0, 0.0, 0.0, rot)` no C++).
+pub fn phase_matrix(value: C32) -> Matrix2 {
+    [
+        C32::new(1.0, 0.0),
+        C32::new(0.0, 0.0),
+        C32::new(0.0, 0.0),
+        value,
+    ]
 }
 
 impl GateCatalog {
@@ -64,6 +75,11 @@ impl GateCatalog {
 
     pub fn get(&self, name: &str) -> Option<Matrix2> {
         self.gates.get(name).copied()
+    }
+
+    /// Nomes das portas do catálogo, em ordem qualquer.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.gates.keys().map(String::as_str)
     }
 
     pub fn len(&self) -> usize {

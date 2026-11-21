@@ -1,13 +1,16 @@
 [package]
 name = "hgm-algos"
-description = "Algoritmos quânticos do HybriD-GM (teoria dos números do Shor por enquanto)"
+description = "Algoritmos quânticos do HybriD-GM: general, Grover e Shor"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+hgm-core.workspace = true
+hgm-engine.workspace = true
 
 [dev-dependencies]
+hgm-cpu.workspace = true
 hgm-golden.workspace = true
 
 [lints]

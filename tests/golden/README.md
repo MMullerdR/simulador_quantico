@@ -8,6 +8,13 @@ sair do repositório sem perder o oráculo.
 - `export_golden.cpp`: gera tudo (`make golden`).
 - `data/`: a saída (310 casos, ~3,7 MB). **Não editar à mão**: regenerar.
 - `check_golden.py`: confere `data/` com um simulador independente em Python/numpy.
+- `export_runs.cpp` + `data/runs.txt` (`make golden-runs`): execuções completas de
+  `Grover()` e `Shor()` do C++ no `t_CPU` com o gerador semeado (`seed_rng`): 40 de
+  Grover (5 configurações x sementes 1..8) e 68 de Shor (N=15 a 253, circuito e
+  emulação, QFT aproximada e exata). Cada linha traz o valor achado ou os fatores,
+  na ordem. O Rust tem que repetir exatamente (`hgm-algos/tests/golden_runs.rs`).
+  **Fora do `INDEX`** (não é um `.case`; o teste de `hgm-golden` continua contando
+  310) e **não** conferido pelo `check_golden.py`: aqui o oráculo é só o C++.
 
 Proveniência dos dados atuais: tag `v1.1.0` (`d2c17c2`), compilado com
 `g++ 13.3.0` (Ubuntu 24.04, x86-64) pelo `makefile` (sem `-O` e sem `-march=native`,

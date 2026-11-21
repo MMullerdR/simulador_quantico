@@ -13,9 +13,9 @@ publish = false
 [workspace.dependencies]
 num-complex = "0.4"
 thiserror = "1"
+hgm-algos = { path = "crates/hgm-algos" }
 hgm-core = { path = "crates/hgm-core" }
 hgm-cpu = { path = "crates/hgm-cpu" }
-hgm-gpu = { path = "crates/hgm-gpu" }
 hgm-engine = { path = "crates/hgm-engine" }
 hgm-golden = { path = "crates/hgm-golden" }
 
