@@ -1,9 +1,9 @@
 //! A porta compilada ("PT" no C++, `include/core/common.h`).
 //!
-//! Porta de fase fundida (`FusePhaseRuns`) e agendamento por comutação
-//! (`ScheduleForBatching`) ainda NÃO foram portados: entram junto com o
-//! otimizador (fase 3/4 de `docs/09`). Por isso `Pt` só descreve a porta simples.
+//! [`Pt`] descreve a porta simples; [`Op`] é o que um programa executa: uma porta
+//! simples ou uma porta de fase fundida (ver [`crate::fused`]).
 
+use crate::fused::FusedPhase;
 use crate::gates::Matrix2;
 use crate::C32;
 
@@ -50,6 +50,33 @@ impl Pt {
             MatrixKind::DiagSec
         } else {
             MatrixKind::Dense
+        }
+    }
+}
+
+/// Uma operação do programa compilado. No C++ era o `PT` com `phase_terms`
+/// não-nulo; aqui o tipo diz qual é, e `matrixType()` num fundido deixa de ser
+/// possível (no C++ era `exit(1)`).
+#[derive(Clone, Debug)]
+pub enum Op {
+    Gate(Pt),
+    FusedPhase(FusedPhase),
+}
+
+impl Op {
+    /// Bit do alvo usado para agendar em lotes/regiões. A fase fundida vale 0
+    /// ("cabe em qualquer lote/região"), como no C++.
+    pub fn target_bit(&self) -> u32 {
+        match self {
+            Op::Gate(pt) => pt.target_bit,
+            Op::FusedPhase(_) => 0,
+        }
+    }
+
+    pub fn as_gate(&self) -> Option<&Pt> {
+        match self {
+            Op::Gate(pt) => Some(pt),
+            Op::FusedPhase(_) => None,
         }
     }
 }

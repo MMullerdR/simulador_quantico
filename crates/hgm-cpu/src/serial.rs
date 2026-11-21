@@ -7,7 +7,8 @@
 use hgm_core::backend::Backend;
 use hgm_core::circuit::Program;
 use hgm_core::error::{HgmError, Result};
-use hgm_core::pt::{MatrixKind, Pt};
+use hgm_core::fused::{phase_table, FusedPhase};
+use hgm_core::pt::{MatrixKind, Op, Pt};
 use hgm_core::state::StateVector;
 use hgm_core::C32;
 
@@ -41,8 +42,11 @@ impl Backend for SerialBackend {
 
         let amplitudes = state.as_mut_slice();
         for _ in 0..repetitions {
-            for pt in &program.pts {
-                apply_pt(amplitudes, pt);
+            for op in &program.ops {
+                match op {
+                    Op::Gate(pt) => apply_pt(amplitudes, pt),
+                    Op::FusedPhase(fused) => apply_fused_phase(amplitudes, fused),
+                }
             }
         }
         Ok(())
@@ -51,10 +55,19 @@ impl Backend for SerialBackend {
 
 /// Garante que toda porta cabe no estado, para os laços abaixo nunca indexarem
 /// fora (no C++ isso era confiança no parser).
-fn validate(program: &Program) -> Result<()> {
+pub(crate) fn validate(program: &Program) -> Result<()> {
     let qubits = program.qubits as u32;
     let limit = 1u64 << qubits;
-    for pt in &program.pts {
+    for op in &program.ops {
+        let pt = match op {
+            Op::Gate(pt) => pt,
+            Op::FusedPhase(fused) => {
+                if fused.terms.iter().any(|t| t.mask >= limit || t.value & !t.mask != 0) {
+                    return Err(HgmError::PtOutOfRange("termo de fase fundida"));
+                }
+                continue;
+            }
+        };
         if pt.target_bit >= qubits {
             return Err(HgmError::PtOutOfRange("bit do alvo"));
         }
@@ -74,6 +87,15 @@ pub fn apply_pt(state: &mut [C32], pt: &Pt) {
         MatrixKind::Dense => dense(state, pt),
         MatrixKind::DiagPri => diagonal_main(state, pt),
         MatrixKind::DiagSec => diagonal_anti(state, pt),
+    }
+}
+
+/// Porta de fase fundida sobre o vetor inteiro (`ApplyFusedPhase` com a máscara
+/// cheia): `amplitude[i] *= e^{i·2π·passos(i)/2^16}`.
+pub fn apply_fused_phase(state: &mut [C32], fused: &FusedPhase) {
+    let table = phase_table();
+    for (index, amplitude) in state.iter_mut().enumerate() {
+        *amplitude *= table[fused.steps_at(index as u64)];
     }
 }
 

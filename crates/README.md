@@ -11,10 +11,10 @@ cli -> algos -> engine -> {cpu, gpu} -> core        (golden: só em testes)
 
 | Crate | Papel | Estado |
 |---|---|---|
-| `hgm-core` | catálogo de portas, parser da linguagem de circuitos, `Pt`, `StateVector`, trait `Backend` | portado: parser (ordenação por passo), classificação de matriz. **Falta:** fusão de fase, agendamento, medição |
-| `hgm-cpu` | backends de CPU | portado: serial (`t_CPU`). **Falta:** paralelo (regiões + rayon) |
+| `hgm-core` | catálogo de portas, parser da linguagem de circuitos, `Pt`/`Op`, `StateVector`, trait `Backend` | portado: parser, classificação de matriz, fusão de fase, agendamento em lotes, medição/colapso/probabilidades, `modmult`, `Mt19937` (igual ao `std::mt19937`) |
+| `hgm-cpu` | backends de CPU | portado: serial (`t_CPU`) e paralelo por regiões com rayon (`t_PAR_CPU`). `unsafe` só em `src/shared.rs`. **Falta:** modo híbrido (fase 6) |
 | `hgm-gpu` | GPU portátil (wgpu + WGSL) | vazio; é o spike da fase 2 (go/no-go) |
-| `hgm-engine` | `Simulator`: escolhe o backend, executa circuitos | mínimo (só `CpuSerial`) |
+| `hgm-engine` | `Simulator`: escolhe o backend, executa circuitos, mede | `CpuSerial` e `CpuParallel(Tuning)`; medição, colapso, `modmult`, semente; fusão opcional (desligada) |
 | `hgm-algos` | algoritmos | portado: teoria dos números do Shor. **Falta:** `general`, `grover`, `shor` |
 | `hgm-cli` | binário `hgm` | só uma demonstração (estado de Bell) |
 | `hgm-golden` | leitor dos vetores de `tests/golden` | só testes |
@@ -24,13 +24,18 @@ cli -> algos -> engine -> {cpu, gpu} -> core        (golden: só em testes)
 ```bash
 cargo test --workspace      # paridade com o C++ (tests/golden) + testes unitários
 cargo run -p hgm-cli        # demonstração
+
+# comparação de CPU com o C++ (ver ../benches/README.md)
+cargo run --release -p hgm-cpu --example bench_par -- 26 mixed 16 14 11 3
 ```
 
 ## Convenções
 
-- `unsafe` é proibido em todo o workspace (`[workspace.lints]`). Quando o backend
-  paralelo precisar dele, será num único módulo de `hgm-cpu`, com `// SAFETY:` e
-  testes (loom/miri se couber).
+- `unsafe` é proibido em todo o workspace (`[workspace.lints]`), com uma exceção: o
+  módulo `crates/hgm-cpu/src/shared.rs`, onde o backend paralelo entrega a cada
+  thread uma região disjunta do vetor. Cada acesso é checado em tempo de execução
+  contra a região (índice fora dela vira pânico) e cada bloco `unsafe` tem
+  `// SAFETY:`. Não rodei `miri`/`loom`.
 - Onde o C++ tinha `exit`, ponteiro nulo ou comportamento indefinido, o Rust devolve
   `Result`/`Option` (porta desconhecida, passos com números de qubits diferentes,
   falta de memória, inverso modular inexistente). Cada desvio está comentado no

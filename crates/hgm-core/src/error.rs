@@ -41,6 +41,12 @@ pub enum HgmError {
     #[error("porta compilada fora do estado: {0}")]
     PtOutOfRange(&'static str),
 
+    #[error("argumento inválido: {0}")]
+    InvalidArgument(String),
+
+    #[error("o ramo escolhido tem probabilidade zero e não pode ser normalizado")]
+    ZeroProbability,
+
     #[error("backend: {0}")]
     Backend(String),
 }

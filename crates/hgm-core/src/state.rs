@@ -5,8 +5,11 @@ use crate::{C32, MAX_QUBITS};
 
 #[derive(Clone, Debug)]
 pub struct StateVector {
-    qubits: usize,
-    amplitudes: Vec<C32>,
+    pub(crate) qubits: usize,
+    pub(crate) amplitudes: Vec<C32>,
+    /// Buffer auxiliar do `apply_mod_mult` (troca de lugar com `amplitudes`, como o
+    /// `scratch_state` do C++). Só existe depois da primeira multiplicação modular.
+    pub(crate) scratch: Option<Vec<C32>>,
 }
 
 impl StateVector {
@@ -29,7 +32,11 @@ impl StateVector {
             .map_err(|_| HgmError::OutOfMemory { qubits })?;
         amplitudes.resize(len, C32::new(0.0, 0.0));
         amplitudes[index] = C32::new(1.0, 0.0);
-        Ok(Self { qubits, amplitudes })
+        Ok(Self {
+            qubits,
+            amplitudes,
+            scratch: None,
+        })
     }
 
     /// Lê o formato de `tests/golden`: `float32` little-endian, pares `(re, im)`,

@@ -18,14 +18,14 @@ use std::collections::BTreeMap;
 
 use crate::error::{HgmError, Result};
 use crate::gates::GateCatalog;
-use crate::pt::Pt;
+use crate::pt::{Op, Pt};
 use crate::MAX_QUBITS;
 
 /// Circuito compilado: lista plana de portas na ordem de execução.
 #[derive(Clone, Debug)]
 pub struct Program {
     pub qubits: usize,
-    pub pts: Vec<Pt>,
+    pub ops: Vec<Op>,
 }
 
 /// Divide `text` em tokens por qualquer caractere de `delimiters`, ignorando
@@ -201,7 +201,7 @@ pub fn compile_steps<S: AsRef<str>>(
 
     Ok(Program {
         qubits: qubits.unwrap_or(0),
-        pts: all,
+        ops: all.into_iter().map(Op::Gate).collect(),
     })
 }
 
@@ -286,7 +286,7 @@ mod tests {
     fn iterations_repeat_the_program() {
         let program = compile("H,ID;ID,H", 3, &base()).unwrap();
         assert_eq!(program.qubits, 2);
-        assert_eq!(program.pts.len(), 6);
+        assert_eq!(program.ops.len(), 6);
     }
 
     #[test]

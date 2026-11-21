@@ -7,12 +7,12 @@ publish.workspace = true
 
 [dependencies]
 hgm-core.workspace = true
+rayon = "1"
 
 [dev-dependencies]
 hgm-golden.workspace = true
 
-# Quando o módulo de regiões paralelas (único `unsafe` planejado) chegar, este
-# crate deixa de herdar `unsafe_code = "forbid"` do workspace e passa a `deny`,
-# com `#[allow(unsafe_code)]` apenas nesse módulo.
-[lints]
-workspace = true
+# `unsafe` só no módulo `shared` (`#[allow(unsafe_code)]` em lib.rs). O resto do
+# workspace usa `forbid`; aqui é `deny` para permitir essa exceção local.
+[lints.rust]
+unsafe_code = "deny"
