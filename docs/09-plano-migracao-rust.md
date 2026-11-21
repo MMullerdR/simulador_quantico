@@ -155,8 +155,14 @@ região).
    mas levam ~890 s mesmo com o circuito reduzido a 14 qubits e 5 repetições. Isolado com
    tempos por fase (run 44909816577, `05c817b`): ~135 s para criar o contexto e **751 s na
    primeira execução do kernel de região** (circuito de 3 qubits, uma passada); daí em diante
-   cada execução leva de 4 a 100 ms. É custo único, do primeiro uso no WARP (provavelmente
-   compilação do shader de região no adaptador), não do tamanho do circuito; **Linux** sem adaptador (os testes de GPU não rodam). Logo
+   cada execução leva de 4 a 100 ms. É custo único, do primeiro uso no WARP, não do tamanho do
+   circuito. A sonda `examples/software_probe.rs` (workflow `gpu-software-probe`, run
+   44913362168) mostrou que depende do **tamanho do tile**: contexto mais primeira execução
+   levam 1,7 s com região de 4 bits, 2,9 s com 6 (workgroup 256; 0,8 s com workgroup 64),
+   6,6 s com 8, e com 12 não terminaram em 40 min (cancelados; o run anterior deu ~890 s,
+   então varia muito). Não verifiquei por que o WARP é tão sensível ao tile. O `hgm-gpu`
+   passa a limitar a região a 8 bits em adaptadores de software (`DeviceType::Cpu`); GPU de
+   verdade não é afetada; **Linux** sem adaptador (os testes de GPU não rodam). Logo
    Metal e DX12 foram exercitados só em adaptadores virtualizados/por software, e nenhuma
    GPU real que não seja a A4500 foi verificada.
 

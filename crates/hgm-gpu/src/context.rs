@@ -12,12 +12,18 @@ use crate::error::{GpuError, Result};
 use crate::plan::{plan, GpuGate, RegionGate, Step};
 use crate::shaders;
 
+/// Teto da região em adaptadores de software (`DeviceType::Cpu`, como o WARP do Windows).
+/// No WARP o custo de partida cresce depressa com o tile: contexto mais primeira execução
+/// levam 1,7 s com 4 bits, 2,9 s com 6 e 6,6 s com 8; com 12 bits passaram de 15 minutos
+/// (`docs/09` §4.2, `examples/software_probe.rs`). Em GPU de verdade o teto não se aplica.
+const SOFTWARE_MAX_REGION_BITS: u32 = 8;
+
 /// Parâmetros de construção.
 #[derive(Clone, Copy, Debug)]
 pub struct GpuOptions {
     /// Maior região (log2 de amplitudes) que os kernels aceitam. O padrão, 12, usa
     /// 32 KiB de memória de workgroup, como o CUDA do `v1.1.0`. Se o adaptador
-    /// oferece menos, cai sozinho.
+    /// oferece menos, cai sozinho (em adaptador de software, para no máximo 8).
     pub max_region_bits: u32,
     /// Threads por workgroup.
     pub workgroup_size: u32,
@@ -231,7 +237,10 @@ impl GpuContext {
 
         let workgroup_bytes = u64::from(limits.max_compute_workgroup_storage_size);
         let device_region_bits = floor_log2(workgroup_bytes / 8);
-        let max_region_bits = options.max_region_bits.min(device_region_bits);
+        let mut max_region_bits = options.max_region_bits.min(device_region_bits);
+        if info.device_type == wgpu::DeviceType::Cpu {
+            max_region_bits = max_region_bits.min(SOFTWARE_MAX_REGION_BITS);
+        }
         let wg = options.workgroup_size;
 
         let compile = |label: &str, source: String| {
