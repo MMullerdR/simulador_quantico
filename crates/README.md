@@ -13,10 +13,10 @@ cli -> algos -> engine -> {cpu, gpu} -> core        (golden: só em testes)
 |---|---|---|
 | `hgm-core` | catálogo de portas, parser da linguagem de circuitos, `Pt`/`Op`, `StateVector`, trait `Backend` | portado: parser, classificação de matriz, fusão de fase, agendamento em lotes, medição/colapso/probabilidades, `modmult`, `Mt19937` (igual ao `std::mt19937`) |
 | `hgm-cpu` | backends de CPU | portado: serial (`t_CPU`) e paralelo por regiões com rayon (`t_PAR_CPU`). `unsafe` só em `src/shared.rs`. **Falta:** modo híbrido (fase 6) |
-| `hgm-gpu` | GPU portátil (wgpu + WGSL) | **spike** da fase 2: kernels de região/global/medição/banda, planejador de passadas, contexto (`prepare`/`run`), paridade com a CPU. **Falta:** fase fundida, `modmult`, sessão residente, trait `Backend`, estados > 27 qubits. Resultados em `docs/09` §4.2 |
-| `hgm-engine` | `Simulator`: escolhe o backend, executa circuitos, mede | `CpuSerial` e `CpuParallel(Tuning)`; medição, colapso, `modmult`, semente (`SimConfig`); fusão opcional (desligada) |
+| `hgm-gpu` | GPU portátil (wgpu + WGSL) | kernels de região/global/medição/banda, planejador de passadas, contexto (`prepare`/`run`), paridade com a CPU (spike da fase 2, `docs/09` §4.2) e `GpuBackend` (fase 4a: `Backend` com o estado no host, uma ida e volta por execução). **Falta (fase 4):** fase fundida, `modmult`, sessão residente com medição/colapso na GPU, estados > 27 qubits |
+| `hgm-engine` | `Simulator`: escolhe o backend, executa circuitos, mede | `CpuSerial`, `CpuParallel(Tuning)` e `Gpu(GpuTuning)`; medição, colapso, `modmult`, semente (`SimConfig`); fusão opcional (desligada) |
 | `hgm-algos` | algoritmos | portado: `general`, `grover` (blocos de iterações), `shor` (circuito e emulação, com a correção do item 30), teoria dos números, geradores de circuito (QFT, somadores de Draper, mult. modular) |
-| `hgm-cli` | executáveis `general`, `grover`, `shor` | portado, argumentos posicionais como os `*.out` do C++. Tipos de execução 2 (GPU) e 3 (híbrido) são recusados até as fases 4 e 6 |
+| `hgm-cli` | executáveis `general`, `grover`, `shor` | portado, argumentos posicionais como os `*.out` do C++. Tipo 2 (GPU) usa o `GpuBackend`; `BLOCK_SIZE`, `REPEAT_COUNT` e `GPUS` são ignorados, `GPU_REGION_BITS` vale. O tipo 3 (híbrido) é recusado até a fase 6 |
 | `hgm-golden` | leitor dos vetores de `tests/golden` | só testes |
 
 ## Rodar
@@ -33,7 +33,8 @@ HGM_SEED=7 SHOR_EMULATE=1 cargo run --release -p hgm-cli --bin shor -- 15 0
 # GPU (precisa de adaptador; HGM_REQUIRE_GPU=1 faz a falta dele virar falha)
 HGM_REQUIRE_GPU=1 cargo test --release -p hgm-gpu
 cargo run --release -p hgm-gpu --example spike -- 26 12 4 5 3 300
-cargo run --release -p hgm-gpu --example grover_bench -- 24 10
+cargo run --release -p hgm-algos --example gpu_grover_bench -- 24 10
+HGM_SEED=7 cargo run --release -p hgm-cli --bin grover -- 12 2   # GPU (tipo de execução 2)
 
 # comparação de CPU com o C++ (ver ../benches/README.md)
 cargo run --release -p hgm-cpu --example bench_par -- 26 mixed 16 14 11 3

@@ -9,14 +9,40 @@ use hgm_core::error::Result;
 use hgm_core::optimize::fuse_phase_runs;
 use hgm_core::{Backend, GateCatalog, Measurement, Mt19937, Program, StateVector};
 use hgm_cpu::{ParallelBackend, SerialBackend, Tuning};
+use hgm_gpu::{GpuBackend, RunTuning};
 
-/// Backends disponíveis. `Gpu` e `Hybrid` entram com as fases 4-5.
+/// Ajuste do backend de GPU (`gpu_region_bits`, `gpu_coalesced_bits` e o lote do
+/// agendador do C++).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuTuning {
+    /// Região em memória de workgroup (log2 de amplitudes); o contexto a reduz se o
+    /// adaptador oferece menos.
+    pub region_bits: u32,
+    /// Bits baixos contíguos da região (leitura coalescida).
+    pub coalesced_bits: u32,
+    /// Portas por lote do agendador por comutação (0 desliga a reordenação).
+    pub batch: usize,
+}
+
+impl Default for GpuTuning {
+    fn default() -> Self {
+        Self {
+            region_bits: 12,
+            coalesced_bits: 4,
+            batch: hgm_gpu::backend::DEFAULT_BATCH,
+        }
+    }
+}
+
+/// Backends disponíveis. O híbrido entra com a fase 6.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendKind {
     /// `t_CPU`: serial, o oráculo dos demais.
     CpuSerial,
     /// `t_PAR_CPU`: regiões em paralelo (rayon).
     CpuParallel(Tuning),
+    /// `t_GPU`: GPU portátil (wgpu), com o estado no host entre execuções.
+    Gpu(GpuTuning),
 }
 
 /// Semente padrão do `std::mt19937` do C++ (`g_rng` sem `seed_rng`).
@@ -24,8 +50,7 @@ pub const DEFAULT_SEED: u32 = 5489;
 
 /// O que os algoritmos (`general`, `grover`, `shor`) precisam saber para montar
 /// um [`Simulator`]: o backend e a semente do gerador de medições/sorteios. É o
-/// `TuningDefaults` + `seed_rng` do C++ sem os campos de GPU, que entram com a
-/// fase 4.
+/// `TuningDefaults` + `seed_rng` do C++ com o ajuste de GPU dentro de [`BackendKind::Gpu`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SimConfig {
     pub backend: BackendKind,
@@ -63,6 +88,14 @@ impl Simulator {
         let backend: Box<dyn Backend> = match config.backend {
             BackendKind::CpuSerial => Box::new(SerialBackend::new()),
             BackendKind::CpuParallel(tuning) => Box::new(ParallelBackend::new(tuning)?),
+            BackendKind::Gpu(tuning) => Box::new(
+                GpuBackend::new(RunTuning {
+                    region_bits: tuning.region_bits,
+                    coalesced_bits: tuning.coalesced_bits,
+                })
+                .map_err(|e| hgm_core::error::HgmError::Backend(e.to_string()))?
+                .with_batch(tuning.batch),
+            ),
         };
         Ok(Self {
             state: StateVector::basis(qubits, 0)?,
@@ -242,6 +275,58 @@ mod tests {
             simulator.state().clone()
         };
         assert!(run(false).max_abs_diff(&run(true)) < 1e-5);
+    }
+
+    /// `Some(simulador)` se há GPU; senão `None` (o teste passa avisando), a menos que
+    /// `HGM_REQUIRE_GPU` esteja definida.
+    fn gpu_simulator(qubits: usize) -> Option<Simulator> {
+        match Simulator::new(BackendKind::Gpu(GpuTuning::default()), qubits) {
+            Ok(simulator) => Some(simulator),
+            Err(error) => {
+                assert!(
+                    std::env::var("HGM_REQUIRE_GPU").is_err(),
+                    "HGM_REQUIRE_GPU definida, mas não há GPU utilizável: {error}"
+                );
+                println!("SEM GPU, teste não executado: {error}");
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn gpu_backend_matches_the_serial_oracle_through_the_engine() {
+        let Some(mut gpu) = gpu_simulator(8) else {
+            return;
+        };
+        assert_eq!(gpu.backend_name(), "t_GPU (Rust, wgpu)");
+        let mut cpu = Simulator::new(BackendKind::CpuSerial, 8).unwrap();
+        // Hadamards, controles dentro e fora de uma região pequena, fases e repetições.
+        let steps = [
+            "H,H,H,H,H,H,H,H",
+            "Control1(1),ID,ID,ID,ID,ID,ID,Target1(X)",
+            "ID,R1,Z,ID,H,ID,R3,ID",
+            "Control1(1),Control1(1),ID,ID,ID,ID,ID,Target1(H)",
+        ];
+        for simulator in [&mut cpu, &mut gpu] {
+            simulator.run_steps(&steps, 1, 3).unwrap();
+        }
+        assert!(cpu.state().max_abs_diff(gpu.state()) < 1e-5);
+        assert!((gpu.state().norm_sqr() - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn gpu_backend_keeps_measurements_consistent_with_the_host_state() {
+        let Some(mut gpu) = gpu_simulator(2) else {
+            return;
+        };
+        gpu.seed(11);
+        gpu.run("H,ID;Control1(1),Target1(X)", 1, 1).unwrap();
+        let first = gpu.measure(0).unwrap().bit;
+        assert_eq!(first, gpu.measure(1).unwrap().bit);
+        // Uma segunda execução parte do estado colapsado, que subiu de novo para a GPU.
+        gpu.run("X,X", 1, 1).unwrap();
+        let expected = if first == 0 { 3 } else { 0 };
+        assert!((gpu.state().as_slice()[expected].norm() - 1.0).abs() < 1e-5);
     }
 
     #[test]

@@ -15,7 +15,6 @@ pollster = "1"
 bytemuck = "1"
 
 [dev-dependencies]
-hgm-algos.workspace = true
 hgm-cpu.workspace = true
 
 [lints]

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Smoke test dos executáveis Rust (fase 5 de docs/09): a parte de CPU de
 # tests/smoke_test.sh, com as mesmas amplitudes e os mesmos limiares de taxa de
-# sucesso, aplicada a general/grover/shor de crates/hgm-cli. As verificações de
-# t_GPU e t_HYBRID do script do C++ NÃO foram portadas: esses backends ainda não
-# existem em Rust (fases 4 e 6) e os executáveis os recusam.
+# sucesso, aplicada a general/grover/shor de crates/hgm-cli. A parte de t_GPU só
+# roda se houver adaptador (HGM_REQUIRE_GPU=1 transforma a falta dele em falha); o
+# t_HYBRID ainda não existe em Rust (fase 6) e os executáveis o recusam.
 #
 # Uso: tests/smoke_test_rust.sh   (compila em --release antes de rodar)
 set -uo pipefail
@@ -51,7 +51,7 @@ check_success_rate(){
 check_refused(){
 	local label="$1"; shift
 	if "$@" >/dev/null 2>&1; then
-		echo "FAIL $label (deveria recusar: backend ainda não existe)"
+		echo "FAIL $label (deveria recusar)"
 		FAIL=1
 	else
 		echo "OK   $label (recusado, como esperado)"
@@ -75,10 +75,27 @@ check_success_rate "shor 15 0 (CPU serial)" "^Found factors:" 16 1 "$BIN/shor" 1
 check_success_rate "shor 15 0 (CPU serial, SHOR_EMULATE=1)" "^Found factors:" 16 1 env SHOR_EMULATE=1 "$BIN/shor" 15 0
 check_success_rate "shor 15 1 2 (CPU paralela, SHOR_EMULATE=1)" "^Found factors:" 16 1 env SHOR_EMULATE=1 "$BIN/shor" 15 1 2
 
-echo "-- GPU/híbrido: ainda não existem em Rust; os executáveis têm que recusar --"
-check_refused "general 10 2 1 (t_GPU)" "$BIN/general" 10 2 1
+echo "-- GPU (t_GPU): só com adaptador; HGM_REQUIRE_GPU=1 exige --"
+if "$BIN/general" 10 2 1 >/dev/null 2>&1; then
+	for pair in "10 2 1:0.03125" "14 2 1:0.0078125" "18 2 1:0.001953125"; do
+		combo="${pair%%:*}"
+		expected="${pair##*:}"
+		amp=$("$BIN/general" $combo 2>/dev/null | head -1 | awk '{print $2}')
+		check_amplitude "general $combo (t_GPU)" "$amp" "$expected"
+	done
+	# Menos rodadas que na CPU: cada processo abre o dispositivo (em adaptador de software
+	# isso leva segundos).
+	check_success_rate "grover 12 2 (t_GPU)" "^Found value:" 8 5 "$BIN/grover" 12 2
+	check_success_rate "shor 15 2 (t_GPU)" "^Found factors:" 8 1 "$BIN/shor" 15 2
+elif [ -n "${HGM_REQUIRE_GPU:-}" ]; then
+	echo "FAIL t_GPU (HGM_REQUIRE_GPU definida, mas general 10 2 1 não rodou)"
+	FAIL=1
+else
+	echo "SKIP t_GPU (sem adaptador de GPU utilizável; não é verde de verdade, ver HGM_REQUIRE_GPU)"
+fi
+
+echo "-- híbrido: ainda não existe em Rust (fase 6); o executável tem que recusar --"
 check_refused "grover 12 3 2 (t_HYBRID)" "$BIN/grover" 12 3 2
-check_refused "shor 15 2 1 (t_GPU)" "$BIN/shor" 15 2 1
 
 echo "-- entradas inválidas: código de saída diferente de zero --"
 check_refused "grover 8 0 1 1 1 1 999 (search_value fora do espaço)" "$BIN/grover" 8 0 1 1 1 1 999

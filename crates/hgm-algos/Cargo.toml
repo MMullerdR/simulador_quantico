@@ -12,6 +12,8 @@ hgm-engine.workspace = true
 [dev-dependencies]
 hgm-cpu.workspace = true
 hgm-golden.workspace = true
+# só para o exemplo gpu_grover_bench
+hgm-gpu.workspace = true
 
 [lints]
 workspace = true

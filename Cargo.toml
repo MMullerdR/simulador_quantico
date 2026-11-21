@@ -14,6 +14,7 @@ publish = false
 num-complex = "0.4"
 thiserror = "1"
 hgm-algos = { path = "crates/hgm-algos" }
+hgm-gpu = { path = "crates/hgm-gpu" }
 hgm-core = { path = "crates/hgm-core" }
 hgm-cpu = { path = "crates/hgm-cpu" }
 hgm-engine = { path = "crates/hgm-engine" }

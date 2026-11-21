@@ -6,7 +6,7 @@
 //! qubit no fim (o C++ faz 23): confere-se a probabilidade do valor procurado, lendo as
 //! duas amplitudes dele.
 //!
-//! uso: `grover_bench [QUBITS] [VALOR] [REGIAO] [COALESCIDA] [LOTE]`
+//! uso: `cargo run --release -p hgm-algos --example gpu_grover_bench -- [QUBITS] [VALOR] [REGIAO] [COALESCIDA] [LOTE]`
 
 use std::time::Instant;
 

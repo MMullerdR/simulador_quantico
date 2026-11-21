@@ -22,7 +22,7 @@ use std::str::FromStr;
 
 use hgm_core::HgmError;
 use hgm_cpu::Tuning;
-use hgm_engine::BackendKind;
+use hgm_engine::{BackendKind, GpuTuning};
 
 /// Região e coalescida padrão da CPU paralela (`TuningDefaults` do C++).
 pub const DEFAULT_CPU_REGION_BITS: u32 = 14;
@@ -95,10 +95,21 @@ pub fn parse_backend(args: &[String], default_type: i64) -> Result<BackendKind, 
                 region_bits: DEFAULT_CPU_REGION_BITS,
             }))
         }
-        2 | 3 => Err(CliError::Usage(format!(
-            "Execution type {exec_type} (t_GPU/t_HYBRID) ainda não existe na versão Rust \
-             (fases 4 e 6 de docs/09); use 0 (CPU) ou 1 (CPU paralela)"
-        ))),
+        // BLOCK_SIZE (threads por bloco do CUDA) e REPEAT_COUNT não têm correspondente
+        // no wgpu e são ignorados; GPU_REGION_BITS vale como no C++. GPUS (`args[2]`)
+        // também é ignorado: o Rust usa um dispositivo só.
+        2 => {
+            let mut tuning = GpuTuning::default();
+            if let Some(bits) = parse_arg::<u32>(args, 5, "GPU_REGION_BITS")? {
+                tuning.region_bits = bits;
+            }
+            Ok(BackendKind::Gpu(tuning))
+        }
+        3 => Err(CliError::Usage(
+            "Execution type 3 (t_HYBRID) ainda não existe na versão Rust (fase 6 de docs/09); \
+             use 0 (CPU), 1 (CPU paralela) ou 2 (GPU)"
+                .to_owned(),
+        )),
         other => Err(CliError::Usage(format!("Invalid execution type: {other}"))),
     }
 }
@@ -179,9 +190,17 @@ mod tests {
     }
 
     #[test]
-    fn gpu_types_and_garbage_are_usage_errors() {
+    fn gpu_type_is_accepted_and_hybrid_garbage_are_usage_errors() {
+        assert_eq!(
+            parse_backend(&args(&["10", "2", "1"]), 0).unwrap(),
+            BackendKind::Gpu(GpuTuning::default())
+        );
+        match parse_backend(&args(&["10", "2", "1", "512", "1", "9"]), 0).unwrap() {
+            BackendKind::Gpu(tuning) => assert_eq!(tuning.region_bits, 9),
+            other => panic!("backend inesperado: {other:?}"),
+        }
         assert!(matches!(
-            parse_backend(&args(&["10", "2", "1"]), 0),
+            parse_backend(&args(&["10", "2", "1", "512", "1", "x"]), 0),
             Err(CliError::Usage(_))
         ));
         assert!(matches!(
