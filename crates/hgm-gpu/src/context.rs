@@ -1337,10 +1337,15 @@ impl GpuContext {
     /// na GPU, fechamento em `f64` aqui. Num estado em blocos cada bloco tem os seus
     /// parciais; se o bit escolhe o bloco, o bloco inteiro vai para um dos lados.
     pub fn measure_sums(&self, state: &GpuState, bit: u32) -> Result<(f64, f64)> {
-        const GROUPS: u32 = 1024;
+        const MAX_GROUPS: u32 = 1024;
         let local = state.chunk_bits;
         let chunks = state.chunk_count();
         let in_chunk = bit < local;
+        // Um bloco pequeno não precisa de 1024 workgroups (num adaptador de software cada
+        // um custa).
+        let groups = (1u64 << local)
+            .div_ceil(u64::from(self.options.workgroup_size))
+            .clamp(1, u64::from(MAX_GROUPS)) as u32;
 
         let mut params_bytes = Vec::new();
         for chunk in 0..chunks {
@@ -1366,7 +1371,7 @@ impl GpuContext {
                 contents: &params_bytes,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
-        let partial_bytes = chunks as u64 * u64::from(GROUPS) * 2 * 4;
+        let partial_bytes = chunks as u64 * u64::from(groups) * 2 * 4;
         let partial = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("partials"),
             size: partial_bytes,
@@ -1422,14 +1427,14 @@ impl GpuContext {
             for (chunk, bind_group) in bind_groups.iter().enumerate() {
                 let offset = chunk as u64 * self.uniform_slot;
                 pass.set_bind_group(0, bind_group, &[offset as u32]);
-                pass.dispatch_workgroups(GROUPS, 1, 1);
+                pass.dispatch_workgroups(groups, 1, 1);
             }
         }
         encoder.copy_buffer_to_buffer(&partial, 0, &staging, 0, partial_bytes);
         self.queue.submit(Some(encoder.finish()));
         let sums: Vec<f32> = self.map_read(&staging)?;
         let (mut zero, mut one) = (0.0f64, 0.0f64);
-        let per_chunk = GROUPS as usize * 2;
+        let per_chunk = groups as usize * 2;
         for (chunk, block) in sums.chunks(per_chunk).enumerate() {
             let (mut chunk_zero, mut chunk_one) = (0.0f64, 0.0f64);
             let (pairs, _) = block.as_chunks::<2>();
