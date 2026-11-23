@@ -4,14 +4,15 @@
 # Rust (critérios 2 e 3 de docs/09). Não serve para GPU de outro fornecedor: o
 # C++ só tem CUDA.
 #
-# Pré-requisito: "make GPU=real" feito em outputs/. Uso, a partir da raiz:
+# Pré-requisito: um checkout do tag v1.1.0 compilado com "make GPU=real" (o C++ não está
+# mais na main); aponte para ele com CPP_DIR (usa $CPP_DIR/outputs). Uso, a partir da raiz:
 #   tests/gpu-battery/run-baseline-cpp.sh [pasta_de_saida]
 # Variáveis: REPS (padrão 3 repetições por caso), QUICK=1 (só casos pequenos,
 # para conferir que o script funciona), THREADS (padrão: nproc).
 set -u
 cd "$(dirname "$0")/../.."
 
-BIN=outputs
+BIN="${CPP_DIR:-.}/outputs"
 OUT="${1:-tests/gpu-battery/resultados/baseline-cpp-$(date +%Y%m%d-%H%M%S)}"
 REPS="${REPS:-3}"
 THREADS="${THREADS:-$(nproc 2>/dev/null || echo 4)}"
@@ -24,7 +25,7 @@ tests/gpu-battery/coleta-ambiente.sh > "$OUT/ambiente.md" 2>&1
 
 for exe in general shor grover; do
 	if [ ! -x "$BIN/$exe.out" ]; then
-		echo "ERRO: $BIN/$exe.out não existe; rode 'make GPU=real' antes." >&2
+		echo "ERRO: $BIN/$exe.out não existe; rode 'make GPU=real' no checkout do tag (CPP_DIR)." >&2
 		exit 1
 	fi
 done

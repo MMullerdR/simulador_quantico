@@ -5,10 +5,11 @@ Esta pasta guarda o que o C++ do tag `v1.1.0` produz para circuitos fixos, em
 formato legível sem o C++, para o porte em Rust provar paridade e para o C++ poder
 sair do repositório sem perder o oráculo.
 
-- `export_golden.cpp`: gera tudo (`make golden`).
+- `export_golden.cpp`: gera tudo. O C++ não está mais na `main`: `regenerar.sh` clona o
+  tag `v1.1.0`, compila os geradores com `golden.mk` e compara com `data/`.
 - `data/`: a saída (310 casos, ~3,7 MB). **Não editar à mão**: regenerar.
 - `check_golden.py`: confere `data/` com um simulador independente em Python/numpy.
-- `export_runs.cpp` + `data/runs.txt` (`make golden-runs`): execuções completas de
+- `export_runs.cpp` + `data/runs.txt` (`golden-runs` em `golden.mk`): execuções completas de
   `Grover()` e `Shor()` do C++ no `t_CPU` com o gerador semeado (`seed_rng`): 40 de
   Grover (5 configurações x sementes 1..8) e 68 de Shor (N=15 a 253, circuito e
   emulação, QFT aproximada e exata). Cada linha traz o valor achado ou os fatores,
@@ -123,9 +124,10 @@ todas. Ele não vê diferença menor que ~5e-5 num estado.
 ## Regenerar
 
 ```bash
-make golden          # build do C++ (stub, sem GPU) e escreve tests/golden/data
+tests/golden/regenerar.sh      # clona o tag v1.1.0, compila (stub, sem GPU), gera e compara com data/
 python tests/golden/check_golden.py
 ```
 
-Regenerar só faz sentido se o comportamento do C++ mudou de propósito; o diff dos
-dados é o registro dessa mudança. Para reproduzir os dados do tag, usar o tag.
+O script confere se a saída é idêntica a `data/` (conferido com g++ 15, além do 13.3 da
+proveniência: os arquivos saem iguais byte a byte). Os dados vêm do tag; não há mais C++ na
+`main` para mudar de propósito.

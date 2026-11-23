@@ -1,10 +1,10 @@
 # Simulador Quântico — HybriD-GM
 
 Simulador de computação quântica baseado em vetor de estado (*state-vector*),
-capaz de rodar em CPU serial, CPU paralela (OpenMP), GPU (CUDA) ou em modo
-híbrido CPU+GPU simultâneo. Não usa nenhuma biblioteca de circuito quântico
-pronta — parser de portas, motor de execução e kernels CUDA são escritos à
-mão em C/C++/CUDA.
+capaz de rodar em CPU serial, CPU paralela, GPU (qualquer uma que o `wgpu`
+suporte: Vulkan, Metal, DX12) ou em modo híbrido GPU+CPU. Não usa nenhuma
+biblioteca de circuito quântico pronta — parser de portas, motor de execução e
+kernels são escritos à mão em Rust (kernels de GPU em WGSL).
 
 O modelo **HybriD-GM** foi concebido como uma metodologia computacional para
 simulação de computação quântica voltada a arquiteturas paralelas híbridas
@@ -18,109 +18,61 @@ Traz duas implementações de algoritmos quânticos como carga de
 teste/benchmark: **Grover** (busca não estruturada) e **Shor** (fatoração
 de inteiros).
 
-## Versão em Rust
+## Requisitos e build
 
-Existe uma reescrita em Rust (workspace em [`crates/`](crates/README.md)) que roda em qualquer
-GPU que o `wgpu` suporte (Vulkan, Metal, DX12) e em Windows, Linux e macOS, sem `nvcc` nem
-`makefile`:
+Só o [Rust](https://rustup.rs) (o compilador está fixado em `rust-toolchain.toml`).
+Funciona em Windows, Linux e macOS, sem `nvcc` nem `makefile`.
 
 ```bash
-cargo build --release
-target/release/general 20 1 4     # os mesmos argumentos dos *.out: QUBITS TIPO [THREADS]...
+cargo build --release          # gera target/release/{general,grover,shor}
+cargo test --workspace         # paridade com o C++ (tests/golden) e testes unitários
+bash tests/smoke_test_rust.sh  # os três executáveis, fim a fim
+```
+
+## Uso
+
+```bash
+# general QUBITS [EXEC_TYPE] [THREADS] [BLOCK_SIZE] [REPEAT_COUNT] [GPU_REGION_BITS]
+target/release/general 20 1 4        # benchmark de Hadamard, 20 qubits, CPU paralela, 4 threads
+
+# grover QUBITS [EXEC_TYPE] [THREADS] [BLOCK_SIZE] [REPEAT_COUNT] [GPU_REGION_BITS] [SEARCH_VALUE]
+target/release/grover 10 0           # busca de Grover, 10 qubits, CPU serial, procurando o valor 10 (padrão)
+target/release/grover 10 0 1 1 1 1 42  # mesma busca, procurando o valor 42
+
+# shor QUBITS [EXEC_TYPE] [THREADS] [BLOCK_SIZE] [REPEAT_COUNT] [GPU_REGION_BITS]
+# qubits precisa ser um dos valores mapeados: 15->57, 17->119, 19->253, 21->485, 23->1017, 25->2045, 27->2863
+target/release/shor 15 0
 ```
 
 Tipos de execução: `0` CPU serial, `1` CPU paralela, `2` GPU, `3` híbrido (GPU enquanto o
-estado cabe, CPU paralela quando não). Em [docs/12](docs/12-versao-rust.md) estão os limites,
-as diferenças em relação ao C++, o desempenho contra o `v1.1.0` e a tabela de hardware
-**verificado / não testado**. O que está abaixo, daqui em diante, descreve a versão em C++/CUDA.
+estado cabe, CPU paralela quando não). Os limites, as variáveis de ambiente, as diferenças em
+relação ao C++, o desempenho contra o `v1.1.0` e a tabela de hardware **verificado / não
+testado** estão em [docs/12](docs/12-versao-rust.md).
+
+## Estrutura do projeto
+
+```
+crates/              workspace Rust (ver crates/README.md): hgm-core, hgm-cpu, hgm-gpu,
+                     hgm-engine, hgm-algos, hgm-cli, hgm-golden
+tests/golden/        vetores de referência gerados pelo C++ do tag v1.1.0 (o oráculo de paridade)
+tests/gpu-battery/   bateria de testes de GPU (docs/11) e o baseline do C++
+benches/             benchmarks C++ x Rust
+docs/                documentação
+```
+
+## Versão em C++/CUDA (histórica)
+
+A implementação original em C++/CUDA (OpenMP + `nvcc`, só Linux/WSL2) saiu da `main` na
+versão 2.0.0. Continua no tag [`v1.1.0`](https://github.com/MMullerdR/simulador_quantico/releases/tag/v1.1.0)
+e na branch `cpp-legacy`, com o `makefile`, os testes e o README daquela época.
 
 ## Documentação
 
 A pasta [docs/](docs/00-indice.md) tem uma explicação aprofundada de como o
-simulador funciona por dentro (representação do estado, linguagem de
+simulador funciona por dentro (os documentos 01 a 08 descrevem a implementação em
+C++/CUDA do tag `v1.1.0`; o Rust está em [docs/12](docs/12-versao-rust.md)) (representação do estado, linguagem de
 circuitos, motor de execução em CPU/GPU, e os algoritmos de Grover e Shor
 mapeados linha a linha ao código) — comece por
 [docs/00-indice.md](docs/00-indice.md). Bugs e pontos de atenção conhecidos
 estão listados em
 [docs/07-bugs-e-pontos-de-atencao.md](docs/07-bugs-e-pontos-de-atencao.md).
-
-## Estrutura do projeto
-
-```
-include/
- ├─ core/           common.h, dgm.h, gates.h
- ├─ algorithms/     lib_general.h, lib_grover.h, lib_shor.h
- └─ cli/            cli_common.h
-src/
- ├─ core/           motor de simulação: common.cpp, dgm_*.cpp, gates.cpp, kernel.cu
- ├─ algorithms/     bibliotecas de algoritmo: lib_general.cpp, lib_grover.cpp, lib_shor.cpp
- └─ cli/            main() de cada executável: general.cpp, grover.cpp, shor.cpp
-tests/               regressão de string (test_qft_addf.cpp), regressão de
-                     execução via DGM (test_gates.cpp), smoke test fim a fim
-                     (smoke_test.sh)
-outputs/            gerado pelo build (.o e .out) — não versionado
-docs/                documentação
-makefile
-```
-
-## Requisitos
-
-O projeto usa `nvcc` (CUDA toolkit), `g++` com OpenMP e headers POSIX
-(`sys/time.h`, `unistd.h`) — precisa de **Linux** ou **WSL2** com o
-[CUDA toolkit](https://developer.nvidia.com/cuda/wsl) instalado. Não
-compila nativamente no Windows/MSVC.
-
-## Build
-
-```bash
-make            # compila os três executáveis (shor, grover, general)
-make shor       # só o shor.out
-make grover     # só o grover.out
-make general    # só o general.out
-make clean      # remove outputs/
-make test       # builda tudo, roda a regressão de circuito e o smoke test fim a fim
-```
-
-Os binários e objetos vão para `outputs/` (ex: `outputs/shor.out`).
-
-Dois parâmetros de tuning no topo do `makefile`:
-- `ARCH` — *compute capability* da GPU alvo (`nvidia-smi --query-gpu=compute_cap --format=csv` para descobrir a sua).
-- `OPS_BLOCK` — quantas portas cabem coalescidas num lote enviado à GPU por vez.
-
-## Uso
-
-Tipos de execução (`enum` em `include/core/dgm.h`): `0=t_CPU, 1=t_PAR_CPU,
-2=t_GPU, 3=t_HYBRID`.
-
-```bash
-# outputs/general.out <qubits> <tipo_execução> [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
-outputs/general.out 20 1 4        # benchmark de Hadamard, 20 qubits, CPU paralela, 4 threads
-
-# outputs/grover.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits] [search_value]
-outputs/grover.out 10 0            # busca de Grover, 10 qubits, CPU serial, procurando o valor 10 (default)
-outputs/grover.out 10 0 1 1 1 1 42 # mesma busca, procurando o valor 42 em vez do default
-
-# outputs/shor.out <qubits> [tipo_execução] [threads|gpus] [block_size] [repeat_count] [gpu_region_bits]
-# qubits precisa ser um dos valores mapeados internamente:
-# 15->57, 17->119, 19->253, 21->485, 23->1017, 25->2045, 27->2863
-outputs/shor.out 15 0
-```
-
-`block_size`/`repeat_count`/`gpu_region_bits` só valem pra `t_GPU`/`t_HYBRID`
-(exec_type 2/3) — ajustam o tuning de execução em GPU (ver
-[docs/04-gpu-cuda.md](docs/04-gpu-cuda.md)). Precisam satisfazer
-`2*block_size*repeat_count == 2^gpu_region_bits` e `repeat_count` ser
-potência de 2 — `DGM::validateTuning()` recusa a combinação com uma
-mensagem clara em vez de deixar a GPU acessar memória fora dos limites.
-Exemplo explorando um tuning diferente do default
-(`gpu_coalesced_bits=4, block_size=512, repeat_count=4, gpu_region_bits=12`,
-o melhor combo medido numa RTX A4500 — ver item 22 em
-[docs/07-bugs-e-pontos-de-atencao.md](docs/07-bugs-e-pontos-de-atencao.md)):
-
-```bash
-outputs/general.out 16 2 1 128 2 9   # t_GPU, block_size=128, repeat_count=2, gpu_region_bits=9
-```
-
-Veja [docs/05-algoritmo-grover.md](docs/05-algoritmo-grover.md) e
-[docs/06-algoritmo-shor.md](docs/06-algoritmo-shor.md) para o que cada
-algoritmo faz e como está implementado.

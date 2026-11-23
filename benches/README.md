@@ -23,16 +23,17 @@ cargo run --release -p hgm-cpu --example bench_par -- QUBITS CARGA THREADS REGIA
 
 ## C++
 
-Precisa dos objetos do core compilados do tag `v1.1.0` (`make` gera `outputs/*.o`):
+O C++ não está mais na `main`. Num checkout do tag `v1.1.0` (`git clone --branch v1.1.0 <repo>`),
+copie `benches/cpp/bench_par.cpp` para a raiz do checkout, rode `make` (gera `outputs/*.o`) e:
 
 ```bash
-g++ -O3 -fopenmp -Iinclude benches/cpp/bench_par.cpp <objetos do core> -o bench_par.out
+g++ -O3 -fopenmp -Iinclude bench_par.cpp <objetos do core> -o bench_par.out
 ./bench_par.out QUBITS CARGA THREADS REGIAO COALESCIDA REPS [serial]
 ```
 
 ## Ponta a ponta: C++ x Rust (fase 7)
 
-`benches/end_to_end.sh DIR_CPP DIR_RUST [FILTRO]` roda as mesmas linhas de comando nos dois
+`benches/end_to_end.sh DIR_CPP DIR_RUST [FILTRO]` (`DIR_CPP` = checkout do tag `v1.1.0` compilado com `make GPU=real`) roda as mesmas linhas de comando nos dois
 (general, grover e shor em serial, CPU paralela, GPU e híbrido) e imprime tempo de parede, se
 achou o resultado e a razão Rust/C++. Resultado e leitura em
 [docs/12](../docs/12-versao-rust.md#4-desempenho-contra-o-c-v110).

@@ -1,5 +1,5 @@
 # Workspace Rust do HybriD-GM, v2.0.0 (docs/09-plano-migracao-rust.md, docs/12-versao-rust.md).
-# O C++/CUDA continua na raiz (src/, include/, makefile) e no tag v1.1.0 / branch cpp-legacy.
+# O C++/CUDA saiu da main: continua no tag v1.1.0 e na branch cpp-legacy.
 [workspace]
 resolver = "2"
 members = ["crates/*"]

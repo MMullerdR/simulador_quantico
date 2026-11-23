@@ -1,9 +1,8 @@
 # Workspace Rust
 
 Migração do HybriD-GM para Rust, conforme [docs/09](../docs/09-plano-migracao-rust.md).
-O C++ original continua na raiz do repositório, no tag `v1.1.0` e na branch
-`cpp-legacy`; nada aqui o substitui até a paridade ser provada contra
-[`tests/golden`](../tests/golden/README.md).
+O C++ original saiu da `main` e continua no tag `v1.1.0` e na branch `cpp-legacy`; a
+paridade com ele é provada contra [`tests/golden`](../tests/golden/README.md).
 
 ```text
 cli -> algos -> engine -> {cpu, gpu} -> core        (golden: só em testes)

@@ -6,6 +6,11 @@ CPU+GPU simultâneo. Ele não usa nenhuma biblioteca de "circuito quântico" pro
 tudo, desde o parser de portas até a aplicação da matriz na memória, é escrito à mão
 em C/C++/CUDA, com muita manipulação de bits para performance.
 
+> **Nota:** a implementação em C/C++/CUDA descrita nos documentos 01 a 08 saiu da `main`
+> depois da versão em Rust (2.0.0). O código e os caminhos citados (`src/`, `include/`,
+> `makefile`) estão no tag `v1.1.0` e na branch `cpp-legacy`. O Rust é descrito em
+> [12](12-versao-rust.md).
+
 ## Estrutura de pastas
 
 ```

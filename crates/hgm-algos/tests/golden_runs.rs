@@ -1,5 +1,5 @@
 //! Execuções completas contra o C++ (`tests/golden/data/runs.txt`, gerado por
-//! `make golden-runs`): `Grover()` e `Shor()` do tag `v1.1.0` no `t_CPU`, com o
+//! `tests/golden/regenerar.sh`): `Grover()` e `Shor()` do tag `v1.1.0` no `t_CPU`, com o
 //! gerador semeado (`seed_rng(seed)`).
 //!
 //! O Rust usa o mesmo MT19937, a mesma `uniform_int_distribution` do libstdc++ (para

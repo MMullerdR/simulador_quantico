@@ -11,3 +11,4 @@ tests/golden/data/**/*.case text eol=lf
 tests/golden/data/INDEX.txt text eol=lf
 *.py text eol=lf
 tests/golden/data/runs.txt text eol=lf
+*.mk text eol=lf
