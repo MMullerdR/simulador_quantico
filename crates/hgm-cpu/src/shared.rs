@@ -77,6 +77,47 @@ impl RegionView<'_> {
         unsafe { *self.ptr.add(index) = value }
     }
 
+    /// Percorre todos os pares `(x, y)` de amplitudes de uma porta: `x` em `pos | id` e
+    /// `y` em `pos | id | target_mask`, para todo subconjunto `pos` de `sub_mask`.
+    ///
+    /// A região é conferida **uma vez**, antes do laço, em vez de a cada acesso como em
+    /// [`get`](Self::get) e [`set`](Self::set): todo índice visitado só tem bits em
+    /// `id | sub_mask | target_mask`, então basta que esses bits (a) estejam dentro do
+    /// vetor, (b) coincidam fora da máscara com o `id` da região e (c) não se sobreponham
+    /// (`target_mask` fora de `sub_mask` e de `id`, para `x` e `y` serem posições
+    /// distintas). A cada iteração os dois índices são distintos entre si e dos de todas
+    /// as outras (`pos` percorre cada subconjunto uma vez).
+    #[inline(always)]
+    pub fn for_each_pair<F>(&mut self, sub_mask: u64, id: u64, target_mask: u64, mut f: F)
+    where
+        F: FnMut(&mut C32, &mut C32),
+    {
+        assert!(
+            target_mask.count_ones() == 1
+                && sub_mask & target_mask == 0
+                && id & target_mask == 0
+                && id & sub_mask == 0
+                && (sub_mask | target_mask) & !self.mask == 0
+                && id & !self.mask == self.id
+                && (id | sub_mask | target_mask) < self.len as u64,
+            "pares fora da região (mask {:#x}, id {:#x}) ou do vetor",
+            self.mask,
+            self.id
+        );
+        let ptr = self.ptr;
+        let inc = (!sub_mask).wrapping_add(1);
+        let mut pos = 0u64;
+        for _ in 0..(1u64 << sub_mask.count_ones()) {
+            let index0 = (pos | id) as usize;
+            let index1 = index0 | target_mask as usize;
+            // SAFETY: os dois índices estão no vetor e na região desta visão (conferido
+            // antes do laço), são distintos entre si (`target_mask` não está em `index0`)
+            // e `&mut self` impede outra referência a esta visão enquanto durarem.
+            unsafe { f(&mut *ptr.add(index0), &mut *ptr.add(index1)) };
+            pos = pos.wrapping_add(inc) & sub_mask;
+        }
+    }
+
     /// Valida `[base, base + len)` como um bloco contíguo inteiro da região: tamanho
     /// potência de 2, alinhado, com todos os bits baixos do bloco dentro da máscara
     /// (então todo índice do bloco tem o mesmo `id`) e dentro do vetor.

@@ -13,11 +13,13 @@ use hgm_core::error::{HgmError, Result};
 use hgm_core::fused::{phase_table, FusedPhase};
 use hgm_core::pt::{MatrixKind, Op, Pt};
 use hgm_core::state::StateVector;
+use hgm_core::C32;
 
-use crate::kernels::{self, PairKernel};
+use crate::kernels;
 use crate::region::{compute_region, Tuning};
 use crate::serial::validate;
 use crate::shared::{par_for_each_region, RegionView};
+use crate::simd;
 
 pub struct ParallelBackend {
     tuning: Tuning,
@@ -62,6 +64,8 @@ impl Backend for ParallelBackend {
         let ops = &program.ops;
         let amplitudes = state.as_mut_slice();
         let mut region_bits = tuning.region_bits;
+        // O mesmo código, compilado com AVX2 se a CPU o tem (como o `target_clones` do C++).
+        let apply = simd::batch_applier();
 
         for _ in 0..repetitions {
             let mut op_index = 0;
@@ -74,7 +78,7 @@ impl Backend for ParallelBackend {
 
                 self.pool.install(|| {
                     par_for_each_region(amplitudes, qubits, plan.mask, |view| {
-                        apply_batch(view, batch);
+                        apply(view, batch);
                     });
                 });
                 op_index = plan.op_end;
@@ -85,7 +89,8 @@ impl Backend for ParallelBackend {
 }
 
 /// Aplica as portas de um lote a uma região (`PCpuExecution1_0`).
-fn apply_batch(view: &mut RegionView<'_>, batch: &[Op]) {
+#[inline(always)]
+pub(crate) fn apply_batch(view: &mut RegionView<'_>, batch: &[Op]) {
     let (mask, id) = (view.mask(), view.id());
     for op in batch {
         match op {
@@ -107,6 +112,7 @@ fn apply_batch(view: &mut RegionView<'_>, batch: &[Op]) {
 
 /// `ApplyFusedPhase` restrito à região: `state[id | sub] *= tabela[passos]` para todo
 /// subconjunto `sub` da máscara.
+#[inline(always)]
 fn apply_fused(view: &mut RegionView<'_>, fused: &FusedPhase) {
     let table = phase_table();
     let (mask, id) = (view.mask(), view.id());
@@ -127,43 +133,18 @@ fn apply_fused(view: &mut RegionView<'_>, fused: &FusedPhase) {
 /// controles que caem dentro da região) e `id` o valor dos demais (inclui o dos
 /// controles). Em blocos contíguos quando os bits baixos da máscara são contíguos;
 /// senão, um par por vez.
+#[inline(always)]
 fn apply_gate(view: &mut RegionView<'_>, pt: &Pt, mask: u64, id: u64) {
     let kind = pt.kind();
     let target_mask = 1u64 << pt.target_bit;
-    let region_size = mask.count_ones();
     let low_bits = (!mask).trailing_zeros(); // bits baixos contíguos dentro da região
 
     if low_bits >= 2 {
-        let kernel: PairKernel = match kind {
-            MatrixKind::Dense => kernels::dense,
-            MatrixKind::DiagPri => kernels::diagonal,
-            MatrixKind::DiagSec => kernels::anti_diagonal,
-        };
-        let run_len = 1usize << low_bits;
-        let low_mask = (run_len as u64) - 1;
-        let mut pos = 0u64;
-
-        if pt.target_bit >= low_bits {
-            // Alvo fora da faixa baixa: `a` e `b` são dois blocos de `run_len`
-            // amplitudes, a `target_mask` de distância.
-            let outer_mask = mask & !target_mask & !low_mask;
-            let outer_count = 1u64 << (region_size - 1 - low_bits);
-            let inc = (!outer_mask).wrapping_add(1);
-            for _ in 0..outer_count {
-                let base = (pos | id) as usize;
-                let (a, b) = view.block_pair_mut(base, base + target_mask as usize, run_len);
-                kernel(a, b, &pt.matrix);
-                pos = pos.wrapping_add(inc) & outer_mask;
-            }
-        } else {
-            // Alvo dentro da faixa baixa: o bloco tem os dois lados de cada par.
-            let outer_mask = mask & !low_mask;
-            let outer_count = 1u64 << (region_size - low_bits);
-            let inc = (!outer_mask).wrapping_add(1);
-            for _ in 0..outer_count {
-                let block = view.block_mut((pos | id) as usize, run_len);
-                kernels::pairs_in_block(block, target_mask as usize, &pt.matrix, kernel);
-                pos = pos.wrapping_add(inc) & outer_mask;
+        match kind {
+            MatrixKind::Dense => apply_blocks(view, pt, mask, id, low_bits, kernels::dense),
+            MatrixKind::DiagPri => apply_blocks(view, pt, mask, id, low_bits, kernels::diagonal),
+            MatrixKind::DiagSec => {
+                apply_blocks(view, pt, mask, id, low_bits, kernels::anti_diagonal);
             }
         }
         return;
@@ -172,21 +153,59 @@ fn apply_gate(view: &mut RegionView<'_>, pt: &Pt, mask: u64, id: u64) {
     // Caminho genérico: um par por iteração.
     let m = &pt.matrix;
     let pos_mask = mask & !target_mask;
-    let inc = (!pos_mask).wrapping_add(1);
-    let pair_count = 1u64 << (region_size - 1);
-    let mut pos = 0u64;
-    for _ in 0..pair_count {
-        let pos0 = (pos | id) as usize;
-        let pos1 = pos0 | target_mask as usize;
-        pos = pos.wrapping_add(inc) & pos_mask;
+    match kind {
+        MatrixKind::Dense => view.for_each_pair(pos_mask, id, target_mask, |x, y| {
+            let (s0, s1) = (*x, *y);
+            *x = m[0] * s0 + m[1] * s1;
+            *y = m[2] * s0 + m[3] * s1;
+        }),
+        MatrixKind::DiagPri => view.for_each_pair(pos_mask, id, target_mask, |x, y| {
+            *x *= m[0];
+            *y *= m[3];
+        }),
+        MatrixKind::DiagSec => view.for_each_pair(pos_mask, id, target_mask, |x, y| {
+            let (s0, s1) = (*x, *y);
+            *x = m[1] * s1;
+            *y = m[2] * s0;
+        }),
+    }
+}
 
-        let (s0, s1) = (view.get(pos0), view.get(pos1));
-        let (new0, new1) = match kind {
-            MatrixKind::Dense => (m[0] * s0 + m[1] * s1, m[2] * s0 + m[3] * s1),
-            MatrixKind::DiagPri => (s0 * m[0], m[3] * s1),
-            MatrixKind::DiagSec => (m[1] * s1, m[2] * s0),
-        };
-        view.set(pos0, new0);
-        view.set(pos1, new1);
+/// O caso de `apply_gate` com os `low_bits >= 2` bits baixos contíguos: blocos de
+/// amplitudes e um núcleo vetorizável (`kernel`, um dos de [`kernels`], passado como tipo
+/// para ser expandido no lugar).
+#[inline(always)]
+fn apply_blocks<K>(view: &mut RegionView<'_>, pt: &Pt, mask: u64, id: u64, low_bits: u32, kernel: K)
+where
+    K: Fn(&mut [C32], &mut [C32], &[C32; 4]),
+{
+    let target_mask = 1u64 << pt.target_bit;
+    let region_size = mask.count_ones();
+    let run_len = 1usize << low_bits;
+    let low_mask = (run_len as u64) - 1;
+    let mut pos = 0u64;
+
+    if pt.target_bit >= low_bits {
+        // Alvo fora da faixa baixa: `a` e `b` são dois blocos de `run_len`
+        // amplitudes, a `target_mask` de distância.
+        let outer_mask = mask & !target_mask & !low_mask;
+        let outer_count = 1u64 << (region_size - 1 - low_bits);
+        let inc = (!outer_mask).wrapping_add(1);
+        for _ in 0..outer_count {
+            let base = (pos | id) as usize;
+            let (a, b) = view.block_pair_mut(base, base + target_mask as usize, run_len);
+            kernel(a, b, &pt.matrix);
+            pos = pos.wrapping_add(inc) & outer_mask;
+        }
+    } else {
+        // Alvo dentro da faixa baixa: o bloco tem os dois lados de cada par.
+        let outer_mask = mask & !low_mask;
+        let outer_count = 1u64 << (region_size - low_bits);
+        let inc = (!outer_mask).wrapping_add(1);
+        for _ in 0..outer_count {
+            let block = view.block_mut((pos | id) as usize, run_len);
+            kernels::pairs_in_block(block, target_mask as usize, &pt.matrix, &kernel);
+            pos = pos.wrapping_add(inc) & outer_mask;
+        }
     }
 }

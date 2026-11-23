@@ -5,8 +5,8 @@ name: rust
 # tests/golden/data (gerado pelo C++ do tag v1.1.0), entao nao precisam de GPU.
 #
 # Verde nos tres sistemas desde c1a3c3f (fase 3) e em 9a125bb (fase 5, com o smoke
-# test dos executaveis). O compilador ainda e o `stable` do dia: falta fixar a versao
-# em rust-toolchain.toml.
+# test dos executaveis). O compilador e o fixado em rust-toolchain.toml (a mesma versao
+# precisa estar nos dois lugares).
 on:
   push:
     branches: [main]
@@ -42,8 +42,8 @@ jobs:
 
       - name: toolchain
         run: |
-          rustup toolchain install stable --profile minimal -c rustfmt -c clippy
-          rustup default stable
+          rustup toolchain install 1.100.0 --profile minimal -c rustfmt -c clippy
+          rustup default 1.100.0
           rustc --version
           cargo --version
 

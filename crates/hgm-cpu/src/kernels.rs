@@ -5,10 +5,15 @@
 //! simples sobre fatias, sem `unsafe`, para o compilador vetorizar. Nenhum usa
 //! multiplicação-soma fundida: a ordem das contas é a do C++ (`m0r*ar - m0i*ai +
 //! m1r*br - m1i*bi`, da esquerda para a direita).
+//!
+//! Todos são `#[inline(always)]`: o corpo é compilado dentro de quem os chama, e é assim
+//! que o despacho de AVX2 de [`crate::simd`] chega até os laços (uma função `inline` sem
+//! `always` ficaria com o conjunto de instruções básico).
 
 use hgm_core::C32;
 
 /// Matriz densa: `a' = m0*a + m1*b`, `b' = m2*a + m3*b`.
+#[inline(always)]
 pub fn dense(a: &mut [C32], b: &mut [C32], m: &[C32; 4]) {
     let [m0, m1, m2, m3] = *m;
     for (x, y) in a.iter_mut().zip(b.iter_mut()) {
@@ -21,6 +26,7 @@ pub fn dense(a: &mut [C32], b: &mut [C32], m: &[C32; 4]) {
 }
 
 /// Diagonal principal: `a *= m0`, `b *= m3`. Com `m0 == 1` (Z, R1..R3) só toca em `b`.
+#[inline(always)]
 pub fn diagonal(a: &mut [C32], b: &mut [C32], m: &[C32; 4]) {
     let (p0, p3) = (m[0], m[3]);
     if p0.re == 1.0 && p0.im == 0.0 {
@@ -41,6 +47,7 @@ pub fn diagonal(a: &mut [C32], b: &mut [C32], m: &[C32; 4]) {
 }
 
 /// Anti-diagonal: `a' = m1*b`, `b' = m2*a`. Com `m1 == m2 == 1` (X) é só uma troca.
+#[inline(always)]
 pub fn anti_diagonal(a: &mut [C32], b: &mut [C32], m: &[C32; 4]) {
     let (q1, q2) = (m[1], m[2]);
     if q1.re == 1.0 && q1.im == 0.0 && q2.re == 1.0 && q2.im == 0.0 {
@@ -56,12 +63,14 @@ pub fn anti_diagonal(a: &mut [C32], b: &mut [C32], m: &[C32; 4]) {
     }
 }
 
-/// Assinatura comum dos núcleos.
-pub type PairKernel = fn(&mut [C32], &mut [C32], &[C32; 4]);
-
-/// Aplica `kernel` a todos os pares de um bloco em que o alvo está nos bits baixos:
-/// o bloco alterna trechos de `tmask` amplitudes do lado 0 e do lado 1.
-pub fn pairs_in_block(block: &mut [C32], tmask: usize, m: &[C32; 4], kernel: PairKernel) {
+/// Aplica `kernel` (um dos núcleos acima, passado como tipo e não como ponteiro de
+/// função, para poder ser expandido no lugar) a todos os pares de um bloco em que o alvo
+/// está nos bits baixos: o bloco alterna trechos de `tmask` amplitudes do lado 0 e do 1.
+#[inline(always)]
+pub fn pairs_in_block<K>(block: &mut [C32], tmask: usize, m: &[C32; 4], kernel: K)
+where
+    K: Fn(&mut [C32], &mut [C32], &[C32; 4]),
+{
     for chunk in block.chunks_exact_mut(2 * tmask) {
         let (a, b) = chunk.split_at_mut(tmask);
         kernel(a, b, m);

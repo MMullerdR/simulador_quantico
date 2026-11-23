@@ -30,6 +30,13 @@ g++ -O3 -fopenmp -Iinclude benches/cpp/bench_par.cpp <objetos do core> -o bench_
 ./bench_par.out QUBITS CARGA THREADS REGIAO COALESCIDA REPS [serial]
 ```
 
+## Ponta a ponta: C++ x Rust (fase 7)
+
+`benches/end_to_end.sh DIR_CPP DIR_RUST [FILTRO]` roda as mesmas linhas de comando nos dois
+(general, grover e shor em serial, CPU paralela, GPU e híbrido) e imprime tempo de parede, se
+achou o resultado e a razão Rust/C++. Resultado e leitura em
+[docs/12](../docs/12-versao-rust.md#4-desempenho-contra-o-c-v110).
+
 ## Resultado registrado (2026-11-21)
 
 qflex (Threadripper PRO 5955WX), 26 qubits, 16 threads, região 14, coalescida 11,

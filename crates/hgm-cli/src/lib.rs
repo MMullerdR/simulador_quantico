@@ -231,7 +231,7 @@ mod tests {
                 assert_eq!(tuning.cpu.threads, 6);
                 assert_eq!(tuning.cpu.region_bits, 14);
                 assert_eq!(tuning.gpu.region_bits, 9);
-                assert_eq!(tuning.gpu_max_qubits, u32::MAX);
+                assert_eq!(tuning.gpu_max_qubits, hgm_engine::MAX_GPU_QUBITS);
             }
             other => panic!("backend inesperado: {other:?}"),
         }

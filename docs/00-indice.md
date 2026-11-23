@@ -55,6 +55,9 @@ funciona por dentro, não apenas listar o que cada arquivo faz. Ordem sugerida d
 11. [11-bateria-testes-gpu.md](11-bateria-testes-gpu.md) — bateria de testes para
     GPUs de outros fornecedores: casos, tolerâncias, critérios e modelo de registro
     (preparada, ainda não executada).
+12. [12-versao-rust.md](12-versao-rust.md) — a versão em Rust: como compilar e usar,
+    limites, diferenças em relação ao C++, desempenho medido contra o `v1.1.0` e a
+    tabela do que foi verificado e do que não foi testado.
 
 ## Mapa mental rápido
 

@@ -3,6 +3,8 @@
 
 pub mod hybrid;
 
+pub use hgm_gpu::MAX_GPU_QUBITS;
+
 use std::collections::BTreeMap;
 
 use hgm_core::circuit::{compile_steps, tokenize};
@@ -46,7 +48,8 @@ pub struct HybridTuning {
     pub cpu: Tuning,
     pub gpu: GpuTuning,
     /// Estados com mais qubits que isto nem tentam a GPU (vão direto para a CPU). O padrão
-    /// não limita: a GPU é tentada e, se faltar memória, o estado volta para o host.
+    /// é o limite da própria GPU ([`hgm_gpu::MAX_GPU_QUBITS`], 31): dentro dele a GPU é
+    /// tentada e, se faltar memória, o estado volta para o host.
     pub gpu_max_qubits: u32,
 }
 
@@ -55,7 +58,7 @@ impl HybridTuning {
         Self {
             cpu,
             gpu,
-            gpu_max_qubits: u32::MAX,
+            gpu_max_qubits: MAX_GPU_QUBITS,
         }
     }
 }
@@ -105,12 +108,18 @@ impl SimConfig {
 
     /// Se a fusão fica ligada: o pedido explícito, ou o padrão do backend.
     pub fn fuse_phase_enabled(&self) -> bool {
-        self.fuse_phase.unwrap_or(DEFAULT_FUSE_PHASE)
+        self.fuse_phase
+            .unwrap_or_else(|| default_fuse_phase(&self.backend))
     }
 }
 
-/// Padrão da fusão de fase (ver `docs/09`, fase 4).
-const DEFAULT_FUSE_PHASE: bool = false;
+/// Padrão da fusão de fase por backend (ver `docs/09`, fase 7). Na GPU ela liga: com o
+/// kernel que lê um termo para quatro amplitudes ela nunca foi pior e no Shor ganha de 5%
+/// a 25% (Shor 27 qubits: 51,7 s contra 68,6 s), como a fusão do C++. Na CPU desliga: ajuda
+/// a carga mista e atrapalha a de fases puras.
+fn default_fuse_phase(backend: &BackendKind) -> bool {
+    matches!(backend, BackendKind::Gpu(_) | BackendKind::Hybrid(_))
+}
 
 impl Default for SimConfig {
     fn default() -> Self {

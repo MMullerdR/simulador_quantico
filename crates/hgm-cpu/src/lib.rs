@@ -4,9 +4,10 @@
 //! - [`parallel`]: porta do `t_PAR_CPU` (regiões + `rayon`), em [`region`] e
 //!   [`kernels`].
 //!
-//! `unsafe` é proibido (`deny`) neste crate, com uma única exceção: o módulo
-//! `shared`, que concentra o acesso concorrente a regiões disjuntas do vetor de
-//! estado atrás de uma API segura e checada.
+//! `unsafe` é proibido (`deny`) neste crate, com duas exceções: o módulo `shared`, que
+//! concentra o acesso concorrente a regiões disjuntas do vetor de estado atrás de uma
+//! API segura e checada, e o `simd`, que só chama a versão AVX2 dos laços depois de
+//! conferir que a CPU a tem.
 
 pub mod kernels;
 pub mod parallel;
@@ -15,6 +16,8 @@ pub mod serial;
 
 #[allow(unsafe_code)]
 mod shared;
+#[allow(unsafe_code)]
+mod simd;
 
 pub use parallel::ParallelBackend;
 pub use region::Tuning;

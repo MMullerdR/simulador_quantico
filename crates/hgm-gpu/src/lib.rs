@@ -14,8 +14,9 @@
 //!   volta por execução) ou **residente** na GPU (execução, medição, colapso e `modmult`
 //!   lá; fase 4), e o contexto único do processo.
 //!
-//! Portas de fase fundida rodam no kernel de região (`GpuOp::Fused`), mas o `Simulator` só
-//! as usa se pedido (`SimConfig::with_fuse_phase`): medidas, empatam com as portas separadas.
+//! Portas de fase fundida rodam no kernel de região (`GpuOp::Fused`). O `Simulator` as usa
+//! por padrão na GPU (`SimConfig::with_fuse_phase` ou `HGM_FUSE_PHASE` mudam isso): o kernel
+//! lê um termo para quatro amplitudes e, no Shor, ganha de 5% a 25% (fase 7 de `docs/09`).
 //!
 //! **Estados acima do limite de binding** (27 qubits na A4500) são divididos em blocos, um
 //! buffer por bloco (`GpuState::chunk_bits`; ver `plan.rs`): até 31 qubits, se a memória da
@@ -35,6 +36,7 @@ pub mod shaders;
 pub use backend::{shared_context, GpuBackend};
 pub use context::{
     CollapseMode, GpuContext, GpuOptions, GpuState, PreparedRun, RunStats, RunTuning,
+    MAX_GPU_QUBITS,
 };
 pub use error::{GpuError, Result};
 pub use plan::{GpuGate, GpuOp, GpuTerm};

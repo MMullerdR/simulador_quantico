@@ -111,16 +111,31 @@ fn main(
             // termos que casam. Dois vec4 por termo: [máscara local, valor local, máscara
             // de fora, valor de fora] e [passos, 0, 0, 0]. A parte de fora compara com o
             // endereço-base da região, como nos controles das portas.
+            // Quatro amplitudes por leitura de termo (como o `ApplyValuesC01` do CUDA): a leitura
+            // do termo na memória de workgroup é o que mais pesa, e assim ela é dividida por 4.
+            // A soma de inteiros não depende da ordem dos termos.
             let count = active_count;
-            for (var j = lid; j < size; j += {wg}u) {{
-                var steps = 0u;
+            for (var j0 = lid; j0 < size; j0 += 4u * {wg}u) {{
+                let j1 = j0 + {wg}u;
+                let j2 = j1 + {wg}u;
+                let j3 = j2 + {wg}u;
+                var s0 = 0u;
+                var s1 = 0u;
+                var s2 = 0u;
+                var s3 = 0u;
                 for (var t = 0u; t < count; t += 1u) {{
                     let a = active_terms[t];
-                    if ((j & (a.x & 65535u)) == (a.x >> 16u)) {{
-                        steps += a.y;
-                    }}
+                    let m = a.x & 65535u;
+                    let v = a.x >> 16u;
+                    s0 += select(0u, a.y, (j0 & m) == v);
+                    s1 += select(0u, a.y, (j1 & m) == v);
+                    s2 += select(0u, a.y, (j2 & m) == v);
+                    s3 += select(0u, a.y, (j3 & m) == v);
                 }}
-                tile[j] = cmul(tile[j], phase[steps & 65535u]);
+                tile[j0] = cmul(tile[j0], phase[s0 & 65535u]);
+                if (j1 < size) {{ tile[j1] = cmul(tile[j1], phase[s1 & 65535u]); }}
+                if (j2 < size) {{ tile[j2] = cmul(tile[j2], phase[s2 & 65535u]); }}
+                if (j3 < size) {{ tile[j3] = cmul(tile[j3], phase[s3 & 65535u]); }}
             }}
         }} else if ((gorigin & op.outer.x) == op.outer.y) {{
             // Controles fora da região: a condição é a mesma para o workgroup inteiro (só

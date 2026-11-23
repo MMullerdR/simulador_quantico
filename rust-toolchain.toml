@@ -1,5 +1,6 @@
-# "stable" ate o primeiro build verde; depois fixar a versao exata (ex.: "1.9x.y")
-# para que CI e maquinas locais compilem com o mesmo compilador.
+# Versao fixa: CI (.github/workflows/rust.yml) e maquinas locais compilam com o mesmo
+# compilador. Foi a stable de 2026-11-09, a que passou o CI e a bateria da A4500.
+# Para subir: trocar aqui e no rust.yml no mesmo commit, rodar fmt/clippy/testes.
 [toolchain]
-channel = "stable"
+channel = "1.100.0"
 components = ["rustfmt", "clippy"]

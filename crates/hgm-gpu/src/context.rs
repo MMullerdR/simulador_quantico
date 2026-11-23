@@ -21,6 +21,10 @@ use crate::shaders;
 /// (`docs/09` §4.2, `examples/software_probe.rs`). Em GPU de verdade o teto não se aplica.
 const SOFTWARE_MAX_REGION_BITS: u32 = 8;
 
+/// Maior estado (em qubits) que a GPU aceita: os índices dos kernels têm 32 bits. Acima
+/// disso o `GpuBackend` devolve `Unsupported` (o híbrido manda para a CPU).
+pub const MAX_GPU_QUBITS: u32 = 31;
+
 /// Parâmetros de construção.
 #[derive(Clone, Copy, Debug)]
 pub struct GpuOptions {
@@ -623,9 +627,9 @@ impl GpuContext {
     }
 
     fn alloc_state(&self, qubits: u32, max_chunk_bits: u32) -> Result<GpuState> {
-        if qubits == 0 || qubits > 31 {
+        if qubits == 0 || qubits > MAX_GPU_QUBITS {
             return Err(GpuError::Unsupported(format!(
-                "{qubits} qubits (o spike aceita de 1 a 31)"
+                "{qubits} qubits (a GPU aceita de 1 a {MAX_GPU_QUBITS})"
             )));
         }
         let chunk_bits = self.local_bits(qubits, max_chunk_bits);

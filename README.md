@@ -18,6 +18,22 @@ Traz duas implementações de algoritmos quânticos como carga de
 teste/benchmark: **Grover** (busca não estruturada) e **Shor** (fatoração
 de inteiros).
 
+## Versão em Rust
+
+Existe uma reescrita em Rust (workspace em [`crates/`](crates/README.md)) que roda em qualquer
+GPU que o `wgpu` suporte (Vulkan, Metal, DX12) e em Windows, Linux e macOS, sem `nvcc` nem
+`makefile`:
+
+```bash
+cargo build --release
+target/release/general 20 1 4     # os mesmos argumentos dos *.out: QUBITS TIPO [THREADS]...
+```
+
+Tipos de execução: `0` CPU serial, `1` CPU paralela, `2` GPU, `3` híbrido (GPU enquanto o
+estado cabe, CPU paralela quando não). Em [docs/12](docs/12-versao-rust.md) estão os limites,
+as diferenças em relação ao C++, o desempenho contra o `v1.1.0` e a tabela de hardware
+**verificado / não testado**. O que está abaixo, daqui em diante, descreve a versão em C++/CUDA.
+
 ## Documentação
 
 A pasta [docs/](docs/00-indice.md) tem uma explicação aprofundada de como o
