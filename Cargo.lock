@@ -298,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "hgm-algos"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "hgm-core",
  "hgm-cpu",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "hgm-cli"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "hgm-algos",
  "hgm-core",
@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "hgm-core"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "bytemuck",
  "hgm-golden",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "hgm-cpu"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "hgm-core",
  "hgm-golden",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "hgm-engine"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "hgm-core",
  "hgm-cpu",
@@ -347,14 +347,14 @@ dependencies = [
 
 [[package]]
 name = "hgm-golden"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "num-complex",
 ]
 
 [[package]]
 name = "hgm-gpu"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "bytemuck",
  "hgm-core",

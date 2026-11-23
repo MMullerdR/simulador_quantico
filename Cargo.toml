@@ -1,12 +1,11 @@
-# Workspace Rust do HybriD-GM (fase 2 de docs/09-plano-migracao-rust.md).
-# O C++/CUDA continua na raiz (src/, include/, makefile) e no tag v1.1.0 /
-# branch cpp-legacy; este workspace convive com ele ate a paridade ser provada.
+# Workspace Rust do HybriD-GM, v2.0.0 (docs/09-plano-migracao-rust.md, docs/12-versao-rust.md).
+# O C++/CUDA continua na raiz (src/, include/, makefile) e no tag v1.1.0 / branch cpp-legacy.
 [workspace]
 resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
 publish = false
 
