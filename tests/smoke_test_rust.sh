@@ -2,8 +2,8 @@
 # Smoke test dos executáveis Rust (fase 5 de docs/09): a parte de CPU de
 # tests/smoke_test.sh, com as mesmas amplitudes e os mesmos limiares de taxa de
 # sucesso, aplicada a general/grover/shor de crates/hgm-cli. A parte de t_GPU só
-# roda se houver adaptador (HGM_REQUIRE_GPU=1 transforma a falta dele em falha); o
-# t_HYBRID ainda não existe em Rust (fase 6) e os executáveis o recusam.
+# roda se houver adaptador (HGM_REQUIRE_GPU=1 transforma a falta dele em falha). O
+# t_HYBRID roda sempre: sem adaptador cai na CPU paralela, e o resultado é o mesmo.
 #
 # Uso: tests/smoke_test_rust.sh   (compila em --release antes de rodar)
 set -uo pipefail
@@ -94,8 +94,14 @@ else
 	echo "SKIP t_GPU (sem adaptador de GPU utilizável; não é verde de verdade, ver HGM_REQUIRE_GPU)"
 fi
 
-echo "-- híbrido: ainda não existe em Rust (fase 6); o executável tem que recusar --"
-check_refused "grover 12 3 2 (t_HYBRID)" "$BIN/grover" 12 3 2
+echo "-- híbrido (t_HYBRID): a GPU se há adaptador e o estado cabe, senão a CPU paralela --"
+for pair in "10 3 2:0.03125" "14 3 2:0.0078125"; do
+	combo="${pair%%:*}"
+	expected="${pair##*:}"
+	amp=$("$BIN/general" $combo 2>/dev/null | head -1 | awk '{print $2}')
+	check_amplitude "general $combo (t_HYBRID)" "$amp" "$expected"
+done
+check_success_rate "grover 12 3 2 (t_HYBRID)" "^Found value:" 8 5 "$BIN/grover" 12 3 2
 
 echo "-- entradas inválidas: código de saída diferente de zero --"
 check_refused "grover 8 0 1 1 1 1 999 (search_value fora do espaço)" "$BIN/grover" 8 0 1 1 1 1 999

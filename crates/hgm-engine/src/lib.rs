@@ -1,6 +1,7 @@
 //! O motor: junta o parser, o estado, o otimizador e um backend (o `DGM` do C++,
-//! sem o que já mora em outros crates). Modo híbrido e GPU entram nas próximas
-//! fases de `docs/09`.
+//! sem o que já mora em outros crates).
+
+pub mod hybrid;
 
 use std::collections::BTreeMap;
 
@@ -39,7 +40,27 @@ impl Default for GpuTuning {
     }
 }
 
-/// Backends disponíveis. O híbrido entra com a fase 6.
+/// Ajuste do `t_HYBRID`: a CPU paralela para o que não cabe na GPU, e o da própria GPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HybridTuning {
+    pub cpu: Tuning,
+    pub gpu: GpuTuning,
+    /// Estados com mais qubits que isto nem tentam a GPU (vão direto para a CPU). O padrão
+    /// não limita: a GPU é tentada e, se faltar memória, o estado volta para o host.
+    pub gpu_max_qubits: u32,
+}
+
+impl HybridTuning {
+    pub fn new(cpu: Tuning, gpu: GpuTuning) -> Self {
+        Self {
+            cpu,
+            gpu,
+            gpu_max_qubits: u32::MAX,
+        }
+    }
+}
+
+/// Backends disponíveis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendKind {
     /// `t_CPU`: serial, o oráculo dos demais.
@@ -48,6 +69,8 @@ pub enum BackendKind {
     CpuParallel(Tuning),
     /// `t_GPU`: GPU portátil (wgpu), com o estado no host entre execuções.
     Gpu(GpuTuning),
+    /// `t_HYBRID`: a GPU enquanto o estado cabe, a CPU paralela quando não (ver [`hybrid`]).
+    Hybrid(HybridTuning),
 }
 
 /// Semente padrão do `std::mt19937` do C++ (`g_rng` sem `seed_rng`).
@@ -103,6 +126,17 @@ pub struct Simulator {
     fuse_phase: bool,
 }
 
+/// O backend de GPU residente: o estado fica nela entre execuções, medições e colapsos.
+fn gpu_backend(tuning: GpuTuning) -> std::result::Result<GpuBackend, hgm_gpu::GpuError> {
+    Ok(GpuBackend::new(RunTuning {
+        region_bits: tuning.region_bits,
+        coalesced_bits: tuning.coalesced_bits,
+    })?
+    .with_batch(tuning.batch)
+    .with_max_chunk_bits(tuning.max_chunk_bits)
+    .resident(true))
+}
+
 impl Simulator {
     /// Simulador em `|0...0>` com as portas base.
     pub fn new(kind: BackendKind, qubits: usize) -> Result<Self> {
@@ -115,16 +149,25 @@ impl Simulator {
             BackendKind::CpuSerial => Box::new(SerialBackend::new()),
             BackendKind::CpuParallel(tuning) => Box::new(ParallelBackend::new(tuning)?),
             BackendKind::Gpu(tuning) => Box::new(
-                GpuBackend::new(RunTuning {
-                    region_bits: tuning.region_bits,
-                    coalesced_bits: tuning.coalesced_bits,
-                })
-                .map_err(|e| hgm_core::error::HgmError::Backend(e.to_string()))?
-                .with_batch(tuning.batch)
-                .with_max_chunk_bits(tuning.max_chunk_bits)
-                // O estado fica na GPU entre execuções, medições e colapsos.
-                .resident(true),
+                gpu_backend(tuning)
+                    .map_err(|e| hgm_core::error::HgmError::Backend(e.to_string()))?,
             ),
+            BackendKind::Hybrid(tuning) => {
+                let cpu = Box::new(ParallelBackend::new(tuning.cpu)?);
+                let (gpu, why_not): (Option<Box<dyn Backend>>, Option<String>) =
+                    if qubits as u64 > u64::from(tuning.gpu_max_qubits) {
+                        (
+                            None,
+                            Some(format!("{qubits} qubits passam do limite da GPU")),
+                        )
+                    } else {
+                        match gpu_backend(tuning.gpu) {
+                            Ok(gpu) => (Some(Box::new(gpu)), None),
+                            Err(error) => (None, Some(error.to_string())),
+                        }
+                    };
+                Box::new(hybrid::HybridBackend::new(gpu, cpu, why_not))
+            }
         };
         let mut backend = backend;
         let mut state = StateVector::basis(qubits, 0)?;
@@ -461,6 +504,72 @@ mod tests {
             assert!(gpu.amplitude(32).is_err());
             // Zero de probabilidade no ramo já colapsado.
             assert!(cpu.collapse(2, 0).is_err() && gpu.collapse(2, 0).is_err());
+        }
+    }
+
+    fn hybrid_kind(cap: u32, gpu_max_qubits: u32) -> BackendKind {
+        BackendKind::Hybrid(HybridTuning {
+            cpu: Tuning {
+                threads: 2,
+                coalesced_bits: 1,
+                region_bits: 3,
+            },
+            gpu: chunked(cap),
+            gpu_max_qubits,
+        })
+    }
+
+    /// O híbrido faz o mesmo que a CPU serial em tudo que o motor oferece (execução, medição,
+    /// colapso, `modmult`, amplitudes), tanto com a GPU (se há adaptador) quanto sem ela
+    /// (`gpu_max_qubits` = 0 manda tudo para a CPU paralela).
+    #[test]
+    fn hybrid_backend_matches_the_serial_oracle_with_and_without_the_gpu() {
+        let qubits = 7;
+        for cap in CHUNK_CAPS {
+            for gpu_max_qubits in [u32::MAX, 0] {
+                let mut hybrid = Simulator::new(hybrid_kind(cap, gpu_max_qubits), qubits).unwrap();
+                let name = hybrid.backend_name().to_owned();
+                if gpu_max_qubits == 0 {
+                    assert!(name.contains("CPU paralela"), "{name}");
+                    assert!(name.contains("limite"), "{name}");
+                } else {
+                    assert!(name.starts_with("t_HYBRID"), "{name}");
+                    if std::env::var("HGM_REQUIRE_GPU").is_ok() {
+                        assert!(name.contains("estado na GPU"), "{name}");
+                    }
+                }
+                let mut cpu = Simulator::new(BackendKind::CpuSerial, qubits).unwrap();
+                for seed in 0..4u32 {
+                    for simulator in [&mut cpu, &mut hybrid] {
+                        simulator.seed(seed);
+                        simulator.set_basis(3).unwrap();
+                        simulator.run("H,H,R1,H,Z,H,H", 1, 1).unwrap();
+                        simulator.apply_mod_mult(0, 1, 4, 7, 15).unwrap();
+                        simulator
+                            .run("Control1(1),ID,ID,ID,ID,ID,Target1(R2)", 1, 1)
+                            .unwrap();
+                    }
+                    for qubit in [6, 0, 3] {
+                        let want = cpu.measure(qubit).unwrap();
+                        let got = hybrid.measure(qubit).unwrap();
+                        assert_eq!(want.bit, got.bit, "bloco {cap}, seed {seed}, qubit {qubit}");
+                        assert!((want.probability - got.probability).abs() < 1e-5);
+                    }
+                    let want = cpu.collapse(1, 0);
+                    let got = hybrid.collapse(1, 0);
+                    assert_eq!(want.is_ok(), got.is_ok(), "bloco {cap}, seed {seed}");
+                    if let (Ok(want), Ok(got)) = (want, got) {
+                        assert!((want - got).abs() < 1e-5);
+                    }
+                    for index in [0, 5, 77, 127] {
+                        let want = cpu.amplitude(index).unwrap();
+                        let got = hybrid.amplitude(index).unwrap();
+                        assert!((want - got).norm() < 1e-5, "bloco {cap}, índice {index}");
+                    }
+                    let diff = cpu.state().unwrap().max_abs_diff(hybrid.state().unwrap());
+                    assert!(diff < 1e-5, "bloco {cap}, seed {seed}: diferença {diff}");
+                }
+            }
         }
     }
 

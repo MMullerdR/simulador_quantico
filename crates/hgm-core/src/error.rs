@@ -28,6 +28,12 @@ pub enum HgmError {
     #[error("sem memória para um estado de {qubits} qubits")]
     OutOfMemory { qubits: usize },
 
+    /// O dispositivo (GPU) não tem memória para o que se pediu. Diferente de
+    /// [`HgmError::OutOfMemory`] (memória do host): quem tem outro backend pode recuar para
+    /// ele (o modo híbrido faz isso).
+    #[error("sem memória no dispositivo: {0}")]
+    DeviceOutOfMemory(String),
+
     #[error("estado de {qubits} qubits precisa de {expected} bytes, recebi {found}")]
     BadStateSize {
         qubits: usize,

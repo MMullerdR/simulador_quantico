@@ -6,10 +6,10 @@
 //! QUBITS [EXEC_TYPE] [THREADS|GPUS] [BLOCK_SIZE] [REPEAT_COUNT] [GPU_REGION_BITS] [...]
 //! ```
 //!
-//! `EXEC_TYPE` é `0` (CPU serial), `1` (CPU paralela), `2` (GPU) ou `3` (híbrido).
-//! Os tipos `2` e `3` ainda não existem na versão Rust (fases 4 e 6 de
-//! `docs/09`). `BLOCK_SIZE`, `REPEAT_COUNT` e `GPU_REGION_BITS` só valem para GPU;
-//! são lidos (e têm que ser inteiros) mas ignorados nos backends de CPU.
+//! `EXEC_TYPE` é `0` (CPU serial), `1` (CPU paralela), `2` (GPU) ou `3` (híbrido: a GPU
+//! enquanto o estado cabe, a CPU paralela quando não). `THREADS` vale para `1` e `3`.
+//! `BLOCK_SIZE`, `REPEAT_COUNT` e `GPU_REGION_BITS` só valem para GPU; são lidos (e têm que
+//! ser inteiros) mas ignorados nos backends de CPU.
 //!
 //! Diferenças deliberadas em relação ao C++: argumento inválido sai com código
 //! diferente de zero (2 para uso, 1 para erro de execução) em vez de imprimir a
@@ -22,7 +22,7 @@ use std::str::FromStr;
 
 use hgm_core::HgmError;
 use hgm_cpu::Tuning;
-use hgm_engine::{BackendKind, GpuTuning};
+use hgm_engine::{BackendKind, GpuTuning, HybridTuning};
 
 /// Região e coalescida padrão da CPU paralela (`TuningDefaults` do C++).
 pub const DEFAULT_CPU_REGION_BITS: u32 = 14;
@@ -105,11 +105,20 @@ pub fn parse_backend(args: &[String], default_type: i64) -> Result<BackendKind, 
             }
             Ok(BackendKind::Gpu(tuning))
         }
-        3 => Err(CliError::Usage(
-            "Execution type 3 (t_HYBRID) ainda não existe na versão Rust (fase 6 de docs/09); \
-             use 0 (CPU), 1 (CPU paralela) ou 2 (GPU)"
-                .to_owned(),
-        )),
+        // Como no C++, `args[2]` são as threads da CPU paralela; a GPU é uma só.
+        3 => {
+            let threads = parse_arg::<usize>(args, 2, "THREADS")?.unwrap_or(1);
+            let cpu = Tuning {
+                threads,
+                coalesced_bits: DEFAULT_CPU_COALESCED_BITS,
+                region_bits: DEFAULT_CPU_REGION_BITS,
+            };
+            let mut gpu = GpuTuning::default();
+            if let Some(bits) = parse_arg::<u32>(args, 5, "GPU_REGION_BITS")? {
+                gpu.region_bits = bits;
+            }
+            Ok(BackendKind::Hybrid(HybridTuning::new(cpu, gpu)))
+        }
         other => Err(CliError::Usage(format!("Invalid execution type: {other}"))),
     }
 }
@@ -204,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn gpu_type_is_accepted_and_hybrid_garbage_are_usage_errors() {
+    fn gpu_and_hybrid_types_are_accepted_and_garbage_is_a_usage_error() {
         assert_eq!(
             parse_backend(&args(&["10", "2", "1"]), 0).unwrap(),
             BackendKind::Gpu(GpuTuning::default())
@@ -217,8 +226,22 @@ mod tests {
             parse_backend(&args(&["10", "2", "1", "512", "1", "x"]), 0),
             Err(CliError::Usage(_))
         ));
+        match parse_backend(&args(&["10", "3", "6", "512", "1", "9"]), 0).unwrap() {
+            BackendKind::Hybrid(tuning) => {
+                assert_eq!(tuning.cpu.threads, 6);
+                assert_eq!(tuning.cpu.region_bits, 14);
+                assert_eq!(tuning.gpu.region_bits, 9);
+                assert_eq!(tuning.gpu_max_qubits, u32::MAX);
+            }
+            other => panic!("backend inesperado: {other:?}"),
+        }
+        // Sem THREADS, 1 thread, como no tipo 1.
+        match parse_backend(&args(&["10", "3"]), 0).unwrap() {
+            BackendKind::Hybrid(tuning) => assert_eq!(tuning.cpu.threads, 1),
+            other => panic!("backend inesperado: {other:?}"),
+        }
         assert!(matches!(
-            parse_backend(&args(&["10", "3"]), 0),
+            parse_backend(&args(&["10", "3", "x"]), 0),
             Err(CliError::Usage(_))
         ));
         assert!(matches!(

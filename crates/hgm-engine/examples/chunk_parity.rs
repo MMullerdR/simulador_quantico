@@ -2,18 +2,20 @@
 //! (27 qubits na RTX A4500): o estado vai para a GPU em vários blocos.
 //!
 //! ```text
-//! cargo run --release -p hgm-engine --example chunk_parity -- QUBITS [THREADS] [MODMULT]
+//! cargo run --release -p hgm-engine --example chunk_parity -- QUBITS [THREADS] [MODMULT] [hybrid]
 //! ```
 //!
 //! Roda o mesmo circuito (Hadamards, fases, portas controladas com controle e alvo nos
 //! bits altos e baixos, medições e, com `MODMULT = 1`, multiplicações modulares com o
 //! registrador dentro e atravessando o limite do bloco) na CPU paralela e na GPU, com a
-//! mesma semente, e compara os bits medidos e o estado final.
+//! mesma semente, e compara os bits medidos e o estado final. Com `hybrid` no lugar da GPU
+//! entra o `t_HYBRID`: em 31 qubits o `modmult` precisa de mais memória do que a placa de
+//! 20 GB tem (o estado de 16 GiB mais outro tanto de rascunho) e o estado volta para a CPU.
 
 use std::time::Instant;
 
 use hgm_cpu::Tuning;
-use hgm_engine::{BackendKind, GpuTuning, SimConfig, Simulator};
+use hgm_engine::{BackendKind, GpuTuning, HybridTuning, SimConfig, Simulator};
 
 /// Um passo de `qubits` qubits com `tokens` nas posições dadas e `ID` no resto.
 fn step(qubits: usize, tokens: &[(usize, &str)]) -> String {
@@ -64,17 +66,24 @@ fn main() {
         .expect("uso: chunk_parity QUBITS [THREADS] [MODMULT]");
     let threads: usize = args.get(1).and_then(|a| a.parse().ok()).unwrap_or(16);
     let modmult = args.get(2).is_some_and(|a| a == "1");
+    let hybrid = args.get(3).is_some_and(|a| a == "hybrid");
 
     let build = |kind| {
         let config = SimConfig::new(kind, 7);
         Simulator::with_config(&config, qubits).expect("simulador")
     };
-    let mut cpu = build(BackendKind::CpuParallel(Tuning {
+    let cpu_tuning = Tuning {
         threads,
         coalesced_bits: 11,
         region_bits: 14,
-    }));
-    let mut gpu = build(BackendKind::Gpu(GpuTuning::default()));
+    };
+    let mut cpu = build(BackendKind::CpuParallel(cpu_tuning));
+    let mut gpu = build(if hybrid {
+        BackendKind::Hybrid(HybridTuning::new(cpu_tuning, GpuTuning::default()))
+    } else {
+        BackendKind::Gpu(GpuTuning::default())
+    });
+    println!("{}", gpu.backend_name());
 
     let steps = circuit(qubits);
     for (name, simulator) in [("CPU", &mut cpu), ("GPU", &mut gpu)] {
@@ -121,6 +130,7 @@ fn main() {
         }
     }
 
+    println!("{}", gpu.backend_name());
     let started = Instant::now();
     let diff = {
         let cpu_state = cpu.state().expect("estado da CPU").clone();

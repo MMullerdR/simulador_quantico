@@ -42,7 +42,11 @@ pub fn shared_context() -> Result<&'static GpuContext> {
 }
 
 fn backend_error(error: GpuError) -> HgmError {
-    HgmError::Backend(error.to_string())
+    match error {
+        // O modo híbrido recua para a CPU neste caso (ver `hgm_engine::hybrid`).
+        GpuError::OutOfMemory(message) => HgmError::DeviceOutOfMemory(message),
+        other => HgmError::Backend(other.to_string()),
+    }
 }
 
 fn out_of_state(index: usize, qubits: usize) -> HgmError {
