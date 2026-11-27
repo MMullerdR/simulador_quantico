@@ -89,7 +89,7 @@ matriz classificada como `DENSE`, `DIAG_PRI` (diagonal) ou `DIAG_SEC`
 |---|---|---|
 | **6a `t_CPU`** | um laço sobre o vetor; truques de bit geram os pares sem testar controle a cada posição. É o **oráculo** dos testes | `dgm_cpu_exec.cpp` |
 | **6b `t_PAR_CPU`** | divide o vetor em **regiões** (fixando alguns bits do índice) e processa regiões em threads diferentes | `dgm_par_exec.cpp` |
-| **6c `t_GPU`** | cada bloco CUDA carrega uma região na **memória compartilhada**, aplica um lote de portas e grava de volta; até 300 portas por lote; corpo especial para a porta de fase fundida | `kernel.cu` ([04](04-gpu-cuda.md)) |
+| **6c `t_GPU`** | cada workgroup carrega uma região na **memória compartilhada**, aplica um lote de portas e grava de volta; até 300 portas por lote; corpo especial para a porta de fase fundida | `kernel.cu` no C++, WGSL em `hgm-gpu` no Rust ([04](04-gpu-wgpu.md)) |
 | **6d `t_HYBRID`** | um thread comanda a GPU enquanto os demais processam regiões na CPU. Se o estado inteiro cabe na GPU, delega tudo a ela | `dgm_par_exec.cpp` |
 
 ### Bloco 7: Estado

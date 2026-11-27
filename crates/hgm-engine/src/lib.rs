@@ -240,10 +240,10 @@ impl Simulator {
         self.rng = Mt19937::new(seed);
     }
 
-    /// Liga a fusão de corridas de portas de fase antes de executar. Desligada por
-    /// padrão, como no C++, onde só o caminho de GPU funde: na CPU a porta fundida
-    /// percorre os termos por amplitude e, no benchmark de `docs/09`, foi mais lenta
-    /// que as portas separadas.
+    /// Liga ou desliga a fusão de corridas de portas de fase antes de executar. O
+    /// padrão depende do backend (ver [`SimConfig::fuse_phase_enabled`]): ligada na GPU
+    /// e no híbrido, desligada na CPU, onde a porta fundida percorre os termos por
+    /// amplitude e, no benchmark de `docs/09`, foi mais lenta que as portas separadas.
     pub fn set_fuse_phase(&mut self, enabled: bool) {
         self.fuse_phase = enabled;
     }

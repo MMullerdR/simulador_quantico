@@ -1,116 +1,159 @@
 # Arquitetura Geral
 
+Este documento descreve a versão em Rust (workspace em [`crates/`](../crates/README.md)).
+A implementação original em C++/CUDA está no tag `v1.1.0` e na branch `cpp-legacy`; onde
+vale a pena, o texto diz o que o C++ fazia de diferente.
+
 ## 1. Representação do estado quântico
 
-Um registrador de `qubits` qubits é representado por um vetor de
-`2^qubits` números complexos (`float complex *state`, alocado em
-`DGM::allocateMemory()`, [dgm_core.cpp:55](../src/core/dgm_core.cpp#L55)):
+Um registrador de `qubits` qubits é representado por um vetor de `2^qubits` números
+complexos de precisão simples (`Complex32`, o alias `C32` de `hgm-core`), guardado em
+[`StateVector`](../crates/hgm-core/src/state.rs):
 
-```c
-state = (float complex*) calloc(1L << qubits, sizeof(float complex));
+```rust
+pub struct StateVector {
+    qubits: usize,
+    amplitudes: Vec<C32>,          // 2^qubits posições, 8 bytes cada
+    scratch: Option<Vec<C32>>,     // buffer auxiliar da multiplicação modular
+}
 ```
 
-Cada posição `i` desse vetor é a amplitude do estado da base computacional
-correspondente ao índice binário `i`. A convenção de qual bit do índice `i`
-pertence a qual qubit é **a coisa mais importante para entender antes de ler
-qualquer outra parte do código**:
+`StateVector::basis(qubits, index)` aloca o vetor **de forma falível** (a memória já vem
+zerada do alocador, sem escrever zeros) e põe amplitude 1 em `index`. Falta de memória vira
+`HgmError::OutOfMemory`, e mais de `MAX_QUBITS` (32) vira `HgmError::TooManyQubits`; o C++
+terminava o processo com `exit`.
+
+Cada posição `i` do vetor é a amplitude do estado da base computacional de índice binário
+`i`. A convenção de qual bit do índice pertence a qual qubit é **a coisa mais importante para
+entender antes de ler qualquer outra parte do código**:
 
 > **O qubit de índice `q` na descrição do circuito corresponde ao bit
 > `(qubits - 1 - q)` do índice `i` no vetor de estado.**
 
-Ou seja, o qubit "0" do circuito é o bit mais significativo (MSB) do índice,
-e o último qubit (`qubits-1`) é o bit menos significativo (LSB). Isso aparece
-em `DGM::measure()`:
+Ou seja, o qubit "0" do circuito é o bit mais significativo (MSB) do índice, e o último qubit
+(`qubits-1`) é o bit menos significativo (LSB). A conversão está em um único lugar para a
+medição, [`qubit_shift`](../crates/hgm-core/src/measure.rs):
 
-```c
-long qubit_bit_shift = (qubits - 1 - qubit_pos);   // dgm_core.cpp:81
+```rust
+pub fn qubit_shift(qubits: usize, qubit: usize) -> Result<u32> {
+    // erro se qubit >= qubits
+    Ok((qubits - 1 - qubit) as u32)
+}
 ```
 
-e na hora de transformar a posição de uma porta no circuito (`pos_ops`, contado
-da esquerda) em um "bit de deslocamento" (`target_bit`) usado durante a execução
-(`DGM::genPTs`, [dgm_parser.cpp:118](../src/core/dgm_parser.cpp#L118)):
+e na hora de transformar a posição de uma porta no passo do circuito (contada da esquerda) no
+"bit do alvo" (`target_bit`) usado na execução, em `gen_pts`
+([`circuit.rs`](../crates/hgm-core/src/circuit.rs)):
 
-```c
-term->span_start_bit = qubits - group.pos_ops[op_index];
-term->target_bit     = term->span_start_bit - 1;   // == qubits - 1 - pos_ops[op_index]
+```rust
+let bit = (qubits - position - 1) as u32;          // para cada controle
+target_bit: (qubits - position - 1) as u32,        // para o alvo
 ```
 
-Exemplo com 3 qubits (`q0 q1 q2`), índice `i` em binário `b2 b1 b0`:
-`q0` → bit 2 (`b2`, MSB), `q1` → bit 1, `q2` → bit 0 (LSB).
-Se `state[0b100] = 1` isso é o estado `|q0=1, q1=0, q2=0>`.
+Exemplo com 3 qubits (`q0 q1 q2`), índice `i` em binário `b2 b1 b0`: `q0` → bit 2 (`b2`,
+MSB), `q1` → bit 1, `q2` → bit 0 (LSB). Se `amplitudes[0b100] = 1`, esse é o estado
+`|q0=1, q1=0, q2=0>`.
 
-## 2. A classe `DGM`
+## 2. O workspace e o `Simulator`
 
-`DGM` ([dgm.h](../include/core/dgm.h)) é o objeto central. Ela guarda:
+No C++ tudo girava em torno de uma classe `DGM`. No Rust as responsabilidades estão em
+crates separados, com dependências em uma só direção:
 
-- `state` — o vetor de amplitudes (o "hardware" quântico simulado).
-- `qubits` — quantos qubits o registrador tem.
-- `pts` / `vec_pts` — a lista de operações **já compiladas** (ver
-  [02-linguagem-de-circuitos.md](02-linguagem-de-circuitos.md)), terminada por `NULL`.
-- `exec_type` — qual dos 4 backends usar (`t_CPU`, `t_PAR_CPU`, `t_GPU`, `t_HYBRID`,
-  enum em [dgm.h:76](../include/core/dgm.h#L76)).
-- parâmetros de tuning de performance: `thread_count`, `cpu_region_bits`/
-  `cpu_coalesced_bits`, `gpu_region_bits`/`gpu_coalesced_bits`/`block_size`/
-  `repeat_count`, `gpu_count` (explicados em [03](03-motor-de-execucao-cpu.md)
-  e [04](04-gpu-cuda.md)).
+```text
+cli -> algos -> engine -> {cpu, gpu} -> core        (golden: só em testes)
+```
 
-Um uso típico (visto em `Grover()`, `Shor()`, etc.) é:
+| Crate | O que guarda |
+|---|---|
+| [`hgm-core`](../crates/hgm-core) | o que independe de CPU paralela e GPU: catálogo de portas (`GateCatalog`), parser da linguagem de circuitos, a porta compilada (`Pt`) e `Op`, o otimizador (fusão de fase e agendamento), `StateVector`, medição, `modmult`, o gerador `Mt19937` e a trait `Backend` |
+| [`hgm-cpu`](../crates/hgm-cpu) | os backends de CPU: serial e paralelo por regiões (ver [03](03-motor-de-execucao-cpu.md)) |
+| [`hgm-gpu`](../crates/hgm-gpu) | o backend de GPU em wgpu/WGSL (ver [04](04-gpu-wgpu.md)) |
+| [`hgm-engine`](../crates/hgm-engine) | o `Simulator`, que junta o parser, o estado, o otimizador e um backend; e o `HybridBackend` |
+| [`hgm-algos`](../crates/hgm-algos) | `general`, Grover e Shor ([05](05-algoritmo-grover.md), [06](06-algoritmo-shor.md)) |
+| [`hgm-cli`](../crates/hgm-cli) | os executáveis `general`, `grover` e `shor` |
+| [`hgm-golden`](../crates/hgm-golden) | leitor dos vetores de referência de `tests/golden`; só testes |
 
-```c
-DGM dgm;
-dgm.qubits = qubits;
-dgm.exec_type = type;
-// ... parâmetros de tuning ...
-dgm.allocateMemory();          // aloca state, zera tudo
-dgm.setMemoryValue(pos);       // seta state[pos] = 1 (estado inicial |pos>)
+O objeto central do dia a dia é o [`Simulator`](../crates/hgm-engine/src/lib.rs) (o papel do
+`DGM`). Ele guarda:
 
-dgm.executeFunction(circuito); // faz parsing da string e executa
+- o `StateVector` (no backend de GPU, a cópia que vale mora na placa, ver abaixo);
+- um `Box<dyn Backend>`, o executor escolhido;
+- o `GateCatalog` da execução (as portas base e as rotações criadas pelo Shor);
+- o gerador `Mt19937` compartilhado por medições e sorteios;
+- se a fusão de portas de fase está ligada.
+
+Um uso típico (o que `Grover` e `Shor` fazem) é:
+
+```rust
+use hgm_engine::{BackendKind, Simulator};
+
+let mut sim = Simulator::new(BackendKind::CpuSerial, qubits)?;  // aloca em |0...0>
+sim.set_basis(pos)?;                    // estado inicial |pos>
+
+sim.run(circuito, 1, 1)?;               // faz o parsing do texto e executa
 // ou, em partes:
-dgm.setFunction(circuito);     // só faz o parsing (string -> PT[])
-dgm.execute(it);               // só executa (PT[] -> aplica no state)
+let programa = sim.compile_steps(&passos, 1)?;   // só o parsing (texto -> Program)
+sim.run_program(&programa, 1)?;                  // só a execução
 
-int bit = dgm.measure(q_pos);  // mede um qubit, colapsa o estado
-dgm.freeMemory();
+let m = sim.measure(q_pos)?;            // mede um qubit e colapsa o estado
+println!("{}", m.bit);
 ```
+
+`Simulator::with_config(&SimConfig, qubits)` também escolhe a semente e se a fusão de fase fica
+ligada. Erros são `Result<_, HgmError>`; nenhum caminho do motor encerra o processo.
+
+### A trait `Backend`
+
+Quem executa programas implementa [`Backend`](../crates/hgm-core/src/backend.rs). O método
+obrigatório é `execute(state, program, repetitions)`; os demais têm implementação padrão que
+opera sobre o `StateVector` do host (medir, colapsar, `modmult`, ler uma amplitude). Um backend
+cujo estado mora fora do host (a GPU) sobrescreve todos eles: `initial_state_ready`,
+`host_state_replaced`, `set_basis`, `sync_to_host`, `measure_qubit`, `collapse`,
+`apply_mod_mult` e `amplitude`. O `Simulator::state()` chama `sync_to_host` e, com a GPU, custa
+uma cópia do vetor inteiro; para ler pouco, use `Simulator::amplitude(i)`.
 
 ## 3. Os quatro backends de execução
 
-`DGM::execute()` ([dgm_core.cpp:336](../src/core/dgm_core.cpp#L336)) despacha
-para um dos quatro caminhos, todos calculando a mesma coisa:
+`BackendKind` ([`hgm-engine/src/lib.rs`](../crates/hgm-engine/src/lib.rs)) escolhe um de quatro
+caminhos, todos calculando a mesma coisa. O número é o `EXEC_TYPE` dos executáveis:
 
-| `exec_type`   | Função                                    | Onde                          | Ideia                                                                 |
-|---------------|--------------------------------------------|--------------------------------|------------------------------------------------------------------------|
-| `t_CPU`       | `CpuExecution1(it)`                        | dgm_cpu_exec.cpp               | 1 thread, laço simples sobre o vetor de estado                        |
-| `t_PAR_CPU`   | `PCpuExecution1(...)`                      | dgm_par_exec.cpp               | OpenMP: divide o vetor em "regiões" e processa várias em paralelo     |
-| `t_GPU`       | `GpuExecutionWrapper(...)`                 | kernel.cu (`extern "C"`)      | CUDA: usa memória compartilhada e agrupa portas em blocos              |
-| `t_HYBRID`    | `HybridExecution(pts)`                     | dgm_par_exec.cpp               | Um thread OpenMP comanda a GPU, os demais processam regiões na CPU    |
+| `EXEC_TYPE` | `BackendKind` | Onde | Ideia |
+|---|---|---|---|
+| `0` | `CpuSerial` | `hgm-cpu`, `serial.rs` | 1 thread, laço simples sobre o vetor de estado; o oráculo dos demais |
+| `1` | `CpuParallel(Tuning)` | `hgm-cpu`, `parallel.rs` | rayon: divide o vetor em "regiões" e processa várias em paralelo (AVX2 se a CPU tem) |
+| `2` | `Gpu(GpuTuning)` | `hgm-gpu` | wgpu/WGSL: usa memória de workgroup e agrupa portas em passadas; estado residente na GPU |
+| `3` | `Hybrid(HybridTuning)` | `hgm-engine`, `hybrid.rs` | a GPU enquanto o estado cabe; a CPU paralela quando não |
 
-A ideia geral de "região" (usada em `t_PAR_CPU`, `t_GPU` e `t_HYBRID`) é:
-como o vetor de estado é gigante (`2^qubits`) e não muda de tamanho, dá para
-particioná-lo em blocos independentes (fixando alguns bits do índice) e
-processar cada bloco em paralelo — seja em threads CPU diferentes, seja em
-blocos CUDA diferentes, seja mandando alguns blocos pra CPU e outros pra GPU
-ao mesmo tempo (o modo híbrido, que é a contribuição central do "HybriD-GM").
+A ideia geral de "região" (usada na CPU paralela e na GPU) é: como o vetor de estado é gigante
+(`2^qubits`) e não muda de tamanho, dá para particioná-lo em blocos independentes (fixando
+alguns bits do índice) e processar cada bloco em paralelo — em threads diferentes na CPU, em
+workgroups diferentes na GPU.
 
-Antes de chegar ao kernel, `t_GPU` (e o `t_HYBRID` quando delega à GPU) passam
-por `DGM::scheduleForGpu()`: `FusePhaseRuns` troca corridas de portas de fase
-por uma única porta fundida e `ScheduleForBatching` reordena portas que comutam
-para caberem mais por passada (ver [04](04-gpu-cuda.md), seção 7, e itens 24 e 27
-de [07](07-bugs-e-pontos-de-atencao.md)). O Shor ainda abre uma sessão de GPU
-(`beginGpuSession()`), que mantém o estado na GPU entre as rodadas e mede lá
-([04](04-gpu-cuda.md), seção 8).
+**O modo híbrido mudou em relação ao C++.** Lá, o `t_HYBRID` dividia as regiões entre CPU e GPU
+ao mesmo tempo, com memória fixada (`cudaHostRegister`). O wgpu não oferece memória fixada, e o
+ganho medido não compensava (a transferência fica em ~2,1 GB/s na RTX A4500). O `Hybrid` do
+Rust roda tudo na GPU enquanto o estado cabe e, se a GPU recusa o estado (`DeviceOutOfMemory`),
+traz o estado para o host e continua na CPU paralela; a troca é de mão única. Detalhes em
+[04](04-gpu-wgpu.md) e em [12](12-versao-rust.md).
+
+Antes de chegar ao backend, o `Simulator` pode passar o programa pelo otimizador:
+`fuse_phase_runs` troca corridas de portas de fase por uma única porta fundida. A fusão é
+ligada por padrão na GPU e no híbrido, e desligada na CPU
+([`default_fuse_phase`](../crates/hgm-engine/src/lib.rs); `HGM_FUSE_PHASE=0/1` força). O
+agendamento por comutação (`schedule_for_batching`) é feito pelo backend de GPU, que é o que se
+beneficia dele ([04](04-gpu-wgpu.md), seção 4).
 
 ## 4. Fluxo de um algoritmo (ex: Grover)
 
-1. `lib_grover.cpp::Grover()` monta o circuito **como texto** usando os
-   geradores de `gates.cpp` (`Hadamard(...)`, `Pauli_X(...)`, etc.) e funções
-   próprias (`Oracle1`, `ControledZ`).
-2. Chama `dgm.setFunction(...)`, que faz o parsing dessas strings e produz uma
-   lista de structs `PT` (uma "porta compilada": matriz 2x2 + posição do
-   qubit + máscara/valor de controle).
-3. Chama `dgm.execute(it)`, que percorre a lista de `PT` e realmente
-   multiplica as amplitudes do `state` pelas matrizes.
-4. Chama `dgm.measure(q_pos)` para obter um bit clássico, colapsando o estado.
+1. `grover()` (em [`hgm-algos`](../crates/hgm-algos/src/grover.rs)) monta o circuito **como
+   texto** usando os geradores de [`steps.rs`](../crates/hgm-algos/src/steps.rs) (`hadamard`,
+   `pauli_x`, ...) e funções próprias (oráculo, `ControledZ`).
+2. Chama `sim.compile_steps(...)`, que faz o parsing dessas strings e produz um `Program`: uma
+   lista de `Op`, cada uma uma "porta compilada" (`Pt`: matriz 2x2, bit do alvo, máscara e valor
+   de controle) ou uma fase fundida.
+3. Chama `sim.run_program(&programa, repetições)`, que percorre as `Op` e realmente multiplica
+   as amplitudes do estado pelas matrizes.
+4. Chama `sim.measure(q_pos)` para obter um bit clássico, colapsando o estado.
 
-Esse padrão (montar texto → `setFunction`/`executeFunction` → `execute` →
-`measure`) se repete em Grover e em cada uma das `2n` iterações do Shor.
+Esse padrão (montar texto → compilar → executar → medir) se repete em Grover e em cada uma das
+`2n` rodadas do Shor.

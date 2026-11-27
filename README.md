@@ -69,10 +69,9 @@ e na branch `cpp-legacy`, com o `makefile`, os testes e o README daquela época.
 ## Documentação
 
 A pasta [docs/](docs/00-indice.md) tem uma explicação aprofundada de como o
-simulador funciona por dentro (os documentos 01 a 08 descrevem a implementação em
-C++/CUDA do tag `v1.1.0`; o Rust está em [docs/12](docs/12-versao-rust.md)) (representação do estado, linguagem de
-circuitos, motor de execução em CPU/GPU, e os algoritmos de Grover e Shor
-mapeados linha a linha ao código) — comece por
-[docs/00-indice.md](docs/00-indice.md). Bugs e pontos de atenção conhecidos
-estão listados em
-[docs/07-bugs-e-pontos-de-atencao.md](docs/07-bugs-e-pontos-de-atencao.md).
+simulador funciona por dentro (representação do estado, linguagem de circuitos,
+motor de execução em CPU e GPU, e os algoritmos de Grover e Shor mapeados ao
+código Rust) — comece por [docs/00-indice.md](docs/00-indice.md). Pontos de
+atenção e o histórico dos 31 itens do C++ estão em
+[docs/07-bugs-e-pontos-de-atencao.md](docs/07-bugs-e-pontos-de-atencao.md); a
+visão geral da versão Rust está em [docs/12](docs/12-versao-rust.md).
